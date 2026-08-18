@@ -1,0 +1,7 @@
+0° Tener Postgre SQL Abierto
+
+1° Inicio main.py
+python -m uvicorn main:app --reload
+
+2° Inicio cd frontend-matriculas
+npm run dev
