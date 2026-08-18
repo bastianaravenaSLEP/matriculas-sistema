@@ -1,9 +1,20 @@
 import React from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, FolderOpen, Users, Settings, LogOut } from 'lucide-react';
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  // Recuperamos los datos del usuario que guardamos en el Login
+  const usuarioString = localStorage.getItem('usuario');
+  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+
+  const cerrarSesion = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('usuario');
+    navigate('/login');
+  };
   const isActive = (path: string) => location.pathname === path;
 
   return (
@@ -31,16 +42,21 @@ export default function Layout() {
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shrink-0">
-          <h2 className="font-semibold text-gray-700">Sistema Transaccional</h2>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-700">Usuario Activo</p>
-              <p className="text-xs text-gray-500">Director EE</p>
-            </div>
-            <button className="ml-4 text-gray-400 hover:text-red-500 transition-colors">
-              <LogOut size={20} />
-            </button>
-          </div>
+         <div className="text-right">
+          <p className="text-sm font-medium text-gray-700">
+            {usuario ? usuario.nombre : 'Usuario Activo'}
+          </p>
+          <p className="text-xs text-gray-500">
+            {usuario ? `Rol: ${usuario.rol}` : 'Director EE'}
+          </p>
+        </div>
+        <button 
+          onClick={cerrarSesion}
+          className="ml-4 text-gray-400 hover:text-red-500 transition-colors"
+          title="Cerrar sesión"
+        >
+          <LogOut size={20} />
+        </button>
         </header>
         <div className="flex-1 overflow-auto p-8">
           <Outlet />

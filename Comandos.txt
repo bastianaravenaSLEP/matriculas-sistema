@@ -5,3 +5,7 @@ python -m uvicorn main:app --reload
 
 2° Inicio cd frontend-matriculas
 npm run dev
+
+usuario base de datos de prueba
+Email: director@colegioprueba.cl
+Password: admin123

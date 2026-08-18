@@ -14,6 +14,42 @@ from email.message import EmailMessage
 from fastapi import UploadFile, File
 import csv
 import codecs
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from pydantic import BaseModel
+
+# ============================================================================
+# CONFIGURACIÓN DE SEGURIDAD (JWT Y BCRYPT)
+# ============================================================================
+# En un entorno real, esta clave secreta debe ir en un archivo .env
+SECRET_KEY = "slep_valparaiso_clave_secreta_super_segura"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 120 # El token durará 2 horas
+
+# Configuramos bcrypt como nuestro algoritmo de hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verificar_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def obtener_password_hash(password):
+    return pwd_context.hash(password)
+
+def crear_token_acceso(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+# Modelo de Pydantic para recibir los datos del frontend
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 # =====================================================================
 # 1. CONFIGURACIÓN INICIAL Y BASE DE DATOS
@@ -80,6 +116,68 @@ class MatriculaUpdate(BaseModel):
 class CuestionarioRetiro(BaseModel):
     rut_estudiante: str # Lo usaremos como llave de seguridad
     motivo_real: str    # La respuesta confidencial del apoderado
+
+
+
+# ============================================================================
+# MÓDULO DE AUTENTICACIÓN
+# ============================================================================
+@app.post("/login", summary="Iniciar sesión y obtener token JWT")
+def login(credenciales: LoginRequest):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # 1. Buscamos al usuario por su email
+        cur.execute("""
+            SELECT id_usuario, email_institucional, nombre, rol, id_establecimiento, activo, password_hash 
+            FROM usuario 
+            WHERE email_institucional = %s
+        """, (credenciales.email,))
+        
+        usuario_db = cur.fetchone()
+        
+        # 2. Validaciones de seguridad
+        if not usuario_db:
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+            
+        (id_usuario, email, nombre, rol, id_establecimiento, activo, password_hash) = usuario_db
+        
+        if not activo:
+            raise HTTPException(status_code=403, detail="Usuario inactivo. Contacte al administrador.")
+            
+        if not password_hash or not verificar_password(credenciales.password, password_hash):
+            raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+            
+        # 3. Si todo está correcto, generamos el Token JWT
+        # Inyectamos el rol y el colegio en el token para el particionamiento de datos
+        tiempo_expiracion = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        token_data = {
+            "sub": email,
+            "id_usuario": id_usuario,
+            "rol": rol,
+            "id_establecimiento": id_establecimiento
+        }
+        
+        token = crear_token_acceso(data=token_data, expires_delta=tiempo_expiracion)
+        
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "usuario": {
+                "nombre": nombre,
+                "rol": rol,
+                "id_establecimiento": id_establecimiento
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {e}")
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
 
 
 # =====================================================================
@@ -727,3 +825,53 @@ def descargar_certificado(id_matricula: int):
     except Exception as e:
         print(f"Error generando PDF: {e}")
         raise HTTPException(status_code=500, detail="Error al generar el certificado")
+
+
+# =====================================================================
+# 5. MÓDULO DE DASHBOARD
+# =====================================================================
+@app.get("/dashboard/estadisticas", summary="Obtener métricas para el dashboard")
+def obtener_estadisticas_dashboard():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 1. Total de alumnos matriculados (Activos)
+        cur.execute("SELECT COUNT(*) FROM matricula WHERE estado = 'Activa'")
+        total_activos = cur.fetchone()[0]
+
+        # 2. Total de retiros o bajas (Inactivos, Retirados, etc.)
+        cur.execute("SELECT COUNT(*) FROM matricula WHERE estado != 'Activa'")
+        total_inactivos = cur.fetchone()[0]
+
+        # 3. Agrupación por Nivel de Enseñanza (Solo activos)
+        cur.execute("""
+            SELECT nivel_ensenanza, COUNT(*) 
+            FROM matricula 
+            WHERE estado = 'Activa' 
+            GROUP BY nivel_ensenanza 
+            ORDER BY nivel_ensenanza
+        """)
+        por_nivel = [{"nombre": row[0] or "Sin Nivel", "cantidad": row[1]} for row in cur.fetchall()]
+
+        # 4. Agrupación por Curso específico (Solo activos)
+        cur.execute("""
+            SELECT curso, COUNT(*) 
+            FROM matricula 
+            WHERE estado = 'Activa' 
+            GROUP BY curso 
+            ORDER BY curso
+        """)
+        por_curso = [{"nombre": row[0] or "Sin Curso", "cantidad": row[1]} for row in cur.fetchall()]
+
+        return {
+            "total_activos": total_activos,
+            "total_inactivos": total_inactivos,
+            "por_nivel": por_nivel,
+            "por_curso": por_curso
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error al generar estadísticas: " + str(e))
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
