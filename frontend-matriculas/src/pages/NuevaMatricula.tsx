@@ -16,14 +16,34 @@ export default function NuevaMatricula() {
   const [sugerencias, setSugerencias] = useState<any[]>([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
 
-  // 2. Estado para los datos académicos
+ // DICCIONARIO DE CURSOS POR NIVEL
+  const MAPA_CURSOS: Record<string, string[]> = {
+    "Educación Parvularia": ["Pre-Kínder", "Kínder", "Nivel Medio Mayor", "Nivel Medio Menor"],
+    "Educación Básica": ["1ro Básico", "2do Básico", "3ro Básico", "4to Básico", "5to Básico", "6to Básico", "7mo Básico", "8vo Básico"],
+    "Educación Media": ["1ro Medio", "2do Medio", "3ro Medio", "4to Medio"]
+  };
+  
+  const LETRAS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+
+  // NUEVO ESTADO DEL FORMULARIO
   const [formulario, setFormulario] = useState({
     numero_correlativo: '',
     anio_escolar: '2026',
     fecha_matricula: '',
     nivel_ensenanza: 'Educación Básica',
-    curso: '',
+    grado: '1ro Básico', // Reemplaza al campo 'curso' libre
+    letra: 'A',          // Nueva variable
   });
+
+  // FUNCIÓN ESPECIAL PARA CAMBIAR EL NIVEL Y RESETEAR EL GRADO
+  const handleNivelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nuevoNivel = e.target.value;
+    setFormulario({
+      ...formulario,
+      nivel_ensenanza: nuevoNivel,
+      grado: MAPA_CURSOS[nuevoNivel][0] // Auto-selecciona el primer grado de la lista correspondiente
+    });
+  };
 
   // NUEVO: Cargar el diccionario de estudiantes al abrir la pantalla
   useEffect(() => {
@@ -92,7 +112,7 @@ export default function NuevaMatricula() {
       id_establecimiento: 1, 
       fecha_matricula: formulario.fecha_matricula,
       nivel_ensenanza: formulario.nivel_ensenanza,
-      curso: formulario.curso,
+      curso: `${formulario.grado} ${formulario.letra}`,
       id_usuario_ejecutor: 1 
     };
 
@@ -208,17 +228,44 @@ export default function NuevaMatricula() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
+<div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nivel de Enseñanza</label>
-              <select name="nivel_ensenanza" value={formulario.nivel_ensenanza} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-2 outline-none">
+              <select 
+                name="nivel_ensenanza" 
+                value={formulario.nivel_ensenanza} 
+                onChange={handleNivelChange} 
+                className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
                 <option value="Educación Parvularia">Educación Parvularia</option>
                 <option value="Educación Básica">Educación Básica</option>
                 <option value="Educación Media">Educación Media</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Curso</label>
-              <input required type="text" name="curso" placeholder="Ej: 1ro Medio A" value={formulario.curso} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-2 outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Grado</label>
+              <select 
+                name="grado" 
+                value={formulario.grado} 
+                onChange={(e) => setFormulario({...formulario, grado: e.target.value})} 
+                className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {MAPA_CURSOS[formulario.nivel_ensenanza].map(gradoOpcion => (
+                  <option key={gradoOpcion} value={gradoOpcion}>{gradoOpcion}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Letra</label>
+              <select 
+                name="letra" 
+                value={formulario.letra} 
+                onChange={(e) => setFormulario({...formulario, letra: e.target.value})} 
+                className="w-full border border-gray-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {LETRAS.map(letraOpcion => (
+                  <option key={letraOpcion} value={letraOpcion}>{letraOpcion}</option>
+                ))}
+              </select>
             </div>
           </div>
 

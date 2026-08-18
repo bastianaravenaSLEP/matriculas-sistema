@@ -17,20 +17,32 @@ interface Matricula {
   apoderado_nombre: string;
 }
 
-
-
 export default function Matriculas() {
   // ============================================================================
-  // 2. ESTADOS GLOBAL DE LA PANTALLA (Datos principales de la tabla)
+  // 2. ESTADOS GLOBAL DE LA PANTALLA
   // ============================================================================
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   
   // ============================================================================
-  // 3. ESTADOS DE LOS MODALES Y SUS FORMULARIOS
+  // 3. ESTADOS Y CONSTANTES DE LOS MODALES
   // ============================================================================
   
+  const MAPA_CURSOS: Record<string, string[]> = {
+    "Educación Parvularia": ["Pre-Kínder", "Kínder", "Nivel Medio Mayor", "Nivel Medio Menor"],
+    "Educación Básica": ["1ro Básico", "2do Básico", "3ro Básico", "4to Básico", "5to Básico", "6to Básico", "7mo Básico", "8vo Básico"],
+    "Educación Media": ["1ro Medio", "2do Medio", "3ro Medio", "4to Medio"]
+  };
+  const LETRAS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+
+  // Estados para el modal de Cambio de Curso (Inteligente)
+  const [modalCursoAbierto, setModalCursoAbierto] = useState(false);
+  const [procesandoCurso, setProcesandoCurso] = useState(false);
+  const [nivelCambio, setNivelCambio] = useState('Educación Básica');
+  const [gradoCambio, setGradoCambio] = useState('1ro Básico');
+  const [letraCambio, setLetraCambio] = useState('A');
+
   // Módulo A: Visor de PDF
   const [idCertificadoPreview, setIdCertificadoPreview] = useState<number | null>(null);
   
@@ -39,13 +51,6 @@ export default function Matriculas() {
   const [idSeleccionado, setIdSeleccionado] = useState<number | null>(null);
   const [fechaRetiro, setFechaRetiro] = useState('');
   const [procesandoRetiro, setProcesandoRetiro] = useState(false);
-  // Nota: Ya no tenemos estado para "motivoRetiro" porque lo llenará el apoderado.
-
-  // Módulo C: Modal de Cambio de Curso
-  const [modalCursoAbierto, setModalCursoAbierto] = useState(false);
-  const [nuevoNivel, setNuevoNivel] = useState('Educación Básica');
-  const [nuevoCurso, setNuevoCurso] = useState('');
-  const [procesandoCurso, setProcesandoCurso] = useState(false);
 
   // ============================================================================
   // ESTADOS Y FUNCIONES PARA CARGA MASIVA DE MATRÍCULAS
@@ -76,7 +81,7 @@ export default function Matriculas() {
       if (!respuesta.ok) throw new Error(datos.detail || "Error al subir el archivo");
       
       alert(datos.mensaje); 
-      cargarMatriculas(); // Refrescamos la tabla instantáneamente
+      cargarMatriculas();
     } catch (error: any) {
       alert("Error: " + error.message);
     } finally {
@@ -106,7 +111,6 @@ export default function Matriculas() {
       });
   };
 
-  // Se ejecuta automáticamente al abrir la página
   useEffect(() => {
     cargarMatriculas();
   }, []);
@@ -128,13 +132,11 @@ export default function Matriculas() {
     
     setProcesandoRetiro(true);
 
-    // Payload actualizado: Enviamos el estado 'Retirado'.
-    // Python detectará esto, generará el texto "Pendiente" y enviará el correo.
     const payload = {
       estado: 'Retirado',
       fecha_retiro: fechaRetiro,
-      motivo_retiro: '', // Vacío: el backend fuerza "Pendiente"
-      observaciones: '', // Vacío: el backend fuerza el texto asíncrono
+      motivo_retiro: '', 
+      observaciones: '', 
       id_usuario_ejecutor: 1 
     };
 
@@ -157,26 +159,34 @@ export default function Matriculas() {
   };
 
   // --- HANDLERS DE CAMBIO DE CURSO ---
-  const iniciarCambioCurso = (id: number, nivelActual: string, cursoActual: string) => {
+  const iniciarCambioCurso = (id: number, nivelActual: string) => {
     setIdSeleccionado(id);
-    setNuevoNivel(nivelActual);
-    setNuevoCurso(cursoActual);
+    // Precargamos el nivel del alumno. Si no está en el mapa por algún error, por defecto a Básica
+    const nivelValido = MAPA_CURSOS[nivelActual] ? nivelActual : 'Educación Básica';
+    setNivelCambio(nivelValido);
+    setGradoCambio(MAPA_CURSOS[nivelValido][0]);
+    setLetraCambio('A');
     setModalCursoAbierto(true);
   };
 
   const confirmarCambioCurso = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado) return;
+    
     setProcesandoCurso(true);
+    
+    // Concatenamos el grado y la letra elegida
+    const cursoFinal = `${gradoCambio} ${letraCambio}`; // Ej: "1ro Medio B"
 
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/curso`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nuevo_nivel: nuevoNivel, nuevo_curso: nuevoCurso }),
+        // Enviamos exactamente las llaves que espera tu backend actual
+        body: JSON.stringify({ nuevo_nivel: nivelCambio, nuevo_curso: cursoFinal }),
       });
 
-      if (!respuesta.ok) throw new Error('Error al cambiar de curso');
+      if (!respuesta.ok) throw new Error('Error al cambiar de curso en la base de datos');
 
       setModalCursoAbierto(false);
       cargarMatriculas();
@@ -193,12 +203,11 @@ export default function Matriculas() {
   return (
     <div className="space-y-6 relative">
       
-{/* CABECERA Y BOTONES DE ACCIÓN */}
+      {/* CABECERA Y BOTONES DE ACCIÓN */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-800">Registro de Matrículas</h1>
         
         <div className="flex gap-3">
-          {/* BOTÓN OCULTO DE INPUT FILE */}
           <input 
             type="file" 
             accept=".csv" 
@@ -207,8 +216,6 @@ export default function Matriculas() {
             onChange={manejarSubidaCSV} 
             disabled={subiendoArchivo}
           />
-          
-          {/* BOTÓN VISUAL PARA EL CSV */}
           <label 
             htmlFor="csv-upload-matriculas" 
             className={`flex items-center justify-center cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
@@ -219,8 +226,6 @@ export default function Matriculas() {
           >
             {subiendoArchivo ? 'Procesando...' : '📄 Cargar Historial CSV'}
           </label>
-
-          {/* BOTÓN ORIGINAL DE NUEVA MATRÍCULA */}
           <Link 
             to="/matriculas/nueva" 
             className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
@@ -287,7 +292,7 @@ export default function Matriculas() {
                             Ver Certificado
                           </button>
                           <button 
-                            onClick={() => iniciarCambioCurso(mat.id_matricula, mat.nivel_ensenanza, mat.curso)}
+                            onClick={() => iniciarCambioCurso(mat.id_matricula, mat.nivel_ensenanza)}
                             className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors"
                           >
                             Cambiar Curso
@@ -360,10 +365,16 @@ export default function Matriculas() {
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Cambio de Curso</h3>
             <form onSubmit={confirmarCambioCurso} className="space-y-4">
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Nivel</label>
                 <select 
-                  value={nuevoNivel} onChange={(e) => setNuevoNivel(e.target.value)}
+                  value={nivelCambio} 
+                  onChange={(e) => {
+                    const nivel = e.target.value;
+                    setNivelCambio(nivel);
+                    setGradoCambio(MAPA_CURSOS[nivel][0]); // Resetea el grado al primer curso de la lista
+                  }}
                   className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none"
                 >
                   <option value="Educación Parvularia">Educación Parvularia</option>
@@ -371,15 +382,35 @@ export default function Matriculas() {
                   <option value="Educación Media">Educación Media</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Curso</label>
-                <input 
-                  type="text" required placeholder="Ej: 2do Medio B"
-                  value={nuevoCurso} onChange={(e) => setNuevoCurso(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none"
-                />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Grado</label>
+                  <select 
+                    value={gradoCambio} 
+                    onChange={(e) => setGradoCambio(e.target.value)} 
+                    className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none"
+                  >
+                    {MAPA_CURSOS[nivelCambio].map(grado => (
+                      <option key={grado} value={grado}>{grado}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Letra</label>
+                  <select 
+                    value={letraCambio} 
+                    onChange={(e) => setLetraCambio(e.target.value)} 
+                    className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none"
+                  >
+                    {LETRAS.map(letra => (
+                      <option key={letra} value={letra}>{letra}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
+
+              <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
                 <button 
                   type="button" onClick={() => setModalCursoAbierto(false)}
                   className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium"
