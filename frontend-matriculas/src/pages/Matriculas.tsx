@@ -69,10 +69,14 @@ export default function Matriculas() {
     setSubiendoArchivo(true);
     const formData = new FormData();
     formData.append("archivo", archivo);
+    const token = localStorage.getItem('token'); // Recuperamos el token
 
-    try {
+ try {
       const respuesta = await fetch("http://127.0.0.1:8000/matriculas/carga-masiva", {
         method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}` // Solo autorización, SIN Content-Type
+        },
         body: formData,
       });
 
@@ -94,10 +98,19 @@ export default function Matriculas() {
   // 4. FUNCIONES DE CONEXIÓN A LA API (Fetch)
   // ============================================================================
 
-  const cargarMatriculas = () => {
+const cargarMatriculas = () => {
     setCargando(true);
-    fetch('http://127.0.0.1:8000/matriculas')
+    const token = localStorage.getItem('token');
+
+    fetch('http://127.0.0.1:8000/matriculas', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
       .then((res) => {
+        if (res.status === 401) throw new Error('Acceso no autorizado');
         if (!res.ok) throw new Error('Error al conectar con la API');
         return res.json();
       })
@@ -131,6 +144,7 @@ export default function Matriculas() {
     if (!idSeleccionado) return;
     
     setProcesandoRetiro(true);
+    const token = localStorage.getItem('token'); // Recuperamos el token
 
     const payload = {
       estado: 'Retirado',
@@ -143,7 +157,10 @@ export default function Matriculas() {
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Candado abierto
+        },
         body: JSON.stringify(payload),
       });
 
@@ -174,6 +191,7 @@ export default function Matriculas() {
     if (!idSeleccionado) return;
     
     setProcesandoCurso(true);
+    const token = localStorage.getItem('token'); // Recuperamos el token
     
     // Concatenamos el grado y la letra elegida
     const cursoFinal = `${gradoCambio} ${letraCambio}`; // Ej: "1ro Medio B"
@@ -181,8 +199,10 @@ export default function Matriculas() {
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/curso`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        // Enviamos exactamente las llaves que espera tu backend actual
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Candado abierto
+        },
         body: JSON.stringify({ nuevo_nivel: nivelCambio, nuevo_curso: cursoFinal }),
       });
 

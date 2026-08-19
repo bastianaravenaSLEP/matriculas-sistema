@@ -11,9 +11,20 @@ export default function Inicio() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetch('http://127.0.0.1:8000/dashboard/estadisticas')
+useEffect(() => {
+    // 1. Rescatamos el token guardado en el navegador
+    const token = localStorage.getItem('token');
+
+    // 2. Lo enviamos en los headers de la petición
+    fetch('http://127.0.0.1:8000/dashboard/estadisticas', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` // Aquí va la llave maestra
+      }
+    })
       .then(res => {
+        if (res.status === 401) throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
         if (!res.ok) throw new Error('Error al cargar métricas');
         return res.json();
       })

@@ -18,6 +18,8 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
+from fastapi import Depends, status
+from fastapi.security import OAuth2PasswordBearer
 
 # ============================================================================
 # CONFIGURACIÓN DE SEGURIDAD (JWT Y BCRYPT)
@@ -50,6 +52,37 @@ def crear_token_acceso(data: dict, expires_delta: timedelta | None = None):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    rol: str
+
+# Le decimos a FastAPI que la ruta para obtener el token es "/login"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
+def obtener_usuario_actual(token: str = Depends(oauth2_scheme)):
+    """
+    Esta función intercepta la petición, extrae el token JWT, 
+    lo desencripta y verifica que sea real y no haya expirado.
+    """
+    credenciales_excepcion = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="No se pudieron validar las credenciales. Token inválido o expirado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    try:
+        # Intentamos decodificar el token con nuestra llave secreta
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        
+        if email is None:
+            raise credenciales_excepcion
+            
+        # Si todo está bien, retornamos la información que guardamos en el token 
+        # (email, id_usuario, rol, id_establecimiento)
+        return payload
+        
+    except JWTError:
+        # Si el token fue modificado, es inventado o ya expiró, cae aquí
+        raise credenciales_excepcion
 
 # =====================================================================
 # 1. CONFIGURACIÓN INICIAL Y BASE DE DATOS
@@ -140,8 +173,17 @@ def login(credenciales: LoginRequest):
         # 2. Validaciones de seguridad
         if not usuario_db:
             raise HTTPException(status_code=401, detail="Credenciales incorrectas")
+
+      
             
         (id_usuario, email, nombre, rol, id_establecimiento, activo, password_hash) = usuario_db
+
+         # NUEVO: Validación estricta de Rol
+        if rol != credenciales.rol:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Acceso denegado: Tus credenciales son correctas, pero no tienes permisos para ingresar como '{credenciales.rol}'."
+            )
         
         if not activo:
             raise HTTPException(status_code=403, detail="Usuario inactivo. Contacte al administrador.")
@@ -447,7 +489,7 @@ def carga_masiva_estudiantes(archivo: UploadFile = File(...)):
 # =====================================================================
 
 @app.get("/matriculas")
-def obtener_matriculas():
+def obtener_matriculas(usuario_actual: dict = Depends(obtener_usuario_actual)):
     """
     Obtiene la lista global de matrículas activas/inactivas.
     Cruza datos con estudiante y apoderado para mostrar la tabla principal.
@@ -831,7 +873,10 @@ def descargar_certificado(id_matricula: int):
 # 5. MÓDULO DE DASHBOARD
 # =====================================================================
 @app.get("/dashboard/estadisticas", summary="Obtener métricas para el dashboard")
-def obtener_estadisticas_dashboard():
+def obtener_estadisticas_dashboard(usuario_actual: dict = Depends(obtener_usuario_actual)):
+    
+    # 💡 Prueba de escritorio: Imprimamos por consola quién está haciendo la petición
+    print(f"Usuario autorizado accediendo: {usuario_actual.get('sub')} con rol {usuario_actual.get('rol')}")
     try:
         conn = get_db_connection()
         cur = conn.cursor()

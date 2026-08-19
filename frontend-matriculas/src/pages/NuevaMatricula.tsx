@@ -104,6 +104,7 @@ export default function NuevaMatricula() {
 
     setCargando(true);
     setError('');
+    
 
     const payload = {
       numero_correlativo: parseInt(formulario.numero_correlativo),
@@ -116,12 +117,20 @@ export default function NuevaMatricula() {
       id_usuario_ejecutor: 1 
     };
 
-    try {
+    // 1. Recuperamos el token de la memoria del navegador
+    const token = localStorage.getItem('token');
+
+try {
       const respuesta = await fetch('http://127.0.0.1:8000/matriculas', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // <--- AQUÍ ABRIMOS EL CANDADO
+        },
+        body: JSON.stringify(payload)
       });
+
+      const datos = await respuesta.json();
 
       if (!respuesta.ok) throw new Error('Error al guardar la matrícula.');
       

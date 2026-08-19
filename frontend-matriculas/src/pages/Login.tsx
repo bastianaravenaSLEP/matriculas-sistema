@@ -6,6 +6,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [rol, setRol] = useState('COLEGIO');
   const [cargando, setCargando] = useState(false);
   
   // Herramienta de React Router para redirigir al usuario
@@ -20,7 +21,7 @@ export default function Login() {
       const respuesta = await fetch('http://127.0.0.1:8000/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password, rol })
       });
 
       const datos = await respuesta.json();
@@ -94,6 +95,18 @@ export default function Login() {
                 placeholder="••••••••"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Usuario</label>
+            <select 
+              value={rol}
+              onChange={(e) => setRol(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white"
+            >
+              <option value="COLEGIO">Director / Administrativo de Colegio</option>
+              <option value="SLEP">Funcionario SLEP (Nivel Central)</option>
+            </select>
           </div>
 
           <button 
