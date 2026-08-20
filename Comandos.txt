@@ -9,3 +9,6 @@ npm run dev
 usuario base de datos de prueba
 Email: director@colegioprueba.cl
 Password: admin123
+
+Email: admin@slep.cl
+Password: slep123

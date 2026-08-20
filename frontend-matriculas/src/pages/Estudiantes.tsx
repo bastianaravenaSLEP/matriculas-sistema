@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, UserPlus, Edit2, Save, X } from 'lucide-react';
+// NUEVO 1: Importamos el hook para escuchar el menú del Layout
+import { useOutletContext } from 'react-router-dom';
 
 export default function Estudiantes() {
+  // NUEVO 2: Atrapamos la variable global
+  const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
+
   const [listaEstudiantes, setListaEstudiantes] = useState<any[]>([]);
   const [textoBusqueda, setTextoBusqueda] = useState('');
   const [cargandoLista, setCargandoLista] = useState(true);
@@ -18,13 +23,31 @@ export default function Estudiantes() {
     run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: ''
   });
 
-  // NUEVO: Estados para editar estudiante
+  // Estados para editar estudiante
   const [modoEdicion, setModoEdicion] = useState(false);
   const [datosEdicion, setDatosEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
+  // ============================================================================
+  // FUNCIONES FETCH (Ahora con Seguridad y Filtros)
+  // ============================================================================
+
   const cargarDirectorio = () => {
-    fetch('http://127.0.0.1:8000/estudiante')
+    setCargandoLista(true);
+    const token = localStorage.getItem('token'); // Recuperamos Token
+
+    // NUEVO 3: Armamos la URL dinámica para estudiantes
+    const url = colegioSeleccionado 
+      ? `http://127.0.0.1:8000/estudiante?establecimiento_id=${colegioSeleccionado}`
+      : `http://127.0.0.1:8000/estudiante`;
+
+    fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` // Candado abierto
+      }
+    })
       .then(res => res.json())
       .then(datos => {
         setListaEstudiantes(datos);
@@ -36,11 +59,12 @@ export default function Estudiantes() {
       });
   };
 
+  // NUEVO 4: Escuchamos los cambios en el menú desplegable
   useEffect(() => {
     cargarDirectorio();
-  }, []);
+  }, [colegioSeleccionado]); 
 
-const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
 
   const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const archivo = e.target.files?.[0];
@@ -54,10 +78,14 @@ const [subiendoArchivo, setSubiendoArchivo] = useState(false);
     setSubiendoArchivo(true);
     const formData = new FormData();
     formData.append("archivo", archivo);
+    const token = localStorage.getItem('token');
 
     try {
       const respuesta = await fetch("http://127.0.0.1:8000/estudiante/carga-masiva", {
         method: "POST",
+        headers: {
+          'Authorization': `Bearer ${token}` // Candado abierto
+        },
         body: formData,
       });
 
@@ -65,13 +93,12 @@ const [subiendoArchivo, setSubiendoArchivo] = useState(false);
       
       if (!respuesta.ok) throw new Error(datos.detail || "Error al subir el archivo");
       
-      alert(datos.mensaje); // Muestra cuántos se subieron
-      // window.location.reload(); // Descomenta esto si quieres que la página se recargue para ver los cambios
+      alert(datos.mensaje); 
+      cargarDirectorio();
     } catch (error: any) {
       alert("Error: " + error.message);
     } finally {
       setSubiendoArchivo(false);
-      // Limpiamos el input para que se pueda volver a subir el mismo archivo si hubo error
       e.target.value = ''; 
     }
   };
@@ -84,15 +111,19 @@ const [subiendoArchivo, setSubiendoArchivo] = useState(false);
   const verFichaEstudiante = async (rut: string) => {
     setCargandoFicha(true);
     setError('');
-    setModoEdicion(false); // Asegura que siempre entre en modo lectura
+    setModoEdicion(false); 
+    const token = localStorage.getItem('token');
     
     try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rut}`);
+      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rut}`, {
+        headers: {
+          'Authorization': `Bearer ${token}` // Candado abierto
+        }
+      });
       if (!respuesta.ok) throw new Error('Error al cargar la ficha');
       const datos = await respuesta.json();
       setDatosEstudiante(datos);
       
-      // Preparamos los datos editables
       setDatosEdicion({
         domicilio: datos.personal.domicilio || '',
         telefono_apoderado: datos.apoderado.telefono || '',
@@ -107,16 +138,20 @@ const [subiendoArchivo, setSubiendoArchivo] = useState(false);
 
   const handleGuardarEdicion = async () => {
     setGuardandoEdicion(true);
+    const token = localStorage.getItem('token');
+
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${datosEstudiante.personal.run}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Candado abierto
+        },
         body: JSON.stringify(datosEdicion),
       });
 
       if (!respuesta.ok) throw new Error('Error al actualizar los datos');
 
-      // Refrescamos la ficha para ver los cambios aplicados
       await verFichaEstudiante(datosEstudiante.personal.run);
       setModoEdicion(false);
     } catch (err: any) {
@@ -126,18 +161,18 @@ const [subiendoArchivo, setSubiendoArchivo] = useState(false);
     }
   };
 
-const [buscandoMapa, setBuscandoMapa] = useState(false);
-const [sugerenciasMapa, setSugerenciasMapa] = useState<any[]>([]);
-const buscarSugerencias = async () => {
+  const [buscandoMapa, setBuscandoMapa] = useState(false);
+  const [sugerenciasMapa, setSugerenciasMapa] = useState<any[]>([]);
+  
+  const buscarSugerencias = async () => {
     if (!nuevoEstudiante.domicilio) {
       alert("Primero escribe una calle o sector para buscar.");
       return;
     }
     setBuscandoMapa(true);
-    setSugerenciasMapa([]); // Limpiamos búsquedas anteriores
+    setSugerenciasMapa([]); 
     
     try {
-      // Usamos encodeURIComponent y limitamos la búsqueda a Chile (countrycodes=cl) y a 5 resultados
       const query = encodeURIComponent(nuevoEstudiante.domicilio);
       const respuesta = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=cl&limit=5`);
       const datos = await respuesta.json();
@@ -156,27 +191,31 @@ const buscarSugerencias = async () => {
   };
 
   const seleccionarDireccion = (lugar: any) => {
-    // Al hacer clic, guardamos la dirección completa y formal, junto con sus coordenadas
     setNuevoEstudiante({
       ...nuevoEstudiante,
       domicilio: lugar.display_name, 
       latitud: lugar.lat,
       longitud: lugar.lon
     });
-    // Ocultamos la lista de sugerencias
     setSugerenciasMapa([]);
   };
+
   const handleCrearEstudiante = async (e: React.FormEvent) => {
-    // ... (El código de crear estudiante sigue exactamente igual)
     e.preventDefault();
     setCreando(true);
+    const token = localStorage.getItem('token');
+
     try {
       const respuesta = await fetch('http://127.0.0.1:8000/estudiante', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Candado abierto
+        },
         body: JSON.stringify(nuevoEstudiante),
       });
       if (!respuesta.ok) throw new Error('Error al guardar. Verifica que el RUT no esté duplicado.');
+      
       setModalNuevoAbierto(false);
       setNuevoEstudiante({ run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', domicilio: '',latitud:'', longitud:'', run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '' });
       cargarDirectorio();
@@ -205,8 +244,7 @@ const buscarSugerencias = async () => {
         
         {/* BOTONES DE CABECERA SEGÚN LA VISTA */}
         {!datosEstudiante ? (
-      <div className="flex gap-3">
-            {/* BOTÓN OCULTO DE INPUT FILE */}
+          <div className="flex gap-3">
             <input 
               type="file" 
               accept=".csv" 
@@ -215,8 +253,6 @@ const buscarSugerencias = async () => {
               onChange={manejarSubidaCSV} 
               disabled={subiendoArchivo}
             />
-            
-            {/* BOTÓN VISUAL QUE ACTIVA EL INPUT OCULTO */}
             <label 
               htmlFor="csv-upload" 
               className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
@@ -228,7 +264,6 @@ const buscarSugerencias = async () => {
               {subiendoArchivo ? 'Cargando...' : '📄 Cargar CSV'}
             </label>
 
-            {/* TU BOTÓN ORIGINAL */}
             <button onClick={() => setModalNuevoAbierto(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
               <UserPlus size={20} /> Nuevo Estudiante
             </button>
@@ -248,7 +283,6 @@ const buscarSugerencias = async () => {
               </button>
             </div>
           )
-          
         )}
       </div>
 
@@ -266,20 +300,26 @@ const buscarSugerencias = async () => {
             </div>
           </div>
           <ul className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
-            {estudiantesFiltrados.map((est) => (
-              <li key={est.id}>
-                <button 
-                  onClick={() => verFichaEstudiante(est.run)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-blue-50 transition-colors text-left"
-                >
-                  <div>
-                    <p className="font-semibold text-gray-800 text-lg">{est.nombre_completo}</p>
-                    <p className="text-sm text-gray-500">RUT: {est.run}</p>
-                  </div>
-                  <div className="text-blue-500"><ChevronRight size={20} /></div>
-                </button>
-              </li>
-            ))}
+            {cargandoLista ? (
+              <div className="p-8 text-center text-gray-500">Cargando directorio...</div>
+            ) : estudiantesFiltrados.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">No hay estudiantes en este colegio.</div>
+            ) : (
+              estudiantesFiltrados.map((est) => (
+                <li key={est.id}>
+                  <button 
+                    onClick={() => verFichaEstudiante(est.run)}
+                    className="w-full flex items-center justify-between p-4 hover:bg-blue-50 transition-colors text-left"
+                  >
+                    <div>
+                      <p className="font-semibold text-gray-800 text-lg">{est.nombre_completo}</p>
+                      <p className="text-sm text-gray-500">RUT: {est.run}</p>
+                    </div>
+                    <div className="text-blue-500"><ChevronRight size={20} /></div>
+                  </button>
+                </li>
+              ))
+            )}
           </ul>
         </div>
       )}
@@ -353,7 +393,7 @@ const buscarSugerencias = async () => {
               </div>
             </div>
 
-            {/* Tarjeta 3: Historial (Se mantiene igual, no es editable por aquí) */}
+            {/* Tarjeta 3: Historial */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
                 <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Clock size={24} /></div>
@@ -384,6 +424,7 @@ const buscarSugerencias = async () => {
           </div>
         </div>
       )}
+
       {/* MODAL CREAR NUEVO ESTUDIANTE */}
       {modalNuevoAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
@@ -445,7 +486,6 @@ const buscarSugerencias = async () => {
                   </button>
                 </div>
                 
-                {/* MENÚ DESPLEGABLE DE SUGERENCIAS */}
                 {sugerenciasMapa.length > 0 && (
                   <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     {sugerenciasMapa.map((lugar, index) => (
@@ -460,7 +500,6 @@ const buscarSugerencias = async () => {
                   </ul>
                 )}
                 
-                {/* INDICADOR DE ÉXITO */}
                 {nuevoEstudiante.latitud && (
                   <p className="text-xs text-green-600 mt-2 font-medium bg-green-50 p-2 rounded border border-green-100 inline-block">
                     ✓ Ubicación validada y geolocalizada con éxito.

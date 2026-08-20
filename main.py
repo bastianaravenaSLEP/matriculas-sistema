@@ -17,19 +17,17 @@ import codecs
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
 from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordBearer
+import pandas as pd
 
 # ============================================================================
 # CONFIGURACIÓN DE SEGURIDAD (JWT Y BCRYPT)
 # ============================================================================
-# En un entorno real, esta clave secreta debe ir en un archivo .env
 SECRET_KEY = "slep_valparaiso_clave_secreta_super_segura"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 120 # El token durará 2 horas
+ACCESS_TOKEN_EXPIRE_MINUTES = 120 
 
-# Configuramos bcrypt como nuestro algoritmo de hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verificar_password(plain_password, hashed_password):
@@ -48,59 +46,41 @@ def crear_token_acceso(data: dict, expires_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-# Modelo de Pydantic para recibir los datos del frontend
 class LoginRequest(BaseModel):
     email: str
     password: str
     rol: str
 
-# Le decimos a FastAPI que la ruta para obtener el token es "/login"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def obtener_usuario_actual(token: str = Depends(oauth2_scheme)):
-    """
-    Esta función intercepta la petición, extrae el token JWT, 
-    lo desencripta y verifica que sea real y no haya expirado.
-    """
     credenciales_excepcion = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="No se pudieron validar las credenciales. Token inválido o expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
     try:
-        # Intentamos decodificar el token con nuestra llave secreta
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        
         if email is None:
             raise credenciales_excepcion
-            
-        # Si todo está bien, retornamos la información que guardamos en el token 
-        # (email, id_usuario, rol, id_establecimiento)
         return payload
-        
     except JWTError:
-        # Si el token fue modificado, es inventado o ya expiró, cae aquí
         raise credenciales_excepcion
 
 # =====================================================================
 # 1. CONFIGURACIÓN INICIAL Y BASE DE DATOS
 # =====================================================================
-
-# Inicializamos la aplicación FastAPI
 app = FastAPI(title="API Sistema de Matrículas SLEP Valparaíso")
 
-# Configuramos CORS para que el frontend (React) pueda comunicarse sin bloqueos
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En desarrollo permitimos todas las conexiones
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"], # Permite GET, POST, PUT, DELETE
+    allow_methods=["*"], 
     allow_headers=["*"],
 )
 
-# Credenciales de conexión a PostgreSQL
 DB_CONFIG = {
     "dbname": "sistema_matriculas_sleep",
     "user": "postgres",       
@@ -111,10 +91,6 @@ DB_CONFIG = {
 }
 
 def get_db_connection():
-    """
-    Función auxiliar para conectarse a la base de datos en cada petición.
-    Es importante cerrarla después de usarla para no saturar el servidor.
-    """
     try:
         conn = psycopg2.connect(**DB_CONFIG)
         conn.set_client_encoding('UTF8')
@@ -126,9 +102,6 @@ def get_db_connection():
 # =====================================================================
 # 2. MODELOS DE DATOS (PYDANTIC)
 # =====================================================================
-# Estos modelos definen la estructura exacta que el Backend espera recibir 
-# desde el Frontend al momento de hacer POST o PUT en Matrículas.
-
 class MatriculaCreate(BaseModel):
     numero_correlativo: int
     anio_escolar: int
@@ -137,19 +110,18 @@ class MatriculaCreate(BaseModel):
     fecha_matricula: date
     nivel_ensenanza: str
     curso: str
-    id_usuario_ejecutor: int # Obligatorio para nuestra auditoría
+    id_usuario_ejecutor: int 
 
 class MatriculaUpdate(BaseModel):
     estado: str
     fecha_retiro: Optional[date] = None
     motivo_retiro: Optional[str] = None
     observaciones: Optional[str] = None
-    id_usuario_ejecutor: int # Obligatorio para nuestra auditoría
+    id_usuario_ejecutor: int 
 
 class CuestionarioRetiro(BaseModel):
-    rut_estudiante: str # Lo usaremos como llave de seguridad
-    motivo_real: str    # La respuesta confidencial del apoderado
-
+    rut_estudiante: str 
+    motivo_real: str    
 
 
 # ============================================================================
@@ -161,7 +133,6 @@ def login(credenciales: LoginRequest):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 1. Buscamos al usuario por su email
         cur.execute("""
             SELECT id_usuario, email_institucional, nombre, rol, id_establecimiento, activo, password_hash 
             FROM usuario 
@@ -170,15 +141,11 @@ def login(credenciales: LoginRequest):
         
         usuario_db = cur.fetchone()
         
-        # 2. Validaciones de seguridad
         if not usuario_db:
             raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
-      
-            
         (id_usuario, email, nombre, rol, id_establecimiento, activo, password_hash) = usuario_db
 
-         # NUEVO: Validación estricta de Rol
         if rol != credenciales.rol:
             raise HTTPException(
                 status_code=403, 
@@ -191,8 +158,6 @@ def login(credenciales: LoginRequest):
         if not password_hash or not verificar_password(credenciales.password, password_hash):
             raise HTTPException(status_code=401, detail="Credenciales incorrectas")
             
-        # 3. Si todo está correcto, generamos el Token JWT
-        # Inyectamos el rol y el colegio en el token para el particionamiento de datos
         tiempo_expiracion = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         token_data = {
             "sub": email,
@@ -225,47 +190,57 @@ def login(credenciales: LoginRequest):
 # =====================================================================
 # 3. MÓDULO DE ESTUDIANTES Y APODERADOS
 # =====================================================================
-
 @app.get("/estudiante")
-def obtener_todos_los_estudiantes():
-    """
-    Lista el directorio completo de estudiantes.
-    Solo trae lo básico (ID, RUT, Nombre) para llenar el buscador rápido.
-    """
+def obtener_estudiantes(
+    establecimiento_id: Optional[int] = None, 
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""
-            SELECT id_estudiante, run_ipe, nombres, apellido_paterno, apellido_materno 
-            FROM estudiante
-            ORDER BY nombres ASC
-        """)
+
+        query = """
+            SELECT DISTINCT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno
+            FROM estudiante e
+            LEFT JOIN matricula m ON e.id_estudiante = m.id_estudiante
+            WHERE 1=1
+        """
+        parametros = []
+        
+        if establecimiento_id is not None:
+            query += " AND m.id_establecimiento = %s"
+            parametros.append(establecimiento_id)
+            
+        query += " ORDER BY e.apellido_paterno ASC"
+
+        cur.execute(query, tuple(parametros))
         filas = cur.fetchall()
-        estudiante = []
+        
+        estudiantes = []
         for fila in filas:
-            estudiante.append({
+            nombre_completo = f"{fila[2]} {fila[3]} {fila[4] or ''}".strip()
+            estudiantes.append({
                 "id": fila[0],
                 "run": fila[1],
-                "nombre_completo": f"{fila[2]} {fila[3]} {fila[4]}".strip()
+                "nombre_completo": nombre_completo
             })
-        cur.close()
-        conn.close()
-        return estudiante
+            
+        return estudiantes
+
     except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Error al cargar el directorio de estudiantes")
+        print(f"Error al obtener estudiantes: {e}")
+        raise HTTPException(status_code=500, detail="Error interno de la base de datos")
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
 
 @app.get("/estudiante/{rut}")
 def obtener_ficha_estudiante(rut: str):
-    """
-    Obtiene la "Ficha Completa" de un solo estudiante.
-    Cruza datos con la tabla 'apoderado' y trae el historial de matrículas.
-    """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Datos personales y de su apoderado
         cur.execute("""
             SELECT 
                 e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.fecha_nacimiento, e.domicilio,
@@ -279,16 +254,14 @@ def obtener_ficha_estudiante(rut: str):
         if not estudiante_db:
             raise HTTPException(status_code=404, detail="Estudiante no encontrado en el sistema RGM.")
 
-        # 2. Historial académico (matrículas previas y actuales)
         cur.execute("""
-            SELECT id_matricula, anio_escolar, nivel_ensenanza, curso, estado, fecha_matricula
+            SELECT id_matricula, anio_escolar, nivel_ensenanza, curso, estado, fecha_matricula, observaciones
             FROM matricula
             WHERE id_estudiante = %s
             ORDER BY anio_escolar DESC
         """, (estudiante_db[0],))
         historial_db = cur.fetchall()
 
-        # 3. Ensamblamos el JSON
         respuesta = {
             "personal": {
                 "id": estudiante_db[0],
@@ -306,7 +279,6 @@ def obtener_ficha_estudiante(rut: str):
             },
             "historial": []
         }
-
         for fila in historial_db:
             respuesta["historial"].append({
                 "id": fila[0],
@@ -314,7 +286,8 @@ def obtener_ficha_estudiante(rut: str):
                 "establecimiento": "Establecimiento SLEP", 
                 "curso": fila[3],
                 "estado": fila[4],
-                "tipo_movimiento": "Matrícula"
+                "tipo_movimiento": "Matrícula",
+                "observaciones": fila[6] if fila[6] else "Sin observaciones registradas." # <--- Añadimos las observaciones
             })
 
         cur.close()
@@ -328,15 +301,10 @@ def obtener_ficha_estudiante(rut: str):
 
 @app.post("/estudiante")
 def crear_estudiante(payload: dict):
-    """
-    Crea un nuevo estudiante y su apoderado al mismo tiempo.
-    Es una transacción doble: Primero busca/crea al apoderado, luego inserta al alumno.
-    """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 1. Lógica del apoderado
         run_apod = payload.get("run_apoderado")
         cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (run_apod,))
         apod_db = cur.fetchone()
@@ -355,7 +323,6 @@ def crear_estudiante(payload: dict):
             ))
             id_apoderado = cur.fetchone()[0]
 
-        # 2. Lógica del estudiante (usando el ID del apoderado)(ahora con latitud y longitud)
         cur.execute("""
             INSERT INTO estudiante (
                 run_ipe, nombres, apellido_paterno, apellido_materno, 
@@ -371,8 +338,8 @@ def crear_estudiante(payload: dict):
             payload.get("fecha_nacimiento"),
             payload.get("sexo"),
             payload.get("domicilio"),
-            payload.get("latitud"),  # <--- NUEVO
-            payload.get("longitud"), # <--- NUEVO
+            payload.get("latitud"), 
+            payload.get("longitud"), 
             id_apoderado
         ))
         
@@ -388,14 +355,10 @@ def crear_estudiante(payload: dict):
 
 @app.put("/estudiante/{rut}")
 def actualizar_datos_estudiante(rut: str, payload: dict):
-    """
-    Edita los datos de contacto (Domicilio alumno, Teléfono/Correo apoderado).
-    """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 1. Actualiza estudiante y rescata el ID del apoderado
         cur.execute("""
             UPDATE estudiante SET domicilio = %s WHERE run_ipe = %s RETURNING id_apoderado_principal
         """, (payload.get("domicilio"), rut))
@@ -406,7 +369,6 @@ def actualizar_datos_estudiante(rut: str, payload: dict):
             
         id_apoderado = resultado[0]
         
-        # 2. Actualiza apoderado
         cur.execute("""
             UPDATE apoderado SET telefono = %s, correo_electronico = %s WHERE id_apoderado = %s
         """, (payload.get("telefono_apoderado"), payload.get("correo_apoderado"), id_apoderado))
@@ -419,94 +381,43 @@ def actualizar_datos_estudiante(rut: str, payload: dict):
         print(f"Error BD: {e}")
         raise HTTPException(status_code=500, detail="Error al actualizar los datos")
 
-@app.post("/estudiante/carga-masiva")
-def carga_masiva_estudiantes(archivo: UploadFile = File(...)):
-    """
-    Recibe un archivo CSV y carga múltiples estudiantes y apoderados a la vez.
-    El CSV debe tener encabezados en la primera fila.
-    """
-    if not archivo.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="El archivo debe ser formato .csv")
-
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Leemos el archivo directamente desde la memoria
-        csvReader = csv.DictReader(codecs.iterdecode(archivo.file, 'utf-8'))
-        
-        registros_exitosos = 0
-        
-        for fila in csvReader:
-            # 1. MANEJO DEL APODERADO
-            run_apod = fila.get('run_apoderado')
-            cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (run_apod,))
-            apod_db = cur.fetchone()
-            
-            if apod_db:
-                id_apoderado = apod_db[0]
-            else:
-                cur.execute("""
-                    INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id_apoderado
-                """, (
-                    run_apod, fila.get('nombres_apoderado'), fila.get('ap_paterno_apoderado'), 
-                    fila.get('ap_materno_apoderado'), fila.get('domicilio'), # Asumimos mismo domicilio
-                    fila.get('telefono'), fila.get('correo')
-                ))
-                id_apoderado = cur.fetchone()[0]
-
-            # 2. MANEJO DEL ESTUDIANTE
-            # Evitamos duplicados verificando si el estudiante ya existe
-            cur.execute("SELECT id_estudiante FROM estudiante WHERE run_ipe = %s", (fila.get('run_estudiante'),))
-            if not cur.fetchone():
-                cur.execute("""
-                    INSERT INTO estudiante (run_ipe, nombres, apellido_paterno, apellido_materno, fecha_nacimiento, sexo, domicilio, id_apoderado_principal)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    fila.get('run_estudiante'), fila.get('nombres'), fila.get('ap_paterno'), 
-                    fila.get('ap_materno'), fila.get('fecha_nacimiento'), fila.get('sexo'),
-                    fila.get('domicilio'), id_apoderado
-                ))
-                registros_exitosos += 1
-        
-        conn.commit()
-        return {"mensaje": f"Carga masiva completada. Se registraron {registros_exitosos} estudiantes nuevos."}
-        
-    except Exception as e:
-        conn.rollback()
-        print(f"Error en carga masiva: {e}")
-        raise HTTPException(status_code=500, detail="Error al procesar el archivo CSV. Revisa el formato de las columnas.")
-    finally:
-        cur.close()
-        conn.close()
-        archivo.file.close()
-
 
 # =====================================================================
 # 4. MÓDULO DE MATRÍCULAS Y CERTIFICADOS
 # =====================================================================
-
 @app.get("/matriculas")
-def obtener_matriculas(usuario_actual: dict = Depends(obtener_usuario_actual)):
-    """
-    Obtiene la lista global de matrículas activas/inactivas.
-    Cruza datos con estudiante y apoderado para mostrar la tabla principal.
-    """
+def obtener_matriculas(
+    establecimiento_id: Optional[int] = None, 
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("""
+
+        # Agregamos m.cod_tipo_ensenanza al SELECT (es la columna 15)
+        query = """
             SELECT m.id_matricula, m.numero_correlativo, m.nivel_ensenanza, 
                    m.curso, m.fecha_matricula, m.estado,
                    e.run_ipe, e.nombres, e.apellido_paterno,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno,
+                   m.anio_escolar, cte.descripcion,
+                   est.rbd, m.cod_tipo_ensenanza
             FROM matricula m
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
-            ORDER BY m.id_matricula DESC
-        """)
+            LEFT JOIN catalogo_tipo_ensenanza cte ON m.cod_tipo_ensenanza = cte.codigo
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            WHERE 1=1
+        """
+        parametros = []
+        
+        if establecimiento_id is not None:
+            query += " AND m.id_establecimiento = %s"
+            parametros.append(establecimiento_id)
+            
+        query += " ORDER BY m.id_matricula DESC"
+
+        cur.execute(query, tuple(parametros))
         
         filas = cur.fetchall()
         matriculas = []
@@ -519,23 +430,27 @@ def obtener_matriculas(usuario_actual: dict = Depends(obtener_usuario_actual)):
                 "fecha_matricula": str(fila[4]),
                 "estado": fila[5],
                 "estudiante_rut": fila[6],
-                "estudiante_nombre": f"{fila[7]} {fila[8]}",
+                "estudiante_nombre": f"{fila[7]} {fila[8]}".strip(),
                 "apoderado_rut": fila[9] if fila[9] else "Sin registro",
-                "apoderado_nombre": f"{fila[10]} {fila[11]}" if fila[10] else "Pendiente"
+                "apoderado_nombre": f"{fila[10]} {fila[11]}".strip() if fila[10] else "Pendiente",
+                "anio_escolar": fila[12],
+                "tipo_ensenanza": fila[13] if fila[13] else "Plan General",
+                "rbd": fila[14] if fila[14] else "Sin RBD",
+                "cod_tipo_ensenanza": fila[15] # <--- Capturamos el código Mineduc
             })
             
-        cur.close()
-        conn.close()
         return matriculas
+
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Error de base de datos")
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
 
 @app.post("/matriculas", summary="Crear una nueva matrícula (Alta)")
 def crear_matricula(matricula: MatriculaCreate):
-    """
-    Registra una matrícula completamente nueva para un estudiante existente.
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -562,10 +477,6 @@ def crear_matricula(matricula: MatriculaCreate):
         conn.close()
 
 def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: str):
-    """
-    Motor de correos transaccionales. Se conecta a Gmail vía SMTP.
-    """
-    # IMPORTANTE: Reemplaza esto con credenciales reales para probarlo
     EMAIL_REMITENTE = "tu_correo@gmail.com"
     PASSWORD_APP = "tu_password_de_aplicacion"
     
@@ -591,7 +502,6 @@ def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: 
     msg.set_content(contenido)
     
     try:
-        # Si usas otro proveedor que no sea Gmail, el host 'smtp.gmail.com' cambiará
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMITENTE, PASSWORD_APP)
             smtp.send_message(msg)
@@ -601,19 +511,13 @@ def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: 
 
 @app.put("/matriculas/{id_matricula}", summary="Actualizar o Retirar estudiante (Baja)")
 def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate):
-    """
-    Permite dar de baja (Retirar) a un estudiante cambiando su estado.
-    Si se retira, dispara un correo automático al apoderado.
-    """
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        # --- NUEVA REGLA: FLUJO ASÍNCRONO DE RETIRO ---
         if matricula.estado == "Retirado":
             matricula.observaciones = "Pendiente de respuesta mediante cuestionario autoaplicado."
             matricula.motivo_retiro = "Pendiente"
             
-            # Buscamos el correo del apoderado y el nombre del estudiante para el email
             cursor.execute("""
                 SELECT e.nombres, a.correo_electronico
                 FROM matricula m
@@ -623,12 +527,10 @@ def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate):
             """, (id_matricula,))
             
             datos_correo = cursor.fetchone()
-            # Si el estudiante existe y el apoderado tiene correo registrado, disparamos la función
             if datos_correo and datos_correo[1]:
                 nombre_est = datos_correo[0]
                 correo_apod = datos_correo[1]
                 enviar_correo_retiro(correo_apod, id_matricula, nombre_est)
-        # ----------------------------------------------
 
         query = """
             UPDATE matricula
@@ -656,13 +558,9 @@ def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate):
 
 @app.put("/matriculas/{id_matricula}/cuestionario", summary="Endpoint público para respuesta del apoderado")
 def responder_cuestionario(id_matricula: int, payload: CuestionarioRetiro):
-    """
-    Recibe la respuesta del apoderado validando el RUT del estudiante por seguridad.
-    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # Validación de Seguridad
         cur.execute("""
             SELECT e.run_ipe 
             FROM matricula m
@@ -675,7 +573,6 @@ def responder_cuestionario(id_matricula: int, payload: CuestionarioRetiro):
         if not resultado or resultado[0] != payload.rut_estudiante:
             raise HTTPException(status_code=401, detail="El RUT ingresado no coincide con nuestros registros de seguridad.")
             
-        # Actualizamos la matrícula con la respuesta real
         cur.execute("""
             UPDATE matricula 
             SET observaciones = %s, motivo_retiro = 'Respuesta Apoderado (Confidencial)'
@@ -697,96 +594,288 @@ def responder_cuestionario(id_matricula: int, payload: CuestionarioRetiro):
 
 @app.put("/matriculas/{id_matricula}/curso")
 def cambiar_curso_matricula(id_matricula: int, payload: dict):
-    """
-    Específico para actualizar solamente el curso y nivel de un estudiante.
-    """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # 1. Buscamos los datos actuales para validar y guardar el historial
+        cur.execute("SELECT anio_escolar, estado, curso, observaciones FROM matricula WHERE id_matricula = %s", (id_matricula,))
+        mat_actual = cur.fetchone()
+        
+        if not mat_actual:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+            
+        anio_actual = mat_actual[0]
+        estado_actual = mat_actual[1]
+        curso_anterior = mat_actual[2]
+        obs_actual = mat_actual[3] or ""
+        
+        anio_corriente = datetime.now().year # Año actual del servidor
+        
+        # 2. Validaciones de Negocio (Reglas de Oro)
+        if anio_actual != anio_corriente:
+            raise HTTPException(status_code=400, detail="Solo se puede cambiar de curso a alumnos del año escolar vigente.")
+            
+        if estado_actual != 'Activa':
+            raise HTTPException(status_code=400, detail="No se puede cambiar de curso a un alumno inactivo/retirado.")
+            
+        # 3. Preparamos la nota de historial
+        nuevo_cod = payload.get("cod_tipo_ensenanza")
+        nuevo_curso = payload.get("nuevo_curso")
+        fecha_cambio = datetime.now().strftime('%Y-%m-%d')
+        
+        nueva_observacion = f"{obs_actual}\n[{fecha_cambio}] Movimiento RGM: Trasladado de '{curso_anterior}' a '{nuevo_curso}'."
+        
+        # 4. Ejecutamos el cambio y guardamos la evidencia
         cur.execute("""
-            UPDATE matricula SET nivel_ensenanza = %s, curso = %s WHERE id_matricula = %s
-        """, (payload.get("nuevo_nivel"), payload.get("nuevo_curso"), id_matricula))
+            UPDATE matricula 
+            SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s 
+            WHERE id_matricula = %s
+        """, (nuevo_cod, nuevo_curso, nueva_observacion.strip(), id_matricula))
+        
         conn.commit()
         cur.close()
         conn.close()
-        return {"mensaje": "Curso actualizado exitosamente"}
+        return {"mensaje": "Curso actualizado exitosamente y registrado en el historial de la ficha."}
+    except HTTPException as he:
+        raise he
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Error al actualizar el curso en la base de datos")    
+        raise HTTPException(status_code=500, detail="Error al actualizar el curso en la base de datos")
 
-@app.post("/matriculas/carga-masiva", summary="Carga masiva de historial de matrículas")
-def carga_masiva_matriculas(archivo: UploadFile = File(...)):
-    """
-    Recibe un CSV con el historial de matrículas. 
-    Cruza el RUN del estudiante con la base de datos para obtener su ID interno antes de insertar.
-    """
-    if not archivo.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="El archivo debe ser formato .csv")
 
+# ============================================================================
+# ENDPOINT DE CARGA MASIVA SIGE (CON FOLIO INTELIGENTE Y ACTUALIZACIÓN)
+# ============================================================================
+@app.post("/matriculas/carga-masiva")
+async def carga_masiva_sige(
+    archivo: UploadFile = File(...),
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     try:
+        contenido = await archivo.read()
+        tablas = pd.read_html(io.BytesIO(contenido))
+        
+        if not tablas:
+            raise ValueError("No se encontraron tablas legibles en el archivo.")
+            
+        df = tablas[0]
         conn = get_db_connection()
         cur = conn.cursor()
         
-        csvReader = csv.DictReader(codecs.iterdecode(archivo.file, 'utf-8'))
+        alumnos_nuevos = 0
+        alumnos_actualizados = 0
         
-        registros_exitosos = 0
-        estudiantes_no_encontrados = 0
+        id_ejecutor = usuario_actual.get('id_usuario')
+        if not id_ejecutor: id_ejecutor = 1
         
-        for fila in csvReader:
-            run_estudiante = fila.get('run_estudiante')
+        # DICCIONARIO PARA LLEVAR LA CUENTA DE LOS FOLIOS POR COLEGIO Y AÑO
+        correlativos_actuales = {}
+        
+        for index, row in df.iterrows():
             
-            # 1. Buscamos al estudiante en la base de datos
-            cur.execute("SELECT id_estudiante FROM estudiante WHERE run_ipe = %s", (run_estudiante,))
-            estudiante_db = cur.fetchone()
+            # --- CRUCE DE RBD MINEDUC A ID INTERNO ---
+            rbd_excel = str(row.get('RBD', '')).strip()
+            id_colegio = usuario_actual.get('id_establecimiento', 1)
             
-            # 2. Solo insertamos si el estudiante ya existe en el sistema
-            if estudiante_db:
-                id_estudiante = estudiante_db[0]
+            if rbd_excel and rbd_excel != 'nan':
+                cur.execute("SELECT id_establecimiento FROM establecimiento WHERE rbd = %s", (rbd_excel,))
+                resultado_colegio = cur.fetchone()
+                
+                if resultado_colegio:
+                    id_colegio = resultado_colegio[0]
+                else:
+                    cur.execute("""
+                        INSERT INTO establecimiento (rbd, nombre, tipo_local) 
+                        VALUES (%s, %s, 'Generado por SIGE') RETURNING id_establecimiento;
+                    """, (rbd_excel, f"Colegio RBD {rbd_excel}"))
+                    id_colegio = cur.fetchone()[0]
+
+            # 1. Extracción de RUT 
+            rut_alumno = str(row.get('Run', '')).strip()
+            dv_alumno = str(row.get('Dígito Ver.', '')).strip()
+            if rut_alumno == 'nan' or not rut_alumno:
+                continue
+            run_completo = f"{rut_alumno}-{dv_alumno}"
+            
+            # 2. Protección Nombres 
+            nombres = str(row.get('Nombres', '')).strip()
+            if not nombres or nombres == 'nan': nombres = "Sin Nombre"
+            
+            ap_paterno = str(row.get('Apellido Paterno', '')).strip()
+            if not ap_paterno or ap_paterno == 'nan': ap_paterno = "Sin Apellido"
+            
+            ap_materno = str(row.get('Apellido Materno', '')).strip()
+            if ap_materno == 'nan': ap_materno = ''
+
+            # 3. Protección Sexo 
+            genero_excel = str(row.get('Genero', '')).strip().upper()
+            if genero_excel == 'F': sexo_db = "Femenino"
+            elif genero_excel == 'M': sexo_db = "Masculino"
+            else: sexo_db = "No Informado"
+            
+            # 4. Protección Fecha de Nacimiento 
+            fecha_nac = str(row.get('Fecha Nacimiento', '')).strip()
+            if not fecha_nac or fecha_nac == 'nan':
+                fecha_nac_str = "2000-01-01"
+            else:
+                fecha_nac_str = fecha_nac.split(' ')[0]
+                
+            # 5. Protección Domicilio 
+            direccion_excel = str(row.get('Dirección', '')).strip()
+            comuna_excel = str(row.get('Comuna Residencia', '')).strip()
+            dir_limpia = "" if direccion_excel == 'nan' else direccion_excel
+            comuna_limpia = "" if comuna_excel == 'nan' else comuna_excel
+            domicilio_final = f"{dir_limpia} {comuna_limpia}".strip()
+            if not domicilio_final: domicilio_final = "Sin registro"
+
+            # 6. Protección Año Escolar 
+            try:
+                anio_escolar = int(float(row.get('Año', 2026)))
+            except:
+                anio_escolar = 2026
+
+            # 7. Protección Fecha de Matrícula 
+            fecha_incorp = str(row.get('Fecha Incorporación Curso', '')).strip()
+            if not fecha_incorp or fecha_incorp == 'nan':
+                fecha_matricula_str = pd.Timestamp.now().strftime('%Y-%m-%d')
+            else:
+                fecha_matricula_str = fecha_incorp.split(' ')[0]
+
+            # --- LÓGICA DE FECHA DE RETIRO SIGE ---
+            fecha_retiro_excel = str(row.get('Fecha Retiro', row.get('Fec. Retiro', ''))).strip()
+            estado_matricula = 'Activa'
+            fecha_retiro_db = None
+            
+            if fecha_retiro_excel and fecha_retiro_excel != 'nan':
+                fecha_retiro_limpia = fecha_retiro_excel.split(' ')[0]
+                if not fecha_retiro_limpia.startswith('1900'):
+                    estado_matricula = 'Inactiva'
+                    fecha_retiro_db = fecha_retiro_limpia
+
+            # 8. Mapeo de Catálogos
+            try:
+                cod_ensenanza = int(float(row.get('Cod Tipo Enseñanza')))
+            except:
+                cod_ensenanza = None
+                
+            try:
+                cod_grado = int(float(row.get('Cod Grado')))
+            except:
+                cod_grado = None
+
+            desc_grado = str(row.get('Desc Grado', '')).strip()
+            if desc_grado == 'nan': desc_grado = ''
+            
+            letra_curso = str(row.get('Letra Curso', '')).strip()
+            if letra_curso == 'nan': letra_curso = ''
+
+            if cod_ensenanza is not None:
+                cur.execute("""
+                    INSERT INTO catalogo_tipo_ensenanza (codigo, descripcion) 
+                    VALUES (%s, 'Importado desde SIGE')
+                    ON CONFLICT (codigo) DO NOTHING;
+                """, (cod_ensenanza,))
+                
+            if cod_grado is not None:
+                cur.execute("""
+                    INSERT INTO catalogo_grado (codigo, descripcion) 
+                    VALUES (%s, %s)
+                    ON CONFLICT (codigo) DO NOTHING;
+                """, (cod_grado, desc_grado))
+
+            # --- INSERCIÓN SEGURA DEL ESTUDIANTE ---
+            cur.execute("""
+                INSERT INTO estudiante (run_ipe, nombres, apellido_paterno, apellido_materno, sexo, fecha_nacimiento, domicilio)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_ipe) 
+                DO UPDATE SET nombres = EXCLUDED.nombres, 
+                              apellido_paterno = EXCLUDED.apellido_paterno,
+                              apellido_materno = EXCLUDED.apellido_materno,
+                              sexo = EXCLUDED.sexo,
+                              fecha_nacimiento = COALESCE(EXCLUDED.fecha_nacimiento, estudiante.fecha_nacimiento),
+                              domicilio = COALESCE(EXCLUDED.domicilio, estudiante.domicilio)
+                RETURNING id_estudiante;
+            """, (run_completo, nombres, ap_paterno, ap_materno, sexo_db, fecha_nac_str, domicilio_final))
+            
+            resultado_estudiante = cur.fetchone()
+            if resultado_estudiante:
+                id_estudiante = resultado_estudiante[0]
+            else:
+                cur.execute("SELECT id_estudiante FROM estudiante WHERE run_ipe = %s", (run_completo,))
+                id_estudiante = cur.fetchone()[0]
+
+            # --- INSERCIÓN / ACTUALIZACIÓN DE LA MATRÍCULA ---
+            curso_texto = f"{desc_grado} {letra_curso}".strip() if desc_grado else "Sin Asignar"
+            
+            # A) VERIFICAMOS SI EL ALUMNO YA ESTÁ MATRICULADO ESTE AÑO
+            cur.execute("""
+                SELECT id_matricula FROM matricula 
+                WHERE id_estudiante = %s AND id_establecimiento = %s AND anio_escolar = %s
+            """, (id_estudiante, id_colegio, anio_escolar))
+            
+            matricula_existente = cur.fetchone()
+            
+            if matricula_existente:
+                # SI EXISTE: Actualizamos sus datos (Sin tocar el Folio)
+                id_mat = matricula_existente[0]
+                cur.execute("""
+                    UPDATE matricula 
+                    SET cod_tipo_ensenanza = %s, cod_grado = %s, letra_curso = %s, 
+                        curso = %s, fecha_retiro = %s, estado = %s
+                    WHERE id_matricula = %s
+                """, (cod_ensenanza, cod_grado, letra_curso, curso_texto, fecha_retiro_db, estado_matricula, id_mat))
+                alumnos_actualizados += 1
+            else:
+                # B) SI NO EXISTE: Calculamos el siguiente Folio Único
+                llave_correlativo = (id_colegio, anio_escolar)
+                
+                if llave_correlativo not in correlativos_actuales:
+                    # Leemos el folio más alto registrado en la Base de Datos para ese colegio
+                    cur.execute("""
+                        SELECT COALESCE(MAX(numero_correlativo), 0) 
+                        FROM matricula 
+                        WHERE id_establecimiento = %s AND anio_escolar = %s
+                    """, (id_colegio, anio_escolar))
+                    correlativos_actuales[llave_correlativo] = cur.fetchone()[0]
+
+                # Le sumamos 1
+                correlativos_actuales[llave_correlativo] += 1
+                nuevo_correlativo = correlativos_actuales[llave_correlativo]
                 
                 cur.execute("""
                     INSERT INTO matricula (
-                        numero_correlativo, anio_escolar, id_estudiante, id_establecimiento, 
-                        fecha_matricula, nivel_ensenanza, curso, estado, id_usuario_ejecutor
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        id_estudiante, id_establecimiento, numero_correlativo, 
+                        estado, cod_tipo_ensenanza, cod_grado, letra_curso, curso, nivel_ensenanza,
+                        anio_escolar, fecha_matricula, id_usuario_ejecutor, fecha_retiro
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Educación Media', %s, %s, %s, %s)
                 """, (
-                    fila.get('numero_correlativo'), 
-                    fila.get('anio_escolar'), 
-                    id_estudiante,
-                    fila.get('id_establecimiento', 1), # Si no viene en el CSV, asignamos 1 por defecto
-                    fila.get('fecha_matricula'), 
-                    fila.get('nivel_ensenanza'),
-                    fila.get('curso'), 
-                    fila.get('estado', 'Activa'), 
-                    1 # id_usuario_ejecutor por defecto
+                    id_estudiante, id_colegio, nuevo_correlativo, estado_matricula,
+                    cod_ensenanza, cod_grado, letra_curso, curso_texto, anio_escolar,
+                    fecha_matricula_str, id_ejecutor, fecha_retiro_db
                 ))
-                registros_exitosos += 1
-            else:
-                estudiantes_no_encontrados += 1
-        
-        conn.commit()
-        
-        # Preparamos un mensaje de respuesta detallado
-        mensaje = f"Carga masiva completada: {registros_exitosos} matrículas registradas."
-        if estudiantes_no_encontrados > 0:
-            mensaje += f" (Se omitieron {estudiantes_no_encontrados} filas porque el RUT no existe en el Directorio)."
+                alumnos_nuevos += 1
             
-        return {"mensaje": mensaje}
+        conn.commit()
+        return {
+            "mensaje": f"✅ Éxito: {alumnos_nuevos} alumnos nuevos matriculados y {alumnos_actualizados} actualizados."
+        }
         
     except Exception as e:
-        conn.rollback()
-        print(f"Error en carga masiva de matrículas: {e}")
-        raise HTTPException(status_code=500, detail="Error al procesar el archivo CSV. Revisa el formato de las columnas.")
+        if 'conn' in locals():
+            conn.rollback()
+        print(f"Error procesando archivo SIGE: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en la carga: {str(e)}")
     finally:
-        cur.close()
-        conn.close()
-        archivo.file.close()
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
 
+# =====================================================================
+# SECCIÓN FINAL: CERTIFICADOS Y DASHBOARD
+# =====================================================================
 @app.get("/matriculas/{id_matricula}/certificado")
 def descargar_certificado(id_matricula: int):
-    """
-    Genera un PDF en memoria con el certificado de alumno regular.
-    Se retorna como un 'StreamingResponse' para que el navegador lo muestre.
-    """
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -811,13 +900,11 @@ def descargar_certificado(id_matricula: int):
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         
-        # Título e Introducción
         c.setFont("Helvetica-Bold", 18)
         c.drawString(150, 700, "CERTIFICADO DE ALUMNO REGULAR (RGM)")
         c.setFont("Helvetica", 12)
         c.drawString(100, 650, "El Sistema Local de Educación Pública (SLEP) certifica que:")
         
-        # === DATOS DEL ESTUDIANTE ===
         c.setFont("Helvetica-Bold", 12)
         c.drawString(100, 615, "I. ANTECEDENTES DEL ESTUDIANTE")
         c.setFont("Helvetica", 11)
@@ -825,7 +912,6 @@ def descargar_certificado(id_matricula: int):
         c.drawString(100, 575, f"RUT / IPE: {datos[5]}")
         c.drawString(100, 555, f"Sexo : {datos[9] if datos[9] else 'No registrado'}")
         
-        # === DATOS ACADÉMICOS ===
         c.setFont("Helvetica-Bold", 12)
         c.drawString(100, 520, "II. ANTECEDENTES ACADÉMICOS")
         c.setFont("Helvetica", 11)
@@ -833,7 +919,6 @@ def descargar_certificado(id_matricula: int):
         c.drawString(100, 480, f"Nivel de Enseñanza: {datos[2]}")
         c.drawString(100, 460, f"Curso Asignado: {datos[3]}")
         
-        # === DATOS DEL APODERADO ===
         c.setFont("Helvetica-Bold", 12)
         c.drawString(100, 425, "III. ANTECEDENTES DEL APODERADO TITULAR")
         c.setFont("Helvetica", 11)
@@ -848,7 +933,6 @@ def descargar_certificado(id_matricula: int):
         c.drawString(100, 365, f"Teléfono: {fono_apod}")
         c.drawString(100, 345, f"Correo: {correo_apod}")
 
-        # === DATOS DE LA TRANSACCIÓN ===
         c.setFont("Helvetica", 10)
         c.drawString(100, 295, f"Fecha de Matrícula: {datos[4]}  |  N° Correlativo Interno: {datos[0]}")
         
@@ -868,55 +952,100 @@ def descargar_certificado(id_matricula: int):
         print(f"Error generando PDF: {e}")
         raise HTTPException(status_code=500, detail="Error al generar el certificado")
 
-
-# =====================================================================
-# 5. MÓDULO DE DASHBOARD
-# =====================================================================
 @app.get("/dashboard/estadisticas", summary="Obtener métricas para el dashboard")
-def obtener_estadisticas_dashboard(usuario_actual: dict = Depends(obtener_usuario_actual)):
-    
-    # 💡 Prueba de escritorio: Imprimamos por consola quién está haciendo la petición
-    print(f"Usuario autorizado accediendo: {usuario_actual.get('sub')} con rol {usuario_actual.get('rol')}")
+def obtener_estadisticas_dashboard(
+    establecimiento_id: Optional[int] = None, 
+    anio: Optional[int] = None, # <--- NUEVO PARÁMETRO DE FILTRO
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # 1. Total de alumnos matriculados (Activos)
-        cur.execute("SELECT COUNT(*) FROM matricula WHERE estado = 'Activa'")
+        # 1. Obtener los años disponibles para poblar el selector en React
+        query_anios = "SELECT DISTINCT anio_escolar FROM matricula WHERE anio_escolar IS NOT NULL"
+        param_anios = []
+        if establecimiento_id is not None:
+            query_anios += " AND id_establecimiento = %s"
+            param_anios.append(establecimiento_id)
+        query_anios += " ORDER BY anio_escolar DESC"
+        
+        cur.execute(query_anios, tuple(param_anios))
+        anios_disponibles = [row[0] for row in cur.fetchall()]
+
+        # 2. Armar la base de los filtros para las métricas
+        filtros_sql = ""
+        parametros = []
+        
+        if establecimiento_id is not None:
+            filtros_sql += " AND id_establecimiento = %s"
+            parametros.append(establecimiento_id)
+            
+        if anio is not None:
+            filtros_sql += " AND anio_escolar = %s"
+            parametros.append(anio)
+
+        # 3. Total de alumnos matriculados (Activos)
+        cur.execute(f"SELECT COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql}", tuple(parametros))
         total_activos = cur.fetchone()[0]
 
-        # 2. Total de retiros o bajas (Inactivos, Retirados, etc.)
-        cur.execute("SELECT COUNT(*) FROM matricula WHERE estado != 'Activa'")
+        # 4. Total de retiros o bajas (Inactivos)
+        cur.execute(f"SELECT COUNT(*) FROM matricula WHERE estado != 'Activa' {filtros_sql}", tuple(parametros))
         total_inactivos = cur.fetchone()[0]
 
-        # 3. Agrupación por Nivel de Enseñanza (Solo activos)
-        cur.execute("""
-            SELECT nivel_ensenanza, COUNT(*) 
-            FROM matricula 
-            WHERE estado = 'Activa' 
-            GROUP BY nivel_ensenanza 
-            ORDER BY nivel_ensenanza
-        """)
+        # 5. Agrupación por Nivel de Enseñanza (Solo activos)
+        cur.execute(f"SELECT nivel_ensenanza, COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY nivel_ensenanza ORDER BY nivel_ensenanza", tuple(parametros))
         por_nivel = [{"nombre": row[0] or "Sin Nivel", "cantidad": row[1]} for row in cur.fetchall()]
 
-        # 4. Agrupación por Curso específico (Solo activos)
-        cur.execute("""
-            SELECT curso, COUNT(*) 
-            FROM matricula 
-            WHERE estado = 'Activa' 
-            GROUP BY curso 
-            ORDER BY curso
-        """)
+        # 6. Agrupación por Curso específico (Solo activos)
+        cur.execute(f"SELECT curso, COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
         por_curso = [{"nombre": row[0] or "Sin Curso", "cantidad": row[1]} for row in cur.fetchall()]
 
         return {
+            "anios_disponibles": anios_disponibles,
             "total_activos": total_activos,
             "total_inactivos": total_inactivos,
             "por_nivel": por_nivel,
             "por_curso": por_curso
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail="Error al generar estadísticas: " + str(e))
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
+# =====================================================================
+# MÓDULO DE ESTABLECIMIENTOS (COLEGIOS)
+# =====================================================================
+@app.get("/establecimientos", summary="Obtener lista de colegios registrados")
+def obtener_establecimientos():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Traemos el ID, el RBD y el Nombre ordenados alfabéticamente
+        cur.execute("""
+            SELECT id_establecimiento, rbd, nombre 
+            FROM establecimiento 
+            ORDER BY nombre ASC
+        """)
+        
+        filas = cur.fetchall()
+        colegios = []
+        
+        for fila in filas:
+            colegios.append({
+                "id_establecimiento": fila[0],
+                "rbd": fila[1],
+                "nombre": fila[2]
+            })
+            
+        return colegios
+
+    except Exception as e:
+        print(f"Error al obtener establecimientos: {e}")
+        raise HTTPException(status_code=500, detail="Error interno de la base de datos")
     finally:
         if 'cur' in locals(): cur.close()
         if 'conn' in locals(): conn.close()
