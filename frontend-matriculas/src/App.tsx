@@ -7,6 +7,7 @@ import NuevaMatricula from './pages/NuevaMatricula';
 import Estudiantes from './pages/Estudiantes';
 import CuestionarioRetiro from './pages/CuestionarioRetiro';
 import Login from './pages/Login';
+import Auditoria from './pages/Auditoria';
 
 // ============================================================================
 // COMPONENTE GUARDIÁN (Protección de Rutas)
@@ -31,6 +32,7 @@ export default function App() {
         
         {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
         <Route path="/login" element={<Login />} />
+        <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
 
         {/* 2. RUTAS PRIVADAS (Protegidas por el Guardián) */}
         <Route 
@@ -46,6 +48,7 @@ export default function App() {
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
           <Route path="estudiantes" element={<Estudiantes />} />
+          <Route path="auditoria" element={<Auditoria />} />
         </Route>
 
       </Routes>

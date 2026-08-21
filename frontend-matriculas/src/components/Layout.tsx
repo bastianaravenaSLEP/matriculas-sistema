@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, FolderOpen, Users, LogOut } from 'lucide-react';
+import { Home, FolderOpen, Users, LogOut,Activity } from 'lucide-react';
 
-// 1. Definimos la estructura de datos que nos enviará Python
 interface Establecimiento {
   id_establecimiento: number;
   rbd: string;
@@ -17,18 +16,17 @@ export default function Layout() {
   const usuarioString = localStorage.getItem('usuario');
   const usuario = usuarioString ? JSON.parse(usuarioString) : null;
 
-  // ESTADO CLAVE: Si es COLEGIO, lo forzamos a su ID. Si es SLEP, parte vacío (Todos).
+  // Estado para el colegio seleccionado (Forzado al ID del usuario si es COLEGIO)
   const [colegioSeleccionado, setColegioSeleccionado] = useState<string>(
     usuario?.rol === 'COLEGIO' ? String(usuario.id_establecimiento) : ''
   );
 
-  // 2. NUEVO ESTADO: Para guardar la lista de colegios de la Base de Datos
   const [establecimientos, setEstablecimientos] = useState<Establecimiento[]>([]);
 
-  // 3. NUEVO EFECTO: Buscar los colegios apenas cargue el Layout (si es SLEP)
+  // 1. CARGAMOS LOS ESTABLECIMIENTOS PARA TODOS LOS ROLES (Necesario para mostrar el nombre del colegio)[cite: 7]
   useEffect(() => {
-    if (usuario?.rol === 'SLEP') {
-      const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token');
+    if (token) {
       fetch('http://127.0.0.1:8000/establecimientos', {
         headers: { 'Authorization': `Bearer ${token}` }
       })
@@ -39,7 +37,7 @@ export default function Layout() {
         .then(data => setEstablecimientos(data))
         .catch(err => console.error("Error cargando establecimientos:", err));
     }
-  }, [usuario?.rol]);
+  }, []);
 
   const cerrarSesion = () => {
     localStorage.removeItem('token');
@@ -48,6 +46,9 @@ export default function Layout() {
   };
   
   const isActive = (path: string) => location.pathname === path;
+
+  // Encontramos el nombre del colegio actual para mostrarlo si es director
+  const colegioActual = establecimientos.find(e => e.id_establecimiento.toString() === colegioSeleccionado);
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -67,6 +68,9 @@ export default function Layout() {
           <Link to="/estudiantes" className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive('/estudiantes') ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>
             <Users size={20} /> Estudiantes
           </Link>
+          <Link to="/auditoria" className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive('/auditoria') ? 'bg-blue-600' : 'hover:bg-slate-800'}`}>
+           <Activity size={20} /> Trazabilidad & Auditoría
+          </Link>
         </nav>
       </aside>
 
@@ -74,7 +78,7 @@ export default function Layout() {
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shrink-0">
          
-         {/* Lado Izquierdo (Buscador o Título) */}
+         {/* Lado Izquierdo (Selector SLEP o Título Fijo Colegio) */}
          <div className="flex-1">
             {usuario?.rol === 'SLEP' ? (
               <select 
@@ -83,20 +87,20 @@ export default function Layout() {
                 className="border border-slate-300 rounded-lg shadow-sm py-2 px-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent text-sm w-96 font-medium text-slate-700"
               >
                 <option value="">🌍 Todos los Establecimientos (Visión Global)</option>
-                
-                {/* 4. DIBUJAMOS LA LISTA DINÁMICA DE LA BASE DE DATOS */}
                 {establecimientos.map((est) => (
                   <option key={est.id_establecimiento} value={est.id_establecimiento}>
                     RBD: {est.rbd} - {est.nombre}
                   </option>
                 ))}
-                
               </select>
             ) : (
-              // Si el usuario es rol 'COLEGIO', solo verá el nombre de su establecimiento
-              <h2 className="text-lg font-semibold text-gray-700">
-                {establecimientos.find(e => e.id_establecimiento.toString() === colegioSeleccionado)?.nombre || 'Sistema Transaccional'}
-              </h2>
+              // Si es rol 'COLEGIO', muestra únicamente el nombre de su establecimiento asignado de forma limpia
+              <div className="flex items-center gap-2">
+                <span className="text-xs bg-blue-100 text-blue-800 font-bold px-2.5 py-1 rounded-md">Mi Establecimiento</span>
+                <h2 className="text-base font-bold text-gray-800">
+                  {colegioActual ? `${colegioActual.nombre} (RBD: ${colegioActual.rbd})` : 'Cargando información...'}
+                </h2>
+              </div>
             )}
           </div>
 

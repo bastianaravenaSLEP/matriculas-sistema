@@ -6,9 +6,18 @@ python -m uvicorn main:app --reload
 2° Inicio cd frontend-matriculas
 npm run dev
 
+Contraseña Backend RGM slep
+kaea ccqf qyjd nedu
+
+
 usuario base de datos de prueba
 Email: director@colegioprueba.cl
 Password: admin123
 
 Email: admin@slep.cl
 Password: slep123
+
+✅ Usuario creado/actualizado con éxito.
+🏫 Colegio: Colegio RBD 1506 (ID BD: 3)
+👤 Email: director.valparaiso@colegioslep.cl
+🔑 Password: admin123
