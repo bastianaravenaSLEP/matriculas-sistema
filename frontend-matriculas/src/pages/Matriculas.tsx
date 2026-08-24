@@ -23,7 +23,7 @@ interface Matricula {
 
 export default function Matriculas() {
   const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
-
+  const [motivoCambio, setMotivoCambio] = useState('');
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -280,6 +280,7 @@ const confirmarRetiro = async (e: React.FormEvent) => {
     setIdSeleccionado(id);
     setPlanDestino('');
     setCursoDestino('');
+    setMotivoCambio('');
     setModalCursoAbierto(true);
   };
 
@@ -306,7 +307,8 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
           cod_tipo_ensenanza: parseInt(planDestino), 
-          nuevo_curso: cursoDestino 
+          nuevo_curso: cursoDestino,
+          motivo_cambio_curso: motivoCambio // <--- Enviado al backend
         }),
       });
 
@@ -511,9 +513,21 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 </select>
               </div>
 
+                            <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">3. Motivo o Justificación del Traslado</label>
+                <textarea 
+                  rows={2}
+                  value={motivoCambio} 
+                  onChange={(e) => setMotivoCambio(e.target.value)} 
+                  placeholder="Ej: Solicitud escrita del apoderado por cercanía de domicilio..." 
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  required
+                />
+              </div>
+
               {/* DESTINATARIOS OBLIGATORIOS */}
               <div className="border-t pt-3 space-y-3">
-                <p className="text-xs font-bold text-gray-700 uppercase">3. Envío Obligatorio de Comprobante</p>
+                <p className="text-xs font-bold text-gray-700 uppercase">4. Envío Obligatorio de Comprobante</p>
                 
                 <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
@@ -552,6 +566,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
               </div>
             </form>
           </div>
+          
         </div>
       )}
 

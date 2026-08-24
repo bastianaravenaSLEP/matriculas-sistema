@@ -44,6 +44,7 @@ export default function App() {
           }
         >
           {/* Todas estas rutas hijas heredan la protección del Layout */}
+          
           <Route index element={<Inicio />} />
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />

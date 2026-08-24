@@ -1,10 +1,21 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
+from pydantic import BaseModel
 from database import get_db_connection
 from security import obtener_usuario_actual
 
-# El prefix "/estudiante" hace que todas las rutas aquí empiecen con esa base
 router = APIRouter(prefix="/estudiante", tags=["Estudiantes"])
+
+# 1. ESQUEMA ESTRICTO: Exigimos TODA la info del apoderado y el domicilio del alumno
+class ActualizarEstudianteRequest(BaseModel):
+    domicilio_estudiante: str
+    rut_apoderado: str
+    nombres_apoderado: str
+    apellido_paterno_apoderado: str
+    apellido_materno_apoderado: str
+    domicilio_apoderado: str
+    telefono_apoderado: str
+    correo_apoderado: str
 
 @router.get("")
 def obtener_estudiantes(
@@ -123,25 +134,53 @@ def crear_estudiante(payload: dict, usuario_actual: dict = Depends(obtener_usuar
         if 'cur' in locals(): cur.close()
         if 'conn' in locals(): conn.close()
 
+# 2. RUTA DE ACTUALIZACIÓN BLINDADA
 @router.put("/{rut}")
-def actualizar_datos_estudiante(rut: str, payload: dict, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def actualizar_datos_estudiante(rut: str, req: ActualizarEstudianteRequest, usuario_actual: dict = Depends(obtener_usuario_actual)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        cur.execute("UPDATE estudiante SET domicilio = %s WHERE run_ipe = %s RETURNING id_apoderado_principal", (payload.get("domicilio"), rut))
+        # Actualizar estudiante y obtener si tiene apoderado
+        cur.execute("UPDATE estudiante SET domicilio = %s WHERE run_ipe = %s RETURNING id_apoderado_principal", 
+                    (req.domicilio_estudiante, rut))
         resultado = cur.fetchone()
         
         if not resultado:
             raise HTTPException(status_code=404, detail="Estudiante no encontrado")
             
-        cur.execute("UPDATE apoderado SET telefono = %s, correo_electronico = %s WHERE id_apoderado = %s", (payload.get("telefono_apoderado"), payload.get("correo_apoderado"), resultado[0]))
+        id_apoderado = resultado[0]
+        
+        if id_apoderado:
+            # Si tiene apoderado, actualizamos todos sus datos
+            cur.execute("""
+                UPDATE apoderado 
+                SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                    domicilio = %s, telefono = %s, correo_electronico = %s 
+                WHERE id_apoderado = %s
+            """, (req.rut_apoderado, req.nombres_apoderado, req.apellido_paterno_apoderado, 
+                  req.apellido_materno_apoderado, req.domicilio_apoderado, req.telefono_apoderado, 
+                  req.correo_apoderado, id_apoderado))
+        else:
+            # Si NO TIENE apoderado, insertamos un registro completo y real
+            cur.execute("""
+                INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
+            """, (req.rut_apoderado, req.nombres_apoderado, req.apellido_paterno_apoderado, 
+                  req.apellido_materno_apoderado, req.domicilio_apoderado, req.telefono_apoderado, req.correo_apoderado))
+            
+            nuevo_id_apoderado = cur.fetchone()[0]
+            
+            # Vinculamos al estudiante
+            cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE run_ipe = %s", 
+                        (nuevo_id_apoderado, rut))
         
         conn.commit()
         return {"mensaje": "Datos actualizados exitosamente"}
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail="Error al actualizar los datos")
+        print(f"Error BD: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         if 'cur' in locals(): cur.close()
         if 'conn' in locals(): conn.close()

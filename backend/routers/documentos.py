@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 import io
+import textwrap
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from database import get_db_connection
@@ -13,7 +14,6 @@ from security import obtener_usuario_actual
 
 router = APIRouter(prefix="/documentos", tags=["Emisión de Documentos"])
 
-# 1. El modelo ahora solo recibe una lista de correos de texto plano
 class EmisionRequest(BaseModel):
     id_matricula: int
     tipo_documento: str
@@ -28,12 +28,11 @@ def emitir_documento(req: EmisionRequest, usuario_actual: dict = Depends(obtener
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # 2. Consulta SQL limpia (sin la tabla establecimiento que causaba el error)
         cur.execute("""
             SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula, 
                    e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo, 
                    a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, 
-                   a.correo_electronico
+                   a.correo_electronico, m.estado, m.fecha_retiro, m.motivo_cambio_curso
             FROM matricula m 
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado 
@@ -46,11 +45,7 @@ def emitir_documento(req: EmisionRequest, usuario_actual: dict = Depends(obtener
 
         rut_estudiante = datos[5]
         nombre_completo = f"{datos[6]} {datos[7]} {datos[8]}"
-
-        # 3. Generar el PDF
-        # ... (debajo de nombre_completo = f"{datos[6]} ...") ...
         
-        # --- GENERAR EL PDF DINÁMICO ---
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         
@@ -78,17 +73,44 @@ def emitir_documento(req: EmisionRequest, usuario_actual: dict = Depends(obtener
         c.drawString(100, 555, f"Sexo : {datos[9] or 'No registrado'}")
         
         c.setFont("Helvetica-Bold", 12)
-        c.drawString(100, 520, "II. ANTECEDENTES ACADÉMICOS")
+        c.drawString(100, 520, "II. ANTECEDENTES ACADÉMICOS Y ESTADO")
         c.setFont("Helvetica", 11)
         c.drawString(100, 500, f"Año Escolar: {datos[1]}")
         c.drawString(100, 480, f"Nivel: {datos[2]}")
         c.drawString(100, 460, f"Curso Registrado: {datos[3]}")
         
+        # Estado dinámico con color
+        c.setFont("Helvetica-Bold", 11)
+        if req.tipo_documento == 'RETIRO':
+            c.setFillColorRGB(0.8, 0.1, 0.1)
+            estado_texto = f"Estado: RETIRADO (Fecha: {datos[17] or 'No registrada'})"
+        elif req.tipo_documento == 'CAMBIO_CURSO':
+            c.setFillColorRGB(0.1, 0.3, 0.8)
+            estado_texto = "Estado: TRASLADADO DE CURSO"
+        else:
+            c.setFillColorRGB(0.1, 0.6, 0.1)
+            estado_texto = f"Estado: {datos[16]}"
+            
+        c.drawString(100, 430, estado_texto)
+        c.setFillColorRGB(0, 0, 0) # Volver a negro
+        
+        # Dibujar motivo si es cambio de curso
+        if req.tipo_documento == 'CAMBIO_CURSO':
+            motivo_bd = datos[18] if datos[18] else "No especificado por la administración."
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(100, 390, "III. MOTIVO DEL TRASLADO")
+            
+            c.setFont("Helvetica", 11)
+            lineas_motivo = textwrap.wrap(motivo_bd, width=80) 
+            y_pos = 370
+            for linea in lineas_motivo:
+                c.drawString(100, y_pos, linea)
+                y_pos -= 15
+        
         c.save()
         buffer.seek(0)
-        # ... (sigue con el código de enviar correo) ...
 
-        # 4. Enviar Correo (RECUERDA PONER TUS CREDENCIALES AQUÍ)
+        # 4. Enviar Correo
         remitente = "basti.aravena2001@gmail.com"
         password = "kaea ccqf qyjd nedu" 
 

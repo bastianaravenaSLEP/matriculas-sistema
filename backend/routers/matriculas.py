@@ -8,6 +8,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import smtplib
 from email.message import EmailMessage
+from pydantic import BaseModel
+import textwrap
 
 from database import get_db_connection
 from security import obtener_usuario_actual
@@ -86,15 +88,43 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(o
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # 1. REGLA DE NEGOCIO: Anular matrícula activa anterior del mismo alumno en el mismo año
+        cursor.execute("""
+            UPDATE matricula 
+            SET estado = 'Anulada', 
+                observaciones = CASE 
+                    WHEN observaciones IS NULL OR observaciones = '' THEN 'Anulada automáticamente por registro de nueva matrícula.'
+                    ELSE CONCAT(observaciones, ' | Anulada automáticamente por registro de nueva matrícula.')
+                END
+            WHERE id_estudiante = %s AND anio_escolar = %s AND estado = 'Activa'
+        """, (matricula.id_estudiante, matricula.anio_escolar))
+
+        # 2. CREACIÓN: Insertar la nueva matrícula
         query = """
             INSERT INTO matricula (numero_correlativo, anio_escolar, id_estudiante, id_establecimiento, fecha_matricula, nivel_ensenanza, curso, estado, cod_tipo_ensenanza, cod_grado, letra_curso, id_usuario_ejecutor) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_matricula;
         """
-        valores = (matricula.numero_correlativo, matricula.anio_escolar, matricula.id_estudiante, matricula.id_establecimiento, matricula.fecha_matricula, matricula.nivel_ensenanza, matricula.curso, getattr(matricula, 'estado', 'Activa'), getattr(matricula, 'cod_tipo_ensenanza', None), getattr(matricula, 'cod_grado', None), getattr(matricula, 'letra_curso', None), matricula.id_usuario_ejecutor)
+        valores = (
+            matricula.numero_correlativo, 
+            matricula.anio_escolar, 
+            matricula.id_estudiante, 
+            matricula.id_establecimiento, 
+            matricula.fecha_matricula, 
+            matricula.nivel_ensenanza, 
+            matricula.curso, 
+            getattr(matricula, 'estado', 'Activa'), 
+            getattr(matricula, 'cod_tipo_ensenanza', None), 
+            getattr(matricula, 'cod_grado', None), 
+            getattr(matricula, 'letra_curso', None), 
+            matricula.id_usuario_ejecutor
+        )
         cursor.execute(query, valores)
         nuevo_id = cursor.fetchone()[0]
+        
+        # Confirmar los cambios
         conn.commit()
-        return {"mensaje": "Matrícula creada exitosamente", "id_matricula": nuevo_id}
+        return {"mensaje": "Matrícula creada exitosamente. Registro anterior anulado (si existía).", "id_matricula": nuevo_id}
+        
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -147,8 +177,13 @@ def responder_cuestionario(id_matricula: int, payload: CuestionarioRetiro):
         cur.close()
         conn.close()
 
+class CambioCursoRequest(BaseModel):
+    cod_tipo_ensenanza: int
+    nuevo_curso: str
+    motivo_cambio_curso: Optional[str] = None 
+
 @router.put("/{id_matricula}/curso")
-def cambiar_curso_matricula(id_matricula: int, payload: dict, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def cambiar_curso(id_matricula: int, req: CambioCursoRequest, usuario_actual: dict = Depends(obtener_usuario_actual)):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -159,11 +194,15 @@ def cambiar_curso_matricula(id_matricula: int, payload: dict, usuario_actual: di
         if mat_actual[0] != datetime.now().year: raise HTTPException(status_code=400, detail="Solo se puede cambiar curso en año vigente.")
         if mat_actual[1] != 'Activa': raise HTTPException(status_code=400, detail="El alumno debe estar activo.")
             
-        nueva_observacion = f"{mat_actual[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Trasladado de '{mat_actual[2]}' a '{payload.get('nuevo_curso')}'."
+        nueva_observacion = f"{mat_actual[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Trasladado de '{mat_actual[2]}' a '{req.nuevo_curso}'."
         
-        cur.execute("UPDATE matricula SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s WHERE id_matricula = %s", (payload.get("cod_tipo_ensenanza"), payload.get("nuevo_curso"), nueva_observacion.strip(), id_matricula))
+        cur.execute("""
+            UPDATE matricula 
+            SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s, motivo_cambio_curso = %s 
+            WHERE id_matricula = %s
+        """, (req.cod_tipo_ensenanza, req.nuevo_curso, nueva_observacion.strip(), req.motivo_cambio_curso, id_matricula))
         conn.commit()
-        return {"mensaje": "Curso actualizado exitosamente."}
+        return {"status": "success", "mensaje": "Curso y motivo actualizados correctamente."}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -176,12 +215,11 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA"):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Agregamos m.estado y m.fecha_retiro al final de la consulta (índices 16 y 17)
         cur.execute("""
             SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula, 
                    e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo, 
                    a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, 
-                   a.correo_electronico, m.estado, m.fecha_retiro
+                   a.correo_electronico, m.estado, m.fecha_retiro, m.motivo_cambio_curso
             FROM matricula m 
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado 
@@ -194,19 +232,15 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA"):
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         
-        # --- LÓGICA DINÁMICA DEL DOCUMENTO ---
         if tipo == 'RETIRO':
             titulo_pdf = "CERTIFICADO DE RETIRO ESCOLAR"
             texto_accion = "certifica el RETIRO OFICIAL del siguiente estudiante:"
-            estado_texto = f"Estado en Sistema: RETIRADO (Fecha: {datos[17] or 'No registrada'})"
         elif tipo == 'CAMBIO_CURSO':
             titulo_pdf = "COMPROBANTE DE TRASLADO DE CURSO"
             texto_accion = "certifica el TRASLADO DE CURSO del siguiente estudiante:"
-            estado_texto = f"Estado en Sistema: TRASLADADO (Curso Actual: {datos[3]})"
         else:
             titulo_pdf = "CERTIFICADO DE ALUMNO REGULAR (RGM)"
             texto_accion = "certifica que el siguiente estudiante se encuentra MATRICULADO:"
-            estado_texto = f"Estado en Sistema: {datos[16]}"
 
         c.setFont("Helvetica-Bold", 16)
         c.drawString(150, 700, titulo_pdf)
@@ -228,16 +262,33 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA"):
         c.drawString(100, 480, f"Nivel: {datos[2]}")
         c.drawString(100, 460, f"Curso: {datos[3]}")
         
-        # Imprimimos el estado dinámico en rojo/azul para que destaque
+        # Estado dinámico con color
         c.setFont("Helvetica-Bold", 11)
         if tipo == 'RETIRO':
-            c.setFillColorRGB(0.8, 0.1, 0.1) # Rojo
+            c.setFillColorRGB(0.8, 0.1, 0.1)
+            estado_texto = f"Estado: RETIRADO (Fecha: {datos[17] or 'No registrada'})"
         elif tipo == 'CAMBIO_CURSO':
-            c.setFillColorRGB(0.1, 0.3, 0.8) # Azul
+            c.setFillColorRGB(0.1, 0.3, 0.8)
+            estado_texto = "Estado: TRASLADADO DE CURSO"
         else:
-            c.setFillColorRGB(0.1, 0.6, 0.1) # Verde
+            c.setFillColorRGB(0.1, 0.6, 0.1)
+            estado_texto = f"Estado: {datos[16]}"
             
         c.drawString(100, 430, estado_texto)
+        c.setFillColorRGB(0, 0, 0) # Volver a negro
+        
+        # Dibujar motivo si es cambio de curso
+        if tipo == 'CAMBIO_CURSO':
+            motivo_bd = datos[18] if datos[18] else "No especificado por la administración."
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(100, 390, "III. MOTIVO DEL TRASLADO")
+            
+            c.setFont("Helvetica", 11)
+            lineas_motivo = textwrap.wrap(motivo_bd, width=80) 
+            y_pos = 370
+            for linea in lineas_motivo:
+                c.drawString(100, y_pos, linea)
+                y_pos -= 15
         
         c.save()
         buffer.seek(0)

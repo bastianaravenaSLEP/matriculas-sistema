@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Search, UserCheck } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, X, Copy } from 'lucide-react';
 
 interface MatriculaBase {
   id_establecimiento: number;
@@ -8,6 +8,8 @@ interface MatriculaBase {
   tipo_ensenanza: string;
   nivel_ensenanza: string;
   curso: string;
+  estudiante_rut: string;
+  anio_escolar: number;
 }
 
 export default function NuevaMatricula() {
@@ -20,15 +22,34 @@ export default function NuevaMatricula() {
   // Estados para búsqueda de estudiantes
   const [rutBusqueda, setRutBusqueda] = useState('');
   const [estudiante, setEstudiante] = useState<any>(null);
+  const [estudianteCompleto, setEstudianteCompleto] = useState<any>(null);
   const [estudiantesDb, setEstudiantesDb] = useState<any[]>([]);
   const [sugerencias, setSugerencias] = useState<any[]>([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+
+  // Estados de Precarga y Validación Completa
+  const [huboPrecarga, setHuboPrecarga] = useState(false);
+  const [datosFaltantes, setDatosFaltantes] = useState<string[]>([]);
+  const [modalFaltantes, setModalFaltantes] = useState(false);
+  
+  // NUEVO: Estado con todos los campos obligatorios del apoderado
+  const [formFaltantes, setFormFaltantes] = useState({
+    domicilio_estudiante: '',
+    rut_apoderado: '',
+    nombres_apoderado: '',
+    apellido_paterno_apoderado: '',
+    apellido_materno_apoderado: '',
+    domicilio_apoderado: '',
+    telefono_apoderado: '',
+    correo_apoderado: ''
+  });
+  
+  const [guardandoFaltantes, setGuardandoFaltantes] = useState(false);
 
   // Estados para la lógica en cascada
   const [establecimientosDb, setEstablecimientosDb] = useState<any[]>([]);
   const [todasLasMatriculas, setTodasLasMatriculas] = useState<MatriculaBase[]>([]);
 
-  // Formulario de matrícula
   const [formulario, setFormulario] = useState({
     id_establecimiento: '',
     numero_correlativo: '',
@@ -41,29 +62,25 @@ export default function NuevaMatricula() {
     letra_curso: 'A',
   });
 
-  // Cargar datos iniciales al montar la vista
   useEffect(() => {
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': `Bearer ${token}` };
 
-    // 1. Cargar Establecimientos
     fetch('http://127.0.0.1:8000/establecimientos', { headers })
       .then(res => res.json())
       .then(data => {
         setEstablecimientosDb(data);
-        if (data.length > 0) {
+        if (data.length > 0 && !formulario.id_establecimiento) {
           setFormulario(prev => ({ ...prev, id_establecimiento: String(data[0].id_establecimiento) }));
         }
       })
-      .catch(err => console.error("Error cargando establecimientos:", err));
+      .catch(err => console.error("Error establecimientos:", err));
 
-    // 2. Cargar Matrículas existentes
     fetch('http://127.0.0.1:8000/matriculas', { headers })
       .then(res => res.json())
       .then(data => setTodasLasMatriculas(data))
-      .catch(err => console.error("Error cargando base de matrículas:", err));
+      .catch(err => console.error("Error matrículas:", err));
 
-    // 3. Cargar Estudiantes y precargar si viene desde el módulo de estudiantes
     fetch('http://127.0.0.1:8000/estudiante', { headers })
       .then(res => res.json())
       .then(datos => {
@@ -74,98 +91,72 @@ export default function NuevaMatricula() {
           if (encontrado) seleccionarEstudiante(encontrado);
         }
       })
-      .catch(err => console.error("Error cargando estudiantes:", err));
+      .catch(err => console.error("Error estudiantes:", err));
   }, [location.state]);
 
-  // --- FUNCIÓN INTELIGENTE PARA DETERMINAR EL NIVEL REAL ---
   const determinarNivelInteligente = (cursoStr: string, codigoPlan: number) => {
     const texto = cursoStr.toLowerCase();
-    
-    // 1. Si el texto del curso contiene palabras clave, mandan ellas
-    if (texto.includes('básico') || texto.includes('basico')) {
-      return 'Educación Básica';
-    }
-    if (texto.includes('medio') || texto.includes('media')) {
-      return 'Educación Media';
-    }
-    if (texto.includes('parvularia') || texto.includes('kínder') || texto.includes('kinder') || texto.includes('pre-kínder') || texto.includes('sala cuna')) {
-      return 'Educación Parvularia';
-    }
-
-    // 2. Si no es claro en el texto, nos guiamos por el código oficial Mineduc
+    if (texto.includes('básico') || texto.includes('basico')) return 'Educación Básica';
+    if (texto.includes('medio') || texto.includes('media')) return 'Educación Media';
+    if (texto.includes('parvularia') || texto.includes('kínder') || texto.includes('kinder') || texto.includes('pre-kínder') || texto.includes('sala cuna')) return 'Educación Parvularia';
     if (codigoPlan === 10) return 'Educación Parvularia';
     if (codigoPlan >= 110 && codigoPlan <= 119) return 'Educación Básica';
     if (codigoPlan >= 300) return 'Educación Media';
-
-    return 'Educación Básica'; // Valor por defecto seguro
+    return 'Educación Básica'; 
   };
 
-  // A. Códigos de enseñanza disponibles según el Establecimiento
   const codigosDisponibles = useMemo(() => {
     if (!formulario.id_establecimiento) return [];
     const idEst = Number(formulario.id_establecimiento);
-    
     const filtradas = todasLasMatriculas.filter(m => Number(m.id_establecimiento) === idEst);
     const mapaCodigos = new Map();
-    
     filtradas.forEach(m => {
       if (m.cod_tipo_ensenanza !== null && m.cod_tipo_ensenanza !== undefined) {
         mapaCodigos.set(Number(m.cod_tipo_ensenanza), m.tipo_ensenanza || 'Plan de Estudio');
       }
     });
-
     return Array.from(mapaCodigos.entries()).map(([codigo, nombre]) => ({ codigo, nombre }));
   }, [formulario.id_establecimiento, todasLasMatriculas]);
 
-  // B. Cursos disponibles según Establecimiento y Código de Plan
   const cursosDisponibles = useMemo(() => {
     if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza) return [];
     const idEst = Number(formulario.id_establecimiento);
     const codEns = Number(formulario.cod_tipo_ensenanza);
-
     const filtradas = todasLasMatriculas.filter(
       m => Number(m.id_establecimiento) === idEst && Number(m.cod_tipo_ensenanza) === codEns
     );
-
     const cursosSet = new Set<string>();
     filtradas.forEach(m => {
       if (m.curso) cursosSet.add(m.curso);
     });
-
     return Array.from(cursosSet).sort();
   }, [formulario.id_establecimiento, formulario.cod_tipo_ensenanza, todasLasMatriculas]);
 
-  // Auto-seleccionar el primer código al cambiar de colegio
   useEffect(() => {
     if (codigosDisponibles.length > 0) {
-      setFormulario(prev => ({ 
-        ...prev, 
-        cod_tipo_ensenanza: String(codigosDisponibles[0].codigo), 
-        cursoSeleccionado: '' 
-      }));
-    } else {
-      setFormulario(prev => ({ ...prev, cod_tipo_ensenanza: '', cursoSeleccionado: '' }));
+      const existe = codigosDisponibles.find(c => String(c.codigo) === formulario.cod_tipo_ensenanza);
+      if (!existe) {
+        setFormulario(prev => ({ ...prev, cod_tipo_ensenanza: String(codigosDisponibles[0].codigo), cursoSeleccionado: '' }));
+      }
     }
   }, [formulario.id_establecimiento, codigosDisponibles]);
 
-  // Auto-seleccionar el primer curso al cambiar el código de plan
   useEffect(() => {
     if (cursosDisponibles.length > 0) {
-      seleccionarCurso(cursosDisponibles[0]);
-    } else {
-      setFormulario(prev => ({ ...prev, cursoSeleccionado: '', cod_grado: 1, letra_curso: 'A' }));
+      if (!cursosDisponibles.includes(formulario.cursoSeleccionado)) {
+        seleccionarCurso(cursosDisponibles[0]);
+      } else {
+        seleccionarCurso(formulario.cursoSeleccionado);
+      }
     }
   }, [formulario.cod_tipo_ensenanza, cursosDisponibles]);
 
-  // Descomponer curso y calcular nivel inteligentemente
   const seleccionarCurso = (cursoStr: string) => {
     const matchNumero = cursoStr.match(/\d+/);
     const gradoNum = matchNumero ? parseInt(matchNumero[0], 10) : 1;
-
     const partes = cursoStr.trim().split(' ');
     const letraEncontrada = partes.length > 0 ? partes[partes.length - 1] : 'A';
     const letraFinal = letraEncontrada.length <= 2 ? letraEncontrada.replace(/[^A-Z]/gi, '') || 'A' : 'A';
-
     const codigoActual = Number(formulario.cod_tipo_ensenanza) || 110;
     const nivelCalculado = determinarNivelInteligente(cursoStr, codigoActual);
 
@@ -194,11 +185,58 @@ export default function NuevaMatricula() {
     }
   };
 
+  const procesarEstudiante = (datos: any, estRun: string) => {
+    setEstudiante(datos.personal);
+    setEstudianteCompleto(datos);
+
+    // 1. VALIDACIÓN ESTRICTA (Si falta un dato base, se exige completar todo el formulario)
+    const faltan: string[] = [];
+    if (!datos.personal.domicilio || datos.personal.domicilio === "Sin registrar") faltan.push("Domicilio del Estudiante");
+    if (!datos.apoderado.rut || datos.apoderado.rut === "Sin registrar") faltan.push("RUT del Apoderado");
+    if (!datos.apoderado.nombre || datos.apoderado.nombre === "Pendiente") faltan.push("Nombre Completo del Apoderado");
+    if (!datos.apoderado.telefono || datos.apoderado.telefono === "-") faltan.push("Teléfono del Apoderado");
+    if (!datos.apoderado.correo || datos.apoderado.correo === "-") faltan.push("Correo del Apoderado");
+    
+    setDatosFaltantes(faltan);
+
+    if (faltan.length > 0) {
+      // Pre-cargamos lo que haya disponible para no borrar datos existentes
+      setFormFaltantes({
+        domicilio_estudiante: datos.personal.domicilio !== "Sin registrar" ? datos.personal.domicilio : '',
+        rut_apoderado: datos.apoderado.rut !== "Sin registrar" ? datos.apoderado.rut : '',
+        nombres_apoderado: '',
+        apellido_paterno_apoderado: '',
+        apellido_materno_apoderado: '',
+        domicilio_apoderado: '',
+        telefono_apoderado: datos.apoderado.telefono !== "-" ? datos.apoderado.telefono : '',
+        correo_apoderado: datos.apoderado.correo !== "-" ? datos.apoderado.correo : ''
+      });
+    }
+
+    // 2. PRECARGA DE HISTORIAL
+    const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estRun);
+    if (historicas.length > 0) {
+      historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
+      const ultima = historicas[0];
+
+      setFormulario(prev => ({
+        ...prev,
+        id_establecimiento: String(ultima.id_establecimiento),
+        cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
+        cursoSeleccionado: ultima.curso
+      }));
+      setHuboPrecarga(true);
+    } else {
+      setHuboPrecarga(false);
+    }
+  };
+
   const seleccionarEstudiante = async (est: any) => {
     setRutBusqueda(est.run);
     setMostrarSugerencias(false);
     setCargando(true);
     setError('');
+    setHuboPrecarga(false);
     
     try {
       const token = localStorage.getItem('token');
@@ -208,7 +246,7 @@ export default function NuevaMatricula() {
       if (!respuesta.ok) throw new Error('Estudiante no encontrado en el sistema.');
       
       const datos = await respuesta.json();
-      setEstudiante(datos.personal); 
+      procesarEstudiante(datos, est.run);
     } catch (err: any) {
       setError(err.message);
       setEstudiante(null);
@@ -217,13 +255,56 @@ export default function NuevaMatricula() {
     }
   };
 
+  const guardarDatosFaltantes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!estudiante) return;
+    setGuardandoFaltantes(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      
+      // 1. Envío al Backend
+      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify(formFaltantes) // Ahora envía los 8 campos exactos
+      });
+
+      if (!respuesta.ok) throw new Error('Error al guardar la información');
+      
+      // 2. Cache-Buster
+      const timestamp = new Date().getTime();
+      const refreshRes = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}?t=${timestamp}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+        cache: 'no-store' 
+      });
+      
+      const datosNuevos = await refreshRes.json();
+      procesarEstudiante(datosNuevos, estudiante.run);
+      setModalFaltantes(false);
+      
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setGuardandoFaltantes(false);
+    }
+  };
+
+  const copiarDomicilio = () => {
+    setFormFaltantes(prev => ({ ...prev, domicilio_apoderado: prev.domicilio_estudiante }));
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormulario({ ...formulario, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!estudiante) return;
+    if (!estudiante || datosFaltantes.length > 0) return;
 
     setCargando(true);
     setError('');
@@ -270,7 +351,7 @@ export default function NuevaMatricula() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6 pb-10">
       <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
       
       {/* PASO 1: ESTUDIANTE */}
@@ -295,7 +376,7 @@ export default function NuevaMatricula() {
             {estudiante && (
               <button 
                 type="button" 
-                onClick={() => { setEstudiante(null); setRutBusqueda(''); }} 
+                onClick={() => { setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); }} 
                 className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
               >
                 Cambiar Alumno
@@ -328,31 +409,43 @@ export default function NuevaMatricula() {
         {estudiante && (
           <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-lg flex items-start gap-4 animate-in fade-in">
             <div className="bg-emerald-100 p-2 rounded-full text-emerald-600 mt-1"><UserCheck size={24} /></div>
-            <div>
-              <p className="text-sm text-emerald-800 font-semibold uppercase tracking-wider">Estudiante Precargado Correctamente</p>
+            <div className="flex-1">
+              <p className="text-sm text-emerald-800 font-semibold uppercase tracking-wider">Estudiante Seleccionado</p>
               <p className="text-lg font-bold text-gray-900">{estudiante.nombres} {estudiante.apellidos}</p>
-              <p className="text-sm text-gray-600">RUT: {estudiante.run}</p>
+              <p className="text-sm text-gray-600 mb-1">RUT: {estudiante.run}</p>
+              
+              {/* ALERTA DE DATOS FALTANTES */}
+              {datosFaltantes.length > 0 && (
+                <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <div className="flex items-center gap-2 text-orange-800 font-bold text-sm mb-1">
+                    <AlertCircle size={16} /> 
+                    <span>* Información Incompleta (Estudiante / Apoderado)</span>
+                  </div>
+                  <ul className="list-disc pl-5 text-xs text-orange-700 mb-3">
+                    {datosFaltantes.map(dato => <li key={dato}>{dato}</li>)}
+                  </ul>
+                  <button 
+                    type="button" 
+                    onClick={() => setModalFaltantes(true)}
+                    className="text-xs font-bold bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded transition-colors"
+                  >
+                    Completar Ficha Obligatoria
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* PASO 2: DATOS ACADÉMICOS EN CASCADA */}
-      <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-200 transition-opacity ${!estudiante ? 'opacity-50 pointer-events-none' : ''}`}>
+      {/* PASO 2: DATOS ACADÉMICOS */}
+      <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-200 transition-opacity ${(!estudiante || datosFaltantes.length > 0) ? 'opacity-50 pointer-events-none' : ''}`}>
         <h3 className="font-semibold text-gray-700 mb-6">Paso 2: Datos de Matrícula y Establecimiento</h3>
         
         <form onSubmit={handleSubmit} className="space-y-5">
-          
-          {/* 1. ESTABLECIMIENTO */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Establecimiento Educacional</label>
-            <select 
-              name="id_establecimiento" 
-              value={formulario.id_establecimiento} 
-              onChange={handleChange} 
-              required
-              className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-medium text-gray-800"
-            >
+            <select name="id_establecimiento" value={formulario.id_establecimiento} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-medium text-gray-800">
               {establecimientosDb.map((est) => (
                 <option key={est.id_establecimiento} value={est.id_establecimiento}>
                   RBD: {est.rbd} - {est.nombre}
@@ -377,38 +470,22 @@ export default function NuevaMatricula() {
             <input required type="date" name="fecha_matricula" value={formulario.fecha_matricula} onChange={handleChange} className="w-full border border-gray-300 rounded-lg p-2 outline-none" />
           </div>
 
-          {/* 2. CÓDIGO DE ENSEÑANZA Y CURSO EN CASCADA REAL */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Código de Plan (Tipo Enseñanza)</label>
-              <select 
-                name="cod_tipo_ensenanza" 
-                value={formulario.cod_tipo_ensenanza} 
-                onChange={handleChange} 
-                required
-                className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-mono"
-              >
+              <select name="cod_tipo_ensenanza" value={formulario.cod_tipo_ensenanza} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-mono">
                 {codigosDisponibles.length === 0 ? (
                   <option value="">No hay planes registrados</option>
                 ) : (
                   codigosDisponibles.map(item => (
-                    <option key={item.codigo} value={item.codigo}>
-                      Cod. {item.codigo} - {item.nombre}
-                    </option>
+                    <option key={item.codigo} value={item.codigo}>Cod. {item.codigo} - {item.nombre}</option>
                   ))
                 )}
               </select>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Curso (Sala)</label>
-              <select 
-                name="cursoSeleccionado" 
-                value={formulario.cursoSeleccionado} 
-                onChange={(e) => seleccionarCurso(e.target.value)} 
-                required
-                className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-bold text-blue-800"
-              >
+              <select name="cursoSeleccionado" value={formulario.cursoSeleccionado} onChange={(e) => seleccionarCurso(e.target.value)} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-bold text-blue-800">
                 {cursosDisponibles.length === 0 ? (
                   <option value="">Seleccione un plan primero</option>
                 ) : (
@@ -420,7 +497,12 @@ export default function NuevaMatricula() {
             </div>
           </div>
 
-          {/* Resumen automático de autocompletado */}
+          {huboPrecarga && (
+            <div className="bg-emerald-50 text-emerald-700 text-xs font-bold p-2 rounded border border-emerald-200">
+              ✓ Se ha precargado exitosamente la información del establecimiento y curso anterior.
+            </div>
+          )}
+
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs text-gray-500 flex justify-between">
             <span>Grado autodetectado: <strong>{formulario.cod_grado}</strong></span>
             <span>Letra autodetectada: <strong>{formulario.letra_curso}</strong></span>
@@ -431,12 +513,91 @@ export default function NuevaMatricula() {
             <button type="button" onClick={() => navigate('/matriculas')} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">
               Cancelar
             </button>
-            <button type="submit" disabled={cargando} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50">
+            <button type="submit" disabled={cargando || !estudiante || datosFaltantes.length > 0} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50">
               {cargando ? 'Procesando...' : 'Confirmar Matrícula'}
             </button>
           </div>
         </form>
       </div>
+
+      {/* MODAL COMPLETAR DATOS FALTANTES - FORMULARIO ESTRICTO DE 8 CAMPOS */}
+      {modalFaltantes && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center bg-gray-50 p-4 border-b border-gray-200 sticky top-0 z-10">
+              <h3 className="font-bold text-gray-800">Actualización Obligatoria de Datos</h3>
+              <button type="button" onClick={() => setModalFaltantes(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            
+            <form onSubmit={guardarDatosFaltantes} className="p-5 space-y-6">
+              
+              {/* Sección 1: Estudiante */}
+              <div>
+                <h4 className="text-sm font-bold text-blue-800 border-b pb-1 mb-3">1. Datos del Estudiante</h4>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Domicilio del Alumno</label>
+                  <input required type="text" value={formFaltantes.domicilio_estudiante} onChange={e => setFormFaltantes({...formFaltantes, domicilio_estudiante: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-blue-500" placeholder="Ej: Calle Prat 123, Valparaíso" />
+                </div>
+              </div>
+
+              {/* Sección 2: Apoderado */}
+              <div>
+                <h4 className="text-sm font-bold text-emerald-800 border-b pb-1 mb-3">2. Identificación del Apoderado Titular</h4>
+                
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">RUT / Pasaporte</label>
+                    <input required type="text" value={formFaltantes.rut_apoderado} onChange={e => setFormFaltantes({...formFaltantes, rut_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: 12345678-9" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombres</label>
+                    <input required type="text" value={formFaltantes.nombres_apoderado} onChange={e => setFormFaltantes({...formFaltantes, nombres_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: Juan Carlos" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Apellido Paterno</label>
+                    <input required type="text" value={formFaltantes.apellido_paterno_apoderado} onChange={e => setFormFaltantes({...formFaltantes, apellido_paterno_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: Pérez" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Apellido Materno</label>
+                    <input required type="text" value={formFaltantes.apellido_materno_apoderado} onChange={e => setFormFaltantes({...formFaltantes, apellido_materno_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: González" />
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <div className="flex justify-between items-end mb-1">
+                    <label className="block text-xs font-bold text-gray-700 uppercase">Domicilio del Apoderado</label>
+                    <button type="button" onClick={copiarDomicilio} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                      <Copy size={14} /> Usar domicilio del estudiante
+                    </button>
+                  </div>
+                  <input required type="text" value={formFaltantes.domicilio_apoderado} onChange={e => setFormFaltantes({...formFaltantes, domicilio_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Dirección completa del apoderado" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Teléfono</label>
+                    <input required type="text" value={formFaltantes.telefono_apoderado} onChange={e => setFormFaltantes({...formFaltantes, telefono_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: +569..." />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo Electrónico</label>
+                    <input required type="email" value={formFaltantes.correo_apoderado} onChange={e => setFormFaltantes({...formFaltantes, correo_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="correo@ejemplo.cl" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-100">
+                <button type="button" onClick={() => setModalFaltantes(false)} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-medium">Cancelar</button>
+                <button type="submit" disabled={guardandoFaltantes} className="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded font-medium disabled:opacity-50">
+                  {guardandoFaltantes ? 'Guardando...' : 'Guardar y Continuar Matrícula'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,7 +10,10 @@ class MatriculaCreate(BaseModel):
     fecha_matricula: date
     nivel_ensenanza: str
     curso: str
-    id_usuario_ejecutor: int 
+    id_usuario_ejecutor: int
+    cod_tipo_ensenanza: Optional[int] = None
+    cod_grado: Optional[int] = None
+    letra_curso: Optional[str] = None
 
 class MatriculaUpdate(BaseModel):
     estado: str
