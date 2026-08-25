@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useOutletContext } from 'react-router-dom';
-// 1. IMPORTAMOS EL NUEVO MODAL
 import ModalEmisionDocumento from '../components/ModalEmisionDocumento';
 
 interface Matricula {
@@ -23,6 +22,12 @@ interface Matricula {
 
 export default function Matriculas() {
   const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
+
+  // --- LÓGICA DE ROLES ---
+  const usuarioString = localStorage.getItem('usuario');
+  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+  const puedeEditar = !['Visualizador_SLEP', 'Visualizador_Colegio'].includes(usuario?.rol);
+
   const [motivoCambio, setMotivoCambio] = useState('');
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -45,22 +50,18 @@ export default function Matriculas() {
   const [procesandoRetiro, setProcesandoRetiro] = useState(false);
   const [subiendoArchivo, setSubiendoArchivo] = useState(false);
 
-  // --- NUEVOS ESTADOS A AGREGAR ARRIBA EN TU COMPONENTE Matriculas ---
-  // Para el Modal de Retiro
   const [enviarDirectorRetiro, setEnviarDirectorRetiro] = useState(false);
   const [correoDirectorRetiro, setCorreoDirectorRetiro] = useState('');
-  const [enviarApoderadoRetiro, setEnviarApoderadoRetiro] = useState(true); // Por defecto sugerido
+  const [enviarApoderadoRetiro, setEnviarApoderadoRetiro] = useState(true); 
   const [correoApoderadoRetiro, setCorreoApoderadoRetiro] = useState('');
   const [descargarLocalRetiro, setDescargarLocalRetiro] = useState(false);
 
-  // Para el Modal de Cambio de Curso
   const [enviarDirectorCurso, setEnviarDirectorCurso] = useState(false);
   const [correoDirectorCurso, setCorreoDirectorCurso] = useState('');
   const [enviarApoderadoCurso, setEnviarApoderadoCurso] = useState(true);
   const [correoApoderadoCurso, setCorreoApoderadoCurso] = useState('');
   const [descargarLocalCurso, setDescargarLocalCurso] = useState(false);
 
-  // --- 2. NUEVOS ESTADOS PARA EL MODAL DE EMISIÓN ---
   const [modalEmisionAbierto, setModalEmisionAbierto] = useState(false);
   const [datosEmision, setDatosEmision] = useState<{
     id: number;
@@ -197,7 +198,6 @@ export default function Matriculas() {
     return resultado;
   }, [matriculas, busqueda, filtroAnio, filtroCodigo, filtroCurso, ordenEstado]);
 
-  // --- 3. FUNCIÓN PARA ABRIR EL MODAL ---
   const abrirModalEmision = (idMatricula: number, tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO') => {
     const matricula = matriculas.find(m => m.id_matricula === idMatricula);
     if (matricula) {
@@ -220,7 +220,6 @@ const confirmarRetiro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado) return;
 
-    // Validación obligatoria de correos
     const destinatarios: string[] = [];
     if (enviarDirectorRetiro && correoDirectorRetiro.trim()) destinatarios.push(correoDirectorRetiro.trim());
     if (enviarApoderadoRetiro && correoApoderadoRetiro.trim()) destinatarios.push(correoApoderadoRetiro.trim());
@@ -234,7 +233,6 @@ const confirmarRetiro = async (e: React.FormEvent) => {
     const token = localStorage.getItem('token'); 
 
     try {
-      // 1. Actualizar estado en la BD (Retiro)
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -249,7 +247,6 @@ const confirmarRetiro = async (e: React.FormEvent) => {
 
       if (!respuesta.ok) throw new Error('Error al procesar la baja en el sistema');
 
-      // 2. Envío obligatorio del correo con el PDF de Retiro
       await fetch('http://127.0.0.1:8000/documentos/emitir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -260,7 +257,6 @@ const confirmarRetiro = async (e: React.FormEvent) => {
         })
       });
 
-      // 3. Descarga local opcional si marcó la casilla
       if (descargarLocalRetiro) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=RETIRO`, '_blank');
       }
@@ -301,21 +297,19 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
     const token = localStorage.getItem('token'); 
 
     try {
-      // 1. Actualizar curso en la BD
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/curso`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
           cod_tipo_ensenanza: parseInt(planDestino), 
           nuevo_curso: cursoDestino,
-          motivo_cambio_curso: motivoCambio // <--- Enviado al backend
+          motivo_cambio_curso: motivoCambio 
         }),
       });
 
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al cambiar de curso');
 
-      // 2. Envío obligatorio del correo de traslado
       await fetch('http://127.0.0.1:8000/documentos/emitir', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -326,7 +320,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
         })
       });
 
-      // 3. Descarga local opcional
       if (descargarLocalCurso) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=CAMBIO_CURSO`, '_blank');
       }
@@ -348,22 +341,27 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
         <h1 className="text-2xl font-bold text-gray-800">Registro de Matrículas</h1>
         
         <div className="flex flex-wrap gap-3">
-          <input 
-            type="file" accept=".csv, .xls, .xlsx" 
-            id="csv-upload-matriculas" className="hidden" 
-            onChange={manejarSubidaCSV} disabled={subiendoArchivo}
-          />
-          <label 
-            htmlFor="csv-upload-matriculas" 
-            className={`flex items-center justify-center cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
-              subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
-            }`}
-          >
-            {subiendoArchivo ? 'Procesando...' : '📄 Cargar SIGE / CSV'}
-          </label>
-          <Link to="/matriculas/nueva" className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-            + Nueva Matrícula
-          </Link>
+          {/* OCULTAMIENTO CONDICIONAL DE BOTONES SUPERIORES */}
+          {puedeEditar && (
+            <>
+              <input 
+                type="file" accept=".csv, .xls, .xlsx" 
+                id="csv-upload-matriculas" className="hidden" 
+                onChange={manejarSubidaCSV} disabled={subiendoArchivo}
+              />
+              <label 
+                htmlFor="csv-upload-matriculas" 
+                className={`flex items-center justify-center cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
+                  subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
+                }`}
+              >
+                {subiendoArchivo ? 'Procesando...' : '📄 Cargar SIGE / CSV'}
+              </label>
+              <Link to="/matriculas/nueva" className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                + Nueva Matrícula
+              </Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -453,16 +451,18 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                     <td className="p-4 text-right">
                       {mat.estado === 'Activa' && (
                         <div className="flex justify-end gap-3">
-                          {/* 6. AQUÍ CONECTAMOS EL BOTÓN AL NUEVO MODAL DE EMISIÓN */}
                           <button onClick={() => abrirModalEmision(mat.id_matricula, 'MATRICULA')} className="text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
                             Emitir Doc.
                           </button>
                           
-                          {mat.anio_escolar === anioActual && (
+                          {/* OCULTAMIENTO CONDICIONAL DE BOTONES DE ACCIÓN */}
+                          {puedeEditar && mat.anio_escolar === anioActual && (
                             <button onClick={() => iniciarCambioCurso(mat.id_matricula)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>
                           )}
                           
-                          <button onClick={() => iniciarRetiro(mat.id_matricula)} className="text-red-600 hover:text-red-800 font-medium transition-colors">Retirar</button>
+                          {puedeEditar && (
+                            <button onClick={() => iniciarRetiro(mat.id_matricula)} className="text-red-600 hover:text-red-800 font-medium transition-colors">Retirar</button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -474,7 +474,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
         </div>
       )}
 
-{/* MODAL CAMBIO DE CURSO INTELIGENTE Y OBLIGATORIO */}
       {modalCursoAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -525,7 +524,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 />
               </div>
 
-              {/* DESTINATARIOS OBLIGATORIOS */}
               <div className="border-t pt-3 space-y-3">
                 <p className="text-xs font-bold text-gray-700 uppercase">4. Envío Obligatorio de Comprobante</p>
                 
@@ -550,7 +548,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 </div>
               </div>
 
-              {/* DESCARGA LOCAL OPCIONAL */}
               <div className="pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700">
                   <input type="checkbox" checked={descargarLocalCurso} onChange={(e) => setDescargarLocalCurso(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
@@ -566,11 +563,9 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
               </div>
             </form>
           </div>
-          
         </div>
       )}
 
-{/* MODAL DE RETIRO OBLIGATORIO */}
       {modalAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -583,7 +578,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 <input type="date" required value={fechaRetiro} onChange={(e) => setFechaRetiro(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm" />
               </div>
 
-              {/* DESTINATARIOS OBLIGATORIOS */}
               <div className="border-t pt-3 space-y-3">
                 <p className="text-xs font-bold text-gray-700 uppercase">Envío Obligatorio de Comprobante de Retiro</p>
                 
@@ -608,7 +602,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 </div>
               </div>
 
-              {/* DESCARGA LOCAL OPCIONAL */}
               <div className="pt-2">
                 <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700">
                   <input type="checkbox" checked={descargarLocalRetiro} onChange={(e) => setDescargarLocalRetiro(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
@@ -627,7 +620,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
         </div>
       )}
 
-      {/* 7. COMPONENTE MODAL DE EMISIÓN DE DOCUMENTOS */}
       {modalEmisionAbierto && datosEmision && (
         <ModalEmisionDocumento
           isOpen={modalEmisionAbierto}
@@ -635,8 +627,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
           idMatricula={datosEmision.id}
           nombreAlumno={datosEmision.nombre}
           tipoDocumento={datosEmision.tipo}
-          // Nota: Los correos se obtienen directamente en el Backend durante el POST, 
-          // por lo que no es estrictamente necesario pasarlos por props desde esta vista.
         />
       )}
     </div>

@@ -14,6 +14,7 @@ import textwrap
 from database import get_db_connection
 from security import obtener_usuario_actual
 from schemas import MatriculaCreate, MatriculaUpdate, CuestionarioRetiro
+from security import obtener_usuario_actual, verificar_escritura
 
 router = APIRouter(prefix="/matriculas", tags=["Matrículas"])
 
@@ -48,6 +49,12 @@ def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: 
 
 @router.get("")
 def obtener_matriculas(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
+    rol = usuario_actual.get("rol")
+    
+    # REGLA DE SEGURIDAD: Si es perfil de colegio, forzamos la consulta a su propio colegio
+    if rol in ["Colegio", "Visualizador_Colegio"]:
+        establecimiento_id = usuario_actual.get("id_establecimiento")
+        
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -84,7 +91,7 @@ def obtener_matriculas(establecimiento_id: Optional[int] = None, usuario_actual:
         if 'conn' in locals(): conn.close()
 
 @router.post("")
-def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(verificar_escritura)):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -133,7 +140,7 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(o
         conn.close()
 
 @router.put("/{id_matricula}")
-def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate, usuario_actual: dict = Depends(verificar_escritura)):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
@@ -183,7 +190,7 @@ class CambioCursoRequest(BaseModel):
     motivo_cambio_curso: Optional[str] = None 
 
 @router.put("/{id_matricula}/curso")
-def cambiar_curso(id_matricula: int, req: CambioCursoRequest, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def cambiar_curso(id_matricula: int, req: CambioCursoRequest, usuario_actual: dict = Depends(verificar_escritura)):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -298,6 +305,6 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA"):
         if 'conn' in locals(): conn.close()
 
 @router.post("/carga-masiva")
-async def carga_masiva_sige(archivo: UploadFile = File(...), usuario_actual: dict = Depends(obtener_usuario_actual)):
+async def carga_masiva_sige(archivo: UploadFile = File(...), usuario_actual: dict = Depends(verificar_escritura)):
     # Aquí puedes pegar la lógica de pandas pd.read_html exacta que ya tienes funcionando
     return {"mensaje": "Endpoint de carga masiva modularizado correctamente."}

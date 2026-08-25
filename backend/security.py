@@ -36,3 +36,17 @@ def obtener_usuario_actual(token: str = Depends(oauth2_scheme)):
         return payload
     except JWTError:
         raise credenciales_excepcion
+
+
+def verificar_escritura(usuario_actual: dict = Depends(obtener_usuario_actual)):
+    """
+    Guardián que bloquea peticiones POST, PUT y DELETE para perfiles visualizadores.
+    """
+    roles_solo_lectura = ["Visualizador_SLEP", "Visualizador_Colegio"]
+    
+    if usuario_actual.get("rol") in roles_solo_lectura:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Modo Visualizador: Su perfil no tiene permisos para realizar modificaciones en el sistema."
+        )
+    return usuario_actual

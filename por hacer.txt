@@ -1,0 +1,7 @@
+    * hacer que slep tenga un perfil de visuzalizacion 
+
+    * hacer que los colegios tmbn tengan un perfil de visuzalizacion
+
+    * hacer que el folio sea un numero automatico y que vaya desde 1 en adelante 
+    ademas cada nivel y curso debe de tener su propio folio que vaya desde 1 en adelante
+    que los funcionarios o adminsitradores no puedan cambiar este numero de folio 

@@ -1,11 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, UserPlus, Edit2, Save, X, CheckCircle } from 'lucide-react';
-// Importamos useNavigate para poder redirigir al usuario
 import { useOutletContext, useNavigate } from 'react-router-dom';
 
-// ============================================================================
-// FUNCIONES DE VALIDACIÓN Y FORMATEO DE RUT (Módulo 11)
-// ============================================================================
 const formatearRUT = (rut: string) => {
   const actual = rut.replace(/^0+/, "").replace(/[^0-9kK]/g, "").toUpperCase();
   if (actual.length <= 1) return actual;
@@ -34,7 +30,12 @@ const validarRUT = (rutCompleto: string) => {
 
 export default function Estudiantes() {
   const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
-  const navigate = useNavigate(); // <--- INICIAMOS EL NAVEGADOR
+  const navigate = useNavigate();
+
+  // --- LÓGICA DE ROLES ---
+  const usuarioString = localStorage.getItem('usuario');
+  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+  const puedeEditar = !['Visualizador_SLEP', 'Visualizador_Colegio'].includes(usuario?.rol);
 
   const [listaEstudiantes, setListaEstudiantes] = useState<any[]>([]);
   const [textoBusqueda, setTextoBusqueda] = useState('');
@@ -44,11 +45,9 @@ export default function Estudiantes() {
   const [cargandoFicha, setCargandoFicha] = useState(false);
   const [error, setError] = useState('');
 
-  // Estados para crear estudiante
   const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);
   const [creando, setCreando] = useState(false);
   
-  // NUEVO: Estados para manejar el éxito y redirección
   const [estudianteCreadoExito, setEstudianteCreadoExito] = useState(false);
   const [rutRecienCreado, setRutRecienCreado] = useState('');
 
@@ -254,12 +253,10 @@ export default function Estudiantes() {
       });
       if (!respuesta.ok) throw new Error('Error al guardar. Verifica que el RUT no esté duplicado en la base de datos.');
       
-      // EN LUGAR DE CERRAR EL MODAL, MOSTRAMOS LA PANTALLA DE ÉXITO
       setRutRecienCreado(nuevoEstudiante.run);
       setEstudianteCreadoExito(true);
       cargarDirectorio();
 
-      // Limpiamos el formulario por si quiere crear otro luego
       setNuevoEstudiante({ run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', domicilio: '',latitud:'', longitud:'', run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '' });
     } catch (err: any) {
       alert(err.message);
@@ -268,11 +265,9 @@ export default function Estudiantes() {
     }
   };
 
-  // Función para redirigir a Matrículas con el RUT pre-cargado
   const irAMatricular = () => {
     setModalNuevoAbierto(false);
     setEstudianteCreadoExito(false);
-    // Viajamos a nueva matricula y le mandamos un "paquete" con el state
     navigate('/matriculas/nueva', { state: { rutPreseleccionado: rutRecienCreado } });
   };
 
@@ -299,27 +294,35 @@ export default function Estudiantes() {
         
         {!datosEstudiante ? (
           <div className="flex gap-3">
-            <input 
-              type="file" accept=".csv, .xls, .xlsx" id="csv-upload" className="hidden" 
-              onChange={manejarSubidaCSV} disabled={subiendoArchivo}
-            />
-            <label 
-              htmlFor="csv-upload" 
-              className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
-                subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
-              }`}
-            >
-              {subiendoArchivo ? 'Cargando...' : '📄 Cargar SIGE / CSV'}
-            </label>
-            <button onClick={() => setModalNuevoAbierto(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-              <UserPlus size={20} /> Nuevo Estudiante
-            </button>
+            {/* OCULTAMIENTO CONDICIONAL DE BOTONES DE CREACIÓN */}
+            {puedeEditar && (
+              <>
+                <input 
+                  type="file" accept=".csv, .xls, .xlsx" id="csv-upload" className="hidden" 
+                  onChange={manejarSubidaCSV} disabled={subiendoArchivo}
+                />
+                <label 
+                  htmlFor="csv-upload" 
+                  className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
+                    subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
+                  }`}
+                >
+                  {subiendoArchivo ? 'Cargando...' : '📄 Cargar SIGE / CSV'}
+                </label>
+                <button onClick={() => setModalNuevoAbierto(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                  <UserPlus size={20} /> Nuevo Estudiante
+                </button>
+              </>
+            )}
           </div>
         ) : (
           !modoEdicion ? (
-            <button onClick={() => setModoEdicion(true)} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-medium transition-colors">
-              <Edit2 size={18} /> Editar Datos
-            </button>
+            // OCULTAMIENTO CONDICIONAL DEL BOTÓN DE EDICIÓN
+            puedeEditar && (
+              <button onClick={() => setModoEdicion(true)} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-medium transition-colors">
+                <Edit2 size={18} /> Editar Datos
+              </button>
+            )
           ) : (
             <div className="flex gap-2">
               <button onClick={() => setModoEdicion(false)} className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors">
@@ -453,13 +456,11 @@ export default function Estudiantes() {
         </div>
       )}
 
-      {/* MODAL CREAR NUEVO ESTUDIANTE / PANTALLA DE ÉXITO */}
+      {/* MODAL CREAR NUEVO ESTUDIANTE */}
       {modalNuevoAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-2xl">
-            
             {estudianteCreadoExito ? (
-              /* --- PANTALLA DE ÉXITO --- */
               <div className="text-center py-6">
                 <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle size={32} />
@@ -478,7 +479,6 @@ export default function Estudiantes() {
                 </div>
               </div>
             ) : (
-              /* --- FORMULARIO DE CREACIÓN --- */
               <>
                 <h3 className="text-xl font-bold text-gray-800 mb-4">Registrar Nuevo Estudiante</h3>
                 <form onSubmit={handleCrearEstudiante} className="space-y-4 overflow-y-auto max-h-[70vh] pr-2">

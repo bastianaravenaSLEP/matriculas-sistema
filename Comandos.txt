@@ -21,3 +21,13 @@ Password: slep123
 🏫 Colegio: Colegio RBD 1506 (ID BD: 3)
 👤 Email: director.valparaiso@colegioslep.cl
 🔑 Password: admin123
+
+🏫 Colegio: Colegio RBD 1506 (ID BD: 3)
+👤 Email: visor.valparaiso@colegioslep.cl
+🔑 Password: visor123
+🛡️ Rol: Visualizador_Colegio
+
+✅ Usuario Visualizador SLEP creado/actualizado con éxito.
+👤 Email: visor.global@slep.cl
+🔑 Password: visor123
+🛡️ Rol: Visualizador_SLEP

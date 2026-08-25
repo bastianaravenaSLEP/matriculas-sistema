@@ -54,6 +54,13 @@ def obtener_auditoria_matriculas(
     rol = usuario_actual.get('rol')
     id_est_usuario = usuario_actual.get('id_establecimiento')
 
+    # --- NUEVO: BLOQUEO DE SEGURIDAD ESTRICTO PARA COLEGIOS ---
+    if rol in ['Colegio', 'Visualizador_Colegio']:
+        raise HTTPException(
+            status_code=403, 
+            detail="Acceso Denegado: Su perfil no tiene privilegios para visualizar la auditoría del sistema."
+        )
+        
     try:
         conn = get_db_connection()
         cur = conn.cursor()

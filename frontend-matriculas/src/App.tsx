@@ -10,18 +10,28 @@ import Login from './pages/Login';
 import Auditoria from './pages/Auditoria';
 
 // ============================================================================
-// COMPONENTE GUARDIÁN (Protección de Rutas)
+// COMPONENTE GUARDIÁN GENERAL (Protección de Sesión)
 // ============================================================================
-// Este componente envuelve las partes privadas. Si no hay token, te expulsa al login.
 const RutaProtegida = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
   
   if (!token) {
-    // Si no hay token en la memoria del navegador, redirige inmediatamente a /login
     return <Navigate to="/login" replace />;
   }
-  
-  // Si hay token, renderiza el componente hijo (en este caso, el Layout)
+  return <>{children}</>;
+};
+
+// ============================================================================
+// NUEVO: COMPONENTE GUARDIÁN POR ROLES (Para bloquear Trazabilidad)
+// ============================================================================
+const RutaRestringida = ({ children, rolesBloqueados }: { children: React.ReactNode, rolesBloqueados: string[] }) => {
+  const usuarioString = localStorage.getItem('usuario');
+  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+
+  // Si el rol del usuario actual está en la lista de bloqueados, lo mandamos al inicio
+  if (usuario && rolesBloqueados.includes(usuario.rol)) {
+    return <Navigate to="/" replace />;
+  }
   return <>{children}</>;
 };
 
@@ -30,11 +40,11 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         
-        {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
+        {/* 1. RUTAS PÚBLICAS */}
         <Route path="/login" element={<Login />} />
         <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
 
-        {/* 2. RUTAS PRIVADAS (Protegidas por el Guardián) */}
+        {/* 2. RUTAS PRIVADAS (Protegidas por sesión general) */}
         <Route 
           path="/" 
           element={
@@ -43,13 +53,20 @@ export default function App() {
             </RutaProtegida>
           }
         >
-          {/* Todas estas rutas hijas heredan la protección del Layout */}
-          
           <Route index element={<Inicio />} />
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
           <Route path="estudiantes" element={<Estudiantes />} />
-          <Route path="auditoria" element={<Auditoria />} />
+          
+          {/* 3. RUTA RESTRINGIDA (Solo roles autorizados pueden ver Auditoría) */}
+          <Route 
+            path="auditoria" 
+            element={
+              <RutaRestringida rolesBloqueados={['Visualizador_Colegio', 'Colegio']}>
+                <Auditoria />
+              </RutaRestringida>
+            } 
+          />
         </Route>
 
       </Routes>

@@ -3,6 +3,7 @@ from typing import Optional
 from pydantic import BaseModel
 from database import get_db_connection
 from security import obtener_usuario_actual
+from security import obtener_usuario_actual, verificar_escritura
 
 router = APIRouter(prefix="/estudiante", tags=["Estudiantes"])
 
@@ -22,6 +23,9 @@ def obtener_estudiantes(
     establecimiento_id: Optional[int] = None, 
     usuario_actual: dict = Depends(obtener_usuario_actual)
 ):
+    rol = usuario_actual.get("rol")
+    if rol in ["Colegio", "Visualizador_Colegio"]:
+        establecimiento_id = usuario_actual.get("id_establecimiento")       
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -101,7 +105,7 @@ def obtener_ficha_estudiante(rut: str, usuario_actual: dict = Depends(obtener_us
         if 'conn' in locals(): conn.close()
 
 @router.post("")
-def crear_estudiante(payload: dict, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def crear_estudiante(payload: dict, usuario_actual: dict = Depends(verificar_escritura)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -136,7 +140,7 @@ def crear_estudiante(payload: dict, usuario_actual: dict = Depends(obtener_usuar
 
 # 2. RUTA DE ACTUALIZACIÓN BLINDADA
 @router.put("/{rut}")
-def actualizar_datos_estudiante(rut: str, req: ActualizarEstudianteRequest, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def actualizar_datos_estudiante(rut: str, req: ActualizarEstudianteRequest, usuario_actual: dict = Depends(verificar_escritura)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
