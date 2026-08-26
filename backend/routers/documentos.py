@@ -11,6 +11,10 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from database import get_db_connection
 from security import obtener_usuario_actual
+import hashlib
+from datetime import datetime
+from fastapi.responses import StreamingResponse
+import os
 
 router = APIRouter(prefix="/documentos", tags=["Emisión de Documentos"])
 
@@ -135,6 +139,142 @@ def emitir_documento(req: EmisionRequest, usuario_actual: dict = Depends(obtener
 
     except Exception as e:
         print(f"Error emitiendo documento: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'cur' in locals(): cur.close()
+        if 'conn' in locals(): conn.close()
+
+@router.get("/verificar")
+def verificar_certificado_publico(rut: str, codigo: str):
+    # 1. Validar el formato del código (Ej: VLP-152-A9F2B4)
+    partes = codigo.strip().upper().split('-')
+    if len(partes) != 3 or partes[0] != 'VLP':
+        raise HTTPException(status_code=400, detail="Formato de código inválido. Debe ser similar a VLP-123-ABCDEF")
+        
+    id_matricula = partes[1]
+    hash_ingresado = partes[2]
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula, 
+                   e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo, 
+                   m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd
+            FROM matricula m 
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            WHERE m.id_matricula = %s
+        """, (id_matricula,))
+        datos = cur.fetchone()
+        
+        if not datos: 
+            raise HTTPException(status_code=404, detail="El documento no existe en los registros del SLEP.")
+
+        # 2. Validar que el RUT coincida
+        rut_db = str(datos[5]).strip()
+        if rut_db.lower() != rut.strip().lower():
+            raise HTTPException(status_code=401, detail="El RUT ingresado no corresponde a este certificado.")
+
+        # 3. Validar la integridad matemática del Hash
+        anio = datos[1]
+        hash_base = f"{rut_db}-{id_matricula}-SLEP{anio}"
+        hash_real = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
+        
+        if hash_real != hash_ingresado:
+            raise HTTPException(status_code=401, detail="El código de verificación ha sido alterado y no es auténtico.")
+
+        # 4. Si todo es correcto, regeneramos el PDF idéntico
+        folio = datos[0]
+        curso = datos[3]
+        nombre_completo = f"{datos[6]} {datos[7]} {datos[8]}"
+        estado_texto = f"Estado: {datos[10]}"
+        nombre_colegio = datos[13]
+        rbd_colegio = datos[14]
+
+        buffer = io.BytesIO()
+        c = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        directorio_actual = os.path.dirname(os.path.abspath(__file__))
+        ruta_mineduc = "static/mineduc.jpg"
+        ruta_slep ="static/logo-slep.negro.png"
+        ruta_timbre = "static/mineduc.jpg"
+
+        # Logos
+        if os.path.exists(ruta_slep):
+            c.drawImage(ruta_slep, 50, height - 85, width=110, height=55, mask='auto')
+        else:
+            c.setFont("Times-Bold", 8)
+            c.drawString(50, height - 60, "SLEP VALPARAÍSO")
+
+        if os.path.exists(ruta_mineduc):
+            c.drawImage(ruta_mineduc, width - 50 - 60, height - 85, width=60, height=55, mask='auto')
+        else:
+            c.setFont("Times-Bold", 8)
+            c.drawRightString(width - 50, height - 60, "MINEDUC")
+
+        # Textos Institucionales
+        c.setFont("Times-Bold", 9)
+        c.drawCentredString(width / 2.0, height - 55, "SERVICIO LOCAL DE EDUCACIÓN PÚBLICA VALPARAÍSO")
+        c.setFont("Times-Roman", 9)
+        c.drawCentredString(width / 2.0, height - 70, f"Establecimiento: {nombre_colegio} (RBD: {rbd_colegio})")
+
+        c.setStrokeColorRGB(0.7, 0.7, 0.7)
+        c.setLineWidth(0.75)
+        c.line(50, height - 95, width - 50, height - 95)
+
+        c.setFont("Times-Bold", 15)
+        c.drawCentredString(width / 2.0, height - 135, "CERTIFICADO DE MATRÍCULA VERIFICADO")
+
+        meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+        hoy = datetime.now()
+        c.setFont("Times-Roman", 12)
+        c.drawString(50, height - 190, f"En Valparaíso, a {hoy.day} de {meses[hoy.month - 1]} de {hoy.year}")
+        c.drawString(50, height - 220, "La Dirección del Establecimiento que suscribe,")
+        c.drawString(50, height - 240, "certifica que el siguiente estudiante se encuentra MATRICULADO:")
+
+        c.setFont("Times-Bold", 12)
+        c.drawString(100, height - 280, f"Nombre Completo  : {nombre_completo}")
+        c.drawString(100, height - 300, f"RUT                            : {rut_db}")
+        c.drawString(100, height - 320, f"Curso                         : {curso}")
+        c.drawString(100, height - 340, f"Número de Folio     : {folio}")
+        c.drawString(100, height - 360, f"Año Lectivo             : {anio}")
+
+        c.setFont("Times-Roman", 12)
+        c.drawString(50, height - 410, f"Es alumno/a del establecimiento {nombre_colegio} y su registro")
+        c.drawString(50, height - 430, f"actual se encuentra en condición: {estado_texto}.")
+        c.drawString(50, height - 460, "Se extiende el presente documento a petición de la interesada(o) para los fines")
+        c.drawString(50, height - 480, "que estime conveniente.")
+
+        if os.path.exists(ruta_timbre):
+            c.drawImage(ruta_timbre, width / 2.0 - 50, height - 600, width=100, height=100, mask='auto')
+        
+        c.setFont("Times-Bold", 11)
+        c.drawCentredString(width / 2.0, height - 620, "DIRECTOR(A) DEL ESTABLECIMIENTO")
+        c.setFont("Times-Roman", 9)
+        c.drawCentredString(width / 2.0, height - 635, "Firma Electrónica Autorizada - SLEP Valparaíso")
+        
+        c.setStrokeColorRGB(0.1, 0.6, 0.1) # Línea verde indicando documento válido
+        c.setLineWidth(2)
+        c.line(50, 110, width - 50, 110)
+        
+        c.setFont("Times-Bold", 10)
+        c.setFillColorRGB(0.1, 0.6, 0.1)
+        c.drawString(50, 90, "DOCUMENTO VÁLIDO Y AUTENTICADO")
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Times-Roman", 9)
+        c.drawString(50, 75, f"Código de Verificación Único: {codigo}")
+        c.drawString(50, 60, "La integridad de este documento ha sido validada criptográficamente por la plataforma RGM.")
+
+        c.save()
+        buffer.seek(0)
+        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=Verificado_{rut_db}.pdf"})
+        
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if 'cur' in locals(): cur.close()

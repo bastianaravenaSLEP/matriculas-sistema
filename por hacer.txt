@@ -1,7 +1,15 @@
-    * hacer que slep tenga un perfil de visuzalizacion 
-
-    * hacer que los colegios tmbn tengan un perfil de visuzalizacion
-
     * hacer que el folio sea un numero automatico y que vaya desde 1 en adelante 
     ademas cada nivel y curso debe de tener su propio folio que vaya desde 1 en adelante
     que los funcionarios o adminsitradores no puedan cambiar este numero de folio 
+
+    *agregar una pagina en la cual se pueda administrar los usuarios dentro del sistema
+    y se le pueda cambiar ya sea clave como correo o crear un nuevo usuario 
+
+    *Poner nombres de colegio al lado del RBD
+
+    *Poblar la base de datos con informacion desde el 2022
+
+    * Corroborar la emicion del certificado ¿numero folio?
+
+    * No esta funcionando el cargar achivo de excel bien
+    * No me carga nada 

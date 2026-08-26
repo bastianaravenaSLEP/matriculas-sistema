@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail } from 'lucide-react';
+import { Lock, Mail, ShieldCheck } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -9,7 +9,6 @@ export default function Login() {
   const [rol, setRol] = useState('COLEGIO');
   const [cargando, setCargando] = useState(false);
   
-  // Herramienta de React Router para redirigir al usuario
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -26,17 +25,10 @@ export default function Login() {
 
       const datos = await respuesta.json();
 
-      if (!respuesta.ok) {
-        throw new Error(datos.detail || 'Error al iniciar sesión');
-      }
+      if (!respuesta.ok) throw new Error(datos.detail || 'Error al iniciar sesión');
 
-      // 1. Guardamos el Token Seguro en el navegador
       localStorage.setItem('token', datos.access_token);
-      
-      // 2. Guardamos los datos del usuario (Nombre, Rol, Establecimiento)
       localStorage.setItem('usuario', JSON.stringify(datos.usuario));
-
-      // 3. ¡Login exitoso! Lo enviamos al Dashboard
       navigate('/');
       
     } catch (err: any) {
@@ -47,78 +39,90 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
+      {/* Footer/Header Institucional Falso para dar contexto */}
+      <div className="absolute top-0 w-full h-2 flex">
+        <div className="w-1/2 bg-blue-900"></div>
+        <div className="w-1/2 bg-red-600"></div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-200">
         
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 tracking-wider">SLEP RGM</h1>
-          <p className="text-slate-500 mt-2">Ingresa tus credenciales para continuar</p>
+      <div className="bg-blue-950 p-8 text-center border-b-4 border-red-600">
+          <p className="text-blue-200 text-xs font-bold tracking-widest uppercase mb-4">Ministerio de Educación</p>
+          
+          {/* Contenedor flex con alineación centrada */}
+          <div className="flex flex-col items-center justify-center my-2">
+              <img 
+                src="/images/logo_slep.png"
+                alt="Logo SLEP Valparaíso" 
+                className="max-h-20 w-auto object-contain" 
+              /> 
+          </div>          
+          
+          <p className="text-blue-100 mt-4 text-sm font-medium">Plataforma Oficial del Registro General de Matrículas</p>
         </div>
 
-        {/* Mensaje de Error */}
-        {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center font-medium border border-red-100">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Correo Institucional</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail size={18} className="text-slate-400" />
-              </div>
-              <input 
-                type="email" 
-                required 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-                placeholder="director@colegioprueba.cl"
-              />
+        <div className="p-8">
+          {error && (
+            <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm mb-6 text-center font-bold border border-red-200 flex items-center justify-center gap-2">
+              <ShieldCheck size={18} /> {error}
             </div>
-          </div>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock size={18} className="text-slate-400" />
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Correo Institucional</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail size={18} className="text-gray-400" />
+                </div>
+                <input 
+                  type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent text-sm bg-gray-50 focus:bg-white transition-colors"
+                  placeholder="usuario@slepvalparaiso.cl"
+                />
               </div>
-              <input 
-                type="password" 
-                required 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent"
-                placeholder="••••••••"
-              />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Usuario</label>
-            <select 
-              value={rol}
-              onChange={(e) => setRol(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent bg-white"
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Contraseña</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock size={18} className="text-gray-400" />
+                </div>
+                <input 
+                  type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent text-sm bg-gray-50 focus:bg-white transition-colors"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Perfil de Acceso</label>
+              <select 
+                value={rol} onChange={(e) => setRol(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent text-sm bg-gray-50 focus:bg-white font-medium text-gray-700 cursor-pointer"
+              >
+                <option value="COLEGIO">Establecimiento Educacional</option>
+                <option value="SLEP">Administración Central (SLEP)</option>
+              </select>
+            </div>
+
+            <button 
+              type="submit" disabled={cargando}
+              className="w-full bg-blue-900 text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors disabled:opacity-50 mt-4 shadow-md"
             >
-              <option value="COLEGIO">Director / Administrativo de Colegio</option>
-              <option value="SLEP">Funcionario SLEP (Nivel Central)</option>
-            </select>
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={cargando}
-            className="w-full bg-blue-600 text-white font-medium py-2.5 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {cargando ? 'Verificando...' : 'Iniciar Sesión'}
-          </button>
-        </form>
-        
+              {cargando ? 'Verificando credenciales...' : 'Ingresar al Sistema'}
+            </button>
+          </form>
+        </div>
       </div>
+      
+      <p className="mt-8 text-xs text-gray-500 font-medium">
+        © {new Date().getFullYear()} Servicio Local de Educación Pública Valparaíso. Todos los derechos reservados.
+      </p>
     </div>
   );
 }

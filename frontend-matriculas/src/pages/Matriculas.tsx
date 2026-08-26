@@ -37,6 +37,7 @@ export default function Matriculas() {
   const [filtroAnio, setFiltroAnio] = useState(''); 
   const [filtroCodigo, setFiltroCodigo] = useState('');
   const [filtroCurso, setFiltroCurso] = useState('');
+  const [ordenFolio, setOrdenFolio] = useState<'asc' | 'desc' | null>('asc'); // Folio inicia 1 a N
   const [ordenEstado, setOrdenEstado] = useState<'asc' | 'desc' | null>(null);
 
   const [modalCursoAbierto, setModalCursoAbierto] = useState(false);
@@ -71,13 +72,19 @@ export default function Matriculas() {
 
   const anioActual = new Date().getFullYear();
 
+  // --- FUNCIÓN ACTUALIZADA PARA MÚLTIPLES ARCHIVOS ---
   const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    if (!archivo) return;
+    const archivos = e.target.files;
+    if (!archivos || archivos.length === 0) return;
 
     setSubiendoArchivo(true);
     const formData = new FormData();
-    formData.append("archivo", archivo);
+    
+    // Iteramos sobre todos los archivos seleccionados y los añadimos al FormData
+    Array.from(archivos).forEach((archivo) => {
+      formData.append("archivos", archivo);
+    });
+
     const token = localStorage.getItem('token'); 
 
     try {
@@ -88,7 +95,7 @@ export default function Matriculas() {
       });
 
       const datos = await respuesta.json();
-      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir el archivo");
+      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir los archivos");
       
       alert(datos.mensaje); 
       cargarMatriculas();
@@ -99,14 +106,21 @@ export default function Matriculas() {
       e.target.value = ''; 
     }
   };
+const cargarMatriculas = () => {
+    // 🚨 REGLA DE RENDIMIENTO: Evitar el colapso por miles de registros
+    // Si no hay un colegio seleccionado (es decir, está en "Todos los Establecimientos"), 
+    // vaciamos la tabla y detenemos la consulta masiva.
+    if (!colegioSeleccionado) {
+      setMatriculas([]);
+      setCargando(false);
+      return; 
+    }
 
-  const cargarMatriculas = () => {
     setCargando(true);
     const token = localStorage.getItem('token');
 
-    const url = colegioSeleccionado 
-      ? `http://127.0.0.1:8000/matriculas?establecimiento_id=${colegioSeleccionado}`
-      : `http://127.0.0.1:8000/matriculas`;
+    // Como ya validamos que hay un colegio, siempre enviamos el ID
+    const url = `http://127.0.0.1:8000/matriculas?establecimiento_id=${colegioSeleccionado}`;
 
     fetch(url, {
       method: 'GET',
@@ -128,7 +142,6 @@ export default function Matriculas() {
         setCargando(false);
       });
   };
-
   useEffect(() => {
     cargarMatriculas();
   }, [colegioSeleccionado]); 
@@ -188,15 +201,28 @@ export default function Matriculas() {
       return coincideBusqueda && coincideAnio && coincideCodigo && coincideCurso;
     });
 
-    if (ordenEstado) {
-      resultado.sort((a, b) => {
-        if (ordenEstado === 'asc') return a.estado.localeCompare(b.estado);
-        else return b.estado.localeCompare(a.estado);
-      });
-    }
+resultado.sort((a, b) => {
+      if (ordenFolio) {
+        // 1. Primero agrupamos alfabéticamente por el nombre del curso
+        if (a.curso !== b.curso) {
+          return (a.curso || '').localeCompare(b.curso || '');
+        }
+        // 2. Si son del mismo curso, ahí recién los ordenamos por folio
+        return ordenFolio === 'asc' 
+          ? a.numero_correlativo - b.numero_correlativo 
+          : b.numero_correlativo - a.numero_correlativo;
+      }
+      
+      if (ordenEstado) {
+        return ordenEstado === 'asc' 
+          ? a.estado.localeCompare(b.estado) 
+          : b.estado.localeCompare(a.estado);
+      }
+      return 0;
+    });
 
     return resultado;
-  }, [matriculas, busqueda, filtroAnio, filtroCodigo, filtroCurso, ordenEstado]);
+  }, [matriculas, busqueda, filtroAnio, filtroCodigo, filtroCurso, ordenFolio, ordenEstado]);
 
   const abrirModalEmision = (idMatricula: number, tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO') => {
     const matricula = matriculas.find(m => m.id_matricula === idMatricula);
@@ -344,10 +370,12 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
           {/* OCULTAMIENTO CONDICIONAL DE BOTONES SUPERIORES */}
           {puedeEditar && (
             <>
+              {/* ATRIBUTO MULTIPLE AÑADIDO AQUÍ */}
               <input 
                 type="file" accept=".csv, .xls, .xlsx" 
                 id="csv-upload-matriculas" className="hidden" 
                 onChange={manejarSubidaCSV} disabled={subiendoArchivo}
+                multiple 
               />
               <label 
                 htmlFor="csv-upload-matriculas" 
@@ -355,7 +383,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                   subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
                 }`}
               >
-                {subiendoArchivo ? 'Procesando...' : '📄 Cargar SIGE / CSV'}
+                {subiendoArchivo ? 'Procesando archivos...' : '📄 Cargar SIGE / CSV'}
               </label>
               <Link to="/matriculas/nueva" className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                 + Nueva Matrícula
@@ -364,6 +392,18 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
           )}
         </div>
       </div>
+
+      {/* MENSAJE CUANDO NO HAY COLEGIO SELECCIONADO */}
+      {!cargando && !error && !colegioSeleccionado && (
+        <div className="bg-blue-50 border border-blue-200 p-10 rounded-xl shadow-sm text-center flex flex-col items-center justify-center">
+          <div className="text-4xl mb-4">🏫</div>
+          <h2 className="text-xl font-extrabold text-blue-900 mb-2">Seleccione un Establecimiento</h2>
+          <p className="text-blue-700 max-w-2xl">
+            Para garantizar la velocidad del sistema, la vista global ha sido deshabilitada. 
+            Por favor, <strong>utilice el "Filtro Institucional" en la barra superior</strong> y elija un colegio específico para cargar su registro de matrículas.
+          </p>
+        </div>
+      )}
 
       {!cargando && !error && matriculas.length > 0 && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">

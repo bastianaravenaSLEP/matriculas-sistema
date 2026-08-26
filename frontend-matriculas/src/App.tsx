@@ -8,30 +8,22 @@ import Estudiantes from './pages/Estudiantes';
 import CuestionarioRetiro from './pages/CuestionarioRetiro';
 import Login from './pages/Login';
 import Auditoria from './pages/Auditoria';
+import NuevoInicio from './pages/NuevoInicio';
+import Verificador from './pages/Verificador';
 
 // ============================================================================
-// COMPONENTE GUARDIÁN GENERAL (Protección de Sesión)
+// COMPONENTE GUARDIÁN (Protección de Rutas)
 // ============================================================================
+// Este componente envuelve las partes privadas. Si no hay token, te expulsa al login.
 const RutaProtegida = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
   
   if (!token) {
+    // Si no hay token en la memoria del navegador, redirige inmediatamente a /login
     return <Navigate to="/login" replace />;
   }
-  return <>{children}</>;
-};
-
-// ============================================================================
-// NUEVO: COMPONENTE GUARDIÁN POR ROLES (Para bloquear Trazabilidad)
-// ============================================================================
-const RutaRestringida = ({ children, rolesBloqueados }: { children: React.ReactNode, rolesBloqueados: string[] }) => {
-  const usuarioString = localStorage.getItem('usuario');
-  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
-
-  // Si el rol del usuario actual está en la lista de bloqueados, lo mandamos al inicio
-  if (usuario && rolesBloqueados.includes(usuario.rol)) {
-    return <Navigate to="/" replace />;
-  }
+  
+  // Si hay token, renderiza el componente hijo (en este caso, el Layout)
   return <>{children}</>;
 };
 
@@ -40,11 +32,11 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         
-        {/* 1. RUTAS PÚBLICAS */}
+        {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
         <Route path="/login" element={<Login />} />
         <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
 
-        {/* 2. RUTAS PRIVADAS (Protegidas por sesión general) */}
+        {/* 2. RUTAS PRIVADAS (Protegidas por el Guardián) */}
         <Route 
           path="/" 
           element={
@@ -53,20 +45,15 @@ export default function App() {
             </RutaProtegida>
           }
         >
-          <Route index element={<Inicio />} />
+          {/* Todas estas rutas hijas heredan la protección del Layout */}
+          
+          <Route index element={<NuevoInicio />} />
+          <Route path="inicio" element={<Inicio />} />
+          <Route path="/verificar" element={<Verificador />} />
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
           <Route path="estudiantes" element={<Estudiantes />} />
-          
-          {/* 3. RUTA RESTRINGIDA (Solo roles autorizados pueden ver Auditoría) */}
-          <Route 
-            path="auditoria" 
-            element={
-              <RutaRestringida rolesBloqueados={['Visualizador_Colegio', 'Colegio']}>
-                <Auditoria />
-              </RutaRestringida>
-            } 
-          />
+          <Route path="auditoria" element={<Auditoria />} />
         </Route>
 
       </Routes>
