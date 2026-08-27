@@ -387,6 +387,11 @@ export default function Estudiantes() {
               <div><p className="text-sm text-gray-500">Nombre Completo</p><p className="font-medium">{datosEstudiante.personal.nombres} {datosEstudiante.personal.apellidos}</p></div>
               <div><p className="text-sm text-gray-500">Fecha Nacimiento</p><p className="font-medium">{datosEstudiante.personal.fecha_nacimiento}</p></div>
               <div className="pt-2 border-t border-gray-50">
+                <p className="text-sm text-gray-500 mb-1">Última Matrícula Registrada</p>
+                <p className="font-bold text-blue-800">{datosEstudiante.personal.colegio_actual}</p>
+                <p className="text-xs text-gray-500 font-mono">RBD: {datosEstudiante.personal.rbd_actual}</p>
+              </div>
+              <div className="pt-2 border-t border-gray-50">
                 <p className="text-sm text-gray-500 mb-1">Domicilio Actual</p>
                 {!modoEdicion ? (
                   <p className="font-medium">{datosEstudiante.personal.domicilio}</p>
@@ -430,23 +435,32 @@ export default function Estudiantes() {
                 <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Clock size={24} /></div>
                 <h2 className="text-lg font-bold text-gray-800">Historial RGM</h2>
               </div>
-              <table className="w-full text-left text-sm">
+<table className="w-full text-left text-sm">
                   <thead>
                     <tr className="text-gray-500 border-b border-gray-100">
                       <th className="pb-2">Año</th>
+                      <th className="pb-2">Establecimiento</th>
                       <th className="pb-2">Curso</th>
                       <th className="pb-2 text-center">Estado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {datosEstudiante.historial.length === 0 && (
-                      <tr><td colSpan={3} className="py-4 text-center text-gray-500">Sin historial de matrículas</td></tr>
+                      <tr><td colSpan={4} className="py-4 text-center text-gray-500">Sin historial de matrículas</td></tr>
                     )}
                     {datosEstudiante.historial.map((reg: any) => (
                       <tr key={reg.id} className="border-b border-gray-50">
                         <td className="py-3">{reg.anio}</td>
+                        <td className="py-3">
+                          <p className="font-medium text-gray-800">{reg.establecimiento}</p>
+                          <p className="text-xs text-gray-500 font-mono">RBD: {reg.rbd}</p>
+                        </td>
                         <td className="py-3 font-medium">{reg.curso}</td>
-                        <td className="py-3 text-center"><span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">{reg.estado}</span></td>
+                        <td className="py-3 text-center">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${reg.estado === 'Activa' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {reg.estado}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

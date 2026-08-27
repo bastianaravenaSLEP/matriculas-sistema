@@ -223,156 +223,65 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA"):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Modificamos la query para traer también el nombre y RBD del colegio
+        
+        # 1. Obtenemos los mismos datos completos (incluyendo apoderado y domicilio)
         cur.execute("""
-            SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula, 
-                   e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo, 
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, 
-                   a.correo_electronico, m.estado, m.fecha_retiro, m.motivo_cambio_curso,
-                   est.nombre, est.rbd
+            SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula,
+                   e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo,
+                   m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio
             FROM matricula m 
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
-            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado 
             INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
             WHERE m.id_matricula = %s
         """, (id_matricula,))
         datos = cur.fetchone()
         
         if not datos: raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+        
+        rut_apod = datos[15] if datos[15] else "Sin registro"
+        nom_apod = f"{datos[16] or ''} {datos[17] or ''} {datos[18] or ''}".strip()
+        if not nom_apod: nom_apod = "Sin registro"
+        domicilio = datos[19] if datos[19] else "los registros del establecimiento"
 
-        # Variables extraídas
-        folio = datos[0]
-        anio = datos[1]
-        curso = datos[3]
-        rut_estudiante = datos[5]
-        nombre_completo = f"{datos[6]} {datos[7]} {datos[8]}"
-        nombre_colegio = datos[19]
-        rbd_colegio = datos[20]
-
-        # 1. GENERACIÓN DEL CÓDIGO DE VERIFICACIÓN ÚNICO
-        # Mezclamos el RUT y el ID, creando un hash SHA-256 corto.
-        hash_base = f"{rut_estudiante}-{id_matricula}-SLEP{anio}"
+        datos_alumno = {
+            "folio": datos[0],
+            "anio": datos[1],
+            "nivel": datos[2],
+            "curso": datos[3],
+            "fecha_matricula": datos[4],
+            "rut": str(datos[5]).strip(),
+            "nombre_completo": f"{datos[6]} {datos[7]} {datos[8]}".strip(),
+            "sexo": datos[9],
+            "estado": datos[10],
+            "fecha_retiro": datos[11],
+            "motivo_cambio": datos[12],
+            "nombre_colegio": datos[13],
+            "rbd_colegio": datos[14],
+            "rut_apoderado": rut_apod,
+            "nombre_apoderado": nom_apod,
+            "domicilio": domicilio
+        }
+        
+        # 2. Generar Código de Verificación Único
+        import hashlib
+        hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
         hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
         codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
-
-        buffer = io.BytesIO()
-        c = canvas.Canvas(buffer, pagesize=letter)
-        width, height = letter
-
-        # 2. CONFIGURACIÓN DEL TEXTO SEGÚN TIPO
-        if tipo == 'RETIRO':
-            titulo_pdf = "CERTIFICADO DE RETIRO ESCOLAR"
-            texto_accion = "certifica el RETIRO OFICIAL del siguiente estudiante:"
-            estado_texto = f"Estado: RETIRADO (Fecha: {datos[17] or 'No registrada'})"
-        elif tipo == 'CAMBIO_CURSO':
-            titulo_pdf = "COMPROBANTE DE TRASLADO DE CURSO"
-            texto_accion = "certifica el TRASLADO DE CURSO del siguiente estudiante:"
-            estado_texto = "Estado: TRASLADADO DE CURSO"
-        else:
-            titulo_pdf = "CERTIFICADO DE MATRÍCULA"
-            texto_accion = "certifica que el siguiente estudiante se encuentra MATRICULADO:"
-            estado_texto = f"Estado: {datos[16]}"
-
-        # --- DIBUJO DEL PDF ESTILO OFICIAL ---
-
-        # --- SECCIÓN DE FIRMAS ---
-        # Aquí puedes cargar imágenes si las tienes guardadas en el servidor
-
-        import os
-        directorio_actual = os.path.dirname(os.path.abspath(__file__))
-
-        ruta_mineduc = "static/mineduc.jpg"
-        ruta_slep = "static/logo-slep.negro.png"
-        ruta_timbre = "static/logo-slep.negro.png"
-        ruta_firma = "static/firma_director.png"
-
-# 1. Logo SLEP Valparaíso (Esquina Superior Izquierda - Ampliado)
-        ancho_logo_slep = 110
-        alto_logo_slep = 55
-        if os.path.exists(ruta_slep):
-            c.drawImage(ruta_slep, 50, height - 85, width=ancho_logo_slep, height=alto_logo_slep, mask='auto')
-        else:
-            c.setFont("Times-Bold", 8)
-            c.drawString(50, height - 60, "SLEP VALPARAÍSO")
-
-        # 2. Logo Ministerio de Educación (Esquina Superior Derecha - Ampliado)
-        ancho_logo_mineduc = 60
-        alto_logo_mineduc = 55
-        if os.path.exists(ruta_mineduc):
-            c.drawImage(ruta_mineduc, width - 50 - ancho_logo_mineduc, height - 85, width=ancho_logo_mineduc, height=alto_logo_mineduc, mask='auto')
-        else:
-            c.setFont("Times-Bold", 8)
-            c.drawRightString(width - 50, height - 60, "MINEDUC")
-
-        # 3. Textos Institucionales Centrados
-        c.setFont("Times-Bold", 9)
-        c.drawCentredString(width / 2.0, height - 55, "SERVICIO LOCAL DE EDUCACIÓN PÚBLICA VALPARAÍSO")
-        c.setFont("Times-Roman", 9)
-        c.drawCentredString(width / 2.0, height - 70, f"Establecimiento: {nombre_colegio} (RBD: {rbd_colegio})")
-
-        # 4. Línea divisoria ajustada para dar espacio a los logos grandes
-        c.setStrokeColorRGB(0.7, 0.7, 0.7)
-        c.setLineWidth(0.75)
-        c.line(50, height - 95, width - 50, height - 95)
-
-        # Título Central del Certificado
-        c.setFont("Times-Bold", 20)
-        c.drawCentredString(width / 2.0, height - 135, titulo_pdf)
-
-        # Fecha actual
-        meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        hoy = datetime.now()
-        fecha_texto = f"En Valparaíso, a {hoy.day} de {meses[hoy.month - 1]} de {hoy.year}"
-        c.setFont("Times-Roman", 12)
-        c.drawString(50, height - 190, fecha_texto)
-
-        # Cuerpo del documento
-        c.drawString(50, height - 220, "La Dirección del Establecimiento que suscribe,")
-        c.drawString(50, height - 240, texto_accion)
-
-        # Caja de datos del estudiante
-        c.setFont("Times-Bold", 12)
-        c.drawString(100, height - 280, f"Nombre Completo  : {nombre_completo}")
-        c.drawString(100, height - 300, f"RUT                            : {rut_estudiante}")
-        c.drawString(100, height - 320, f"Curso                         : {curso}")
-        c.drawString(100, height - 340, f"Número de Folio     : {folio}")
-        c.drawString(100, height - 360, f"Año Lectivo             : {anio}")
-
-        c.setFont("Times-Roman", 12)
-        c.drawString(50, height - 410, f"Es alumno/a del establecimiento {nombre_colegio} y su registro")
-        c.drawString(50, height - 430, f"actual se encuentra en condición: {estado_texto}.")
-        c.drawString(50, height - 460, "Se extiende el presente documento a petición de la interesada(o) para los fines")
-        c.drawString(50, height - 480, "que estime conveniente.")
-
-        # Intenta cargar el timbre si existe
-        if os.path.exists(ruta_timbre):
-            c.drawImage(ruta_timbre, width / 2.0 - 50, height - 600, width=100, height=100, mask='auto')
-        else:
-            print(f"⚠️ ADVERTENCIA: No se encontró la imagen en la ruta: {ruta_timbre}")
         
-        c.setFont("Times-Bold", 11)
-        c.drawCentredString(width / 2.0, height - 620, "DIRECTOR(A) DEL ESTABLECIMIENTO")
-        c.setFont("Times-Roman", 9)
-        c.drawCentredString(width / 2.0, height - 635, "Firma Electrónica Autorizada - SLEP Valparaíso")
-
-        # --- PIE DE PÁGINA: VERIFICACIÓN ---
-        c.setStrokeColorRGB(0.6, 0.6, 0.6)
-        c.line(50, 110, width - 50, 110)
+        # 3. 🌟 AQUÍ LLAMAMOS A TU NUEVO SERVICIO DESACOPLADO 🌟
+        from services.pdf_service import generar_certificado_pdf
+        pdf_buffer, _ = generar_certificado_pdf(datos_alumno, tipo, codigo_verificacion)
         
-        c.setFont("Times-Bold", 9)
-        c.drawString(50, 90, "VERIFICACIÓN DE AUTENTICIDAD DOCUMENTAL")
-        c.setFont("Times-Roman", 9)
-        c.drawString(50, 75, f"Código de Verificación Único: {codigo_verificacion}")
-        c.drawString(50, 60, "Verifique la validez de este certificado ingresando a: http://localhost:5173/verificar")
-        c.drawString(50, 45, "e ingresando el código proporcionado junto al RUT del estudiante.")
-
-        c.save()
-        buffer.seek(0)
-        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename={tipo}_{rut_estudiante}.pdf"})
+        return StreamingResponse(
+            pdf_buffer, 
+            media_type="application/pdf", 
+            headers={"Content-Disposition": f"inline; filename={tipo}_{datos_alumno['rut']}.pdf"}
+        )
     finally:
         if 'cur' in locals(): cur.close()
         if 'conn' in locals(): conn.close()
-
 
 @router.post("/carga-masiva")
 async def carga_masiva_sige(

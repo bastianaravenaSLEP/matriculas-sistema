@@ -26,17 +26,25 @@ def obtener_datos_bd(id_matricula: int):
         cur.execute("""
             SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula,
                    e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo,
-                   m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd
+                   m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio
             FROM matricula m 
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
             INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
             WHERE m.id_matricula = %s
         """, (id_matricula,))
         datos = cur.fetchone()
         
         if not datos: return None
         
-        # Mapeamos la tupla a un diccionario limpio y claro
+        # Procesar datos del apoderado y domicilio
+        rut_apod = datos[15] if datos[15] else "Sin registro"
+        nom_apod = f"{datos[16] or ''} {datos[17] or ''} {datos[18] or ''}".strip()
+        if not nom_apod: nom_apod = "Sin registro"
+        
+        domicilio = datos[19] if datos[19] else "los registros del establecimiento"
+
         return {
             "folio": datos[0],
             "anio": datos[1],
@@ -50,7 +58,10 @@ def obtener_datos_bd(id_matricula: int):
             "fecha_retiro": datos[11],
             "motivo_cambio": datos[12],
             "nombre_colegio": datos[13],
-            "rbd_colegio": datos[14]
+            "rbd_colegio": datos[14],
+            "rut_apoderado": rut_apod,
+            "nombre_apoderado": nom_apod,
+            "domicilio": domicilio
         }
     finally:
         cur.close()

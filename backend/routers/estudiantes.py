@@ -61,7 +61,8 @@ def obtener_ficha_estudiante(rut: str, usuario_actual: dict = Depends(obtener_us
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-
+        
+        # 1. Traer datos del estudiante y apoderado
         cur.execute("""
             SELECT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.fecha_nacimiento, e.domicilio,
                    a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico
@@ -70,22 +71,33 @@ def obtener_ficha_estudiante(rut: str, usuario_actual: dict = Depends(obtener_us
             WHERE e.run_ipe = %s
         """, (rut,))
         estudiante_db = cur.fetchone()
-
+        
         if not estudiante_db:
             raise HTTPException(status_code=404, detail="Estudiante no encontrado en el sistema RGM.")
-
+            
+        # 2. QUERY ACTUALIZADA: Ahora traemos el RBD y Nombre del establecimiento
         cur.execute("""
-            SELECT id_matricula, anio_escolar, nivel_ensenanza, curso, estado, fecha_matricula, observaciones
-            FROM matricula WHERE id_estudiante = %s ORDER BY anio_escolar DESC
+            SELECT m.id_matricula, m.anio_escolar, m.nivel_ensenanza, m.curso, m.estado, m.fecha_matricula, m.observaciones,
+                   est.rbd, est.nombre
+            FROM matricula m
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            WHERE m.id_estudiante = %s ORDER BY m.anio_escolar DESC
         """, (estudiante_db[0],))
+        
         historial_db = cur.fetchall()
+        
+        # Detectar el último colegio registrado (el primero en la lista por el DESC)
+        ultimo_rbd = historial_db[0][7] if historial_db else "Sin Registro"
+        ultimo_colegio = historial_db[0][8] if historial_db else "Sin Registro"
 
         respuesta = {
             "personal": {
                 "id": estudiante_db[0], "run": estudiante_db[1], "nombres": estudiante_db[2],
                 "apellidos": f"{estudiante_db[3]} {estudiante_db[4]}",
                 "fecha_nacimiento": str(estudiante_db[5]) if estudiante_db[5] else "No registrada",
-                "domicilio": estudiante_db[6] if estudiante_db[6] else "Sin registrar"
+                "domicilio": estudiante_db[6] if estudiante_db[6] else "Sin registrar",
+                "rbd_actual": ultimo_rbd,
+                "colegio_actual": ultimo_colegio
             },
             "apoderado": {
                 "rut": estudiante_db[7] if estudiante_db[7] else "Sin registrar",
@@ -94,8 +106,12 @@ def obtener_ficha_estudiante(rut: str, usuario_actual: dict = Depends(obtener_us
                 "correo": estudiante_db[12] if estudiante_db[12] else "-"
             },
             "historial": [
-                {"id": f[0], "anio": f[1], "establecimiento": "Establecimiento SLEP", "curso": f[3], "estado": f[4], 
-                 "tipo_movimiento": "Matrícula", "observaciones": f[6] or "Sin observaciones."} 
+                {
+                    "id": f[0], "anio": f[1], 
+                    "establecimiento": f[8], "rbd": f[7], 
+                    "curso": f[3], "estado": f[4], 
+                    "tipo_movimiento": "Matrícula", "observaciones": f[6] or "Sin observaciones."
+                } 
                 for f in historial_db
             ]
         }

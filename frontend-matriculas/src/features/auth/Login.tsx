@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, ShieldCheck } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -26,6 +27,36 @@ export default function Login() {
       const datos = await respuesta.json();
 
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al iniciar sesión');
+
+      localStorage.setItem('token', datos.access_token);
+      localStorage.setItem('usuario', JSON.stringify(datos.usuario));
+      navigate('/');
+      
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // --- NUEVA LÓGICA DE LOGIN CON GOOGLE ---
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    setError('');
+    setCargando(true);
+
+    try {
+      const respuesta = await fetch('http://127.0.0.1:8000/login/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          token: credentialResponse.credential, // El token crudo que envía Google
+          rol: rol // El rol que está seleccionado en el combobox
+        })
+      });
+
+      const datos = await respuesta.json();
+
+      if (!respuesta.ok) throw new Error(datos.detail || 'Error al iniciar sesión con Google');
 
       localStorage.setItem('token', datos.access_token);
       localStorage.setItem('usuario', JSON.stringify(datos.usuario));
@@ -69,6 +100,36 @@ export default function Login() {
               <ShieldCheck size={18} /> {error}
             </div>
           )}
+
+          {/* COMBBOX DE ROLES MOVIDO ARRIBA PARA QUE SIRVA PARA AMBOS MÉTODOS */}
+          <div className="mb-6">
+            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">1. Seleccione su Perfil Institucional</label>
+            <select 
+              value={rol} onChange={(e) => setRol(e.target.value)}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-900 focus:border-transparent text-sm bg-gray-50 focus:bg-white font-medium text-gray-700 cursor-pointer"
+            >
+              <option value="COLEGIO">Establecimiento Educacional</option>
+              <option value="SLEP">Administración Central (SLEP)</option>
+            </select>
+          </div>
+
+          {/* 🌟 AQUÍ ESTÁ LA INTEGRACIÓN DEL BOTÓN DE GOOGLE */}
+          <div className="mb-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={() => setError('El inicio de sesión con Google fue cancelado o falló.')}
+              useOneTap
+              theme="filled_blue"
+              text="signin_with"
+              shape="rectangular"
+            />
+          </div>
+
+          <div className="relative flex py-4 items-center">
+            <div className="flex-grow border-t border-gray-300"></div>
+            <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-bold">O INGRESE CON CONTRASEÑA</span>
+            <div className="flex-grow border-t border-gray-300"></div>
+          </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
