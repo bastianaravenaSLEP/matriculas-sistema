@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useOutletContext } from 'react-router-dom';
-import ModalEmisionDocumento from '../components/ModalEmisionDocumento';
+import ModalEmisionDocumento from '../../components/ModalEmisionDocumento';
 
 interface Matricula {
   id_matricula: number;

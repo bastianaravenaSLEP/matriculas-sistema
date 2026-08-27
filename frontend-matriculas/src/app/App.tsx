@@ -1,15 +1,15 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Layout from './components/Layout';
-import Inicio from './pages/Inicio';
-import Matriculas from './pages/Matriculas';
-import NuevaMatricula from './pages/NuevaMatricula';
-import Estudiantes from './pages/Estudiantes';
-import CuestionarioRetiro from './pages/CuestionarioRetiro';
-import Login from './pages/Login';
-import Auditoria from './pages/Auditoria';
-import NuevoInicio from './pages/NuevoInicio';
-import Verificador from './pages/Verificador';
+import Login from '../features/auth/Login';
+import HomeMenu from '../features/home/NuevoInicio';
+import Estadisticas from '../features/dashboard/Inicio';
+import Estudiantes from '../features/estudiantes/Estudiantes';
+import Matriculas from '../features/matriculas/Matriculas';
+import NuevaMatricula from '../features/matriculas/NuevaMatricula';
+import CuestionarioRetiro from '../features/matriculas/CuestionarioRetiro';
+import Verificador from '../features/documentos/Verificador';
+import Auditoria from '../features/auditoria/Auditoria';
+import Layout from '../components/Layout';
 
 // ============================================================================
 // COMPONENTE GUARDIÁN (Protección de Rutas)
@@ -47,8 +47,8 @@ export default function App() {
         >
           {/* Todas estas rutas hijas heredan la protección del Layout */}
           
-          <Route index element={<NuevoInicio />} />
-          <Route path="inicio" element={<Inicio />} />
+          <Route index element={<HomeMenu />} />
+          <Route path="inicio" element={<Estadisticas/>} />
           <Route path="/verificar" element={<Verificador />} />
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
