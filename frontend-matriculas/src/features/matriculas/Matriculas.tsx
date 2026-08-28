@@ -273,15 +273,7 @@ const confirmarRetiro = async (e: React.FormEvent) => {
 
       if (!respuesta.ok) throw new Error('Error al procesar la baja en el sistema');
 
-      await fetch('http://127.0.0.1:8000/documentos/emitir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          id_matricula: idSeleccionado,
-          tipo_documento: 'RETIRO',
-          destinatarios: destinatarios
-        })
-      });
+
 
       if (descargarLocalRetiro) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=RETIRO`, '_blank');
@@ -336,15 +328,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al cambiar de curso');
 
-      await fetch('http://127.0.0.1:8000/documentos/emitir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          id_matricula: idSeleccionado,
-          tipo_documento: 'CAMBIO_CURSO',
-          destinatarios: destinatarios
-        })
-      });
+
 
       if (descargarLocalCurso) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=CAMBIO_CURSO`, '_blank');
@@ -552,17 +536,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 </select>
               </div>
 
-                            <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">3. Motivo o Justificación del Traslado</label>
-                <textarea 
-                  rows={2}
-                  value={motivoCambio} 
-                  onChange={(e) => setMotivoCambio(e.target.value)} 
-                  placeholder="Ej: Solicitud escrita del apoderado por cercanía de domicilio..." 
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                  required
-                />
-              </div>
+        
 
               <div className="border-t pt-3 space-y-3">
                 <p className="text-xs font-bold text-gray-700 uppercase">4. Envío Obligatorio de Comprobante</p>

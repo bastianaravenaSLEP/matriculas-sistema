@@ -16,6 +16,8 @@ from database import get_db_connection
 from security import obtener_usuario_actual
 from schemas import MatriculaCreate, MatriculaUpdate, CuestionarioRetiro
 from security import obtener_usuario_actual, verificar_escritura
+from typing import List
+from fastapi import File, UploadFile
 
 router = APIRouter(prefix="/matriculas", tags=["Matrículas"])
 
@@ -31,23 +33,84 @@ def determinar_nivel_backend(curso_str: str, cod_tipo: int) -> str:
     if cod_tipo and cod_tipo >= 300: return 'Educación Media'
     return 'Educación Básica'
 
-def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: str):
+# 1. Función de envío mejorada (ahora devuelve si tuvo éxito o no)
+def enviar_correo_retiro(correo_destino: str, id_matricula: int, nombre_alumno: str, pdf_buffer: io.BytesIO = None) -> tuple[bool, str]:
     EMAIL_REMITENTE = "basti.aravena2001@gmail.com"
     PASSWORD_APP = "kaea ccqf qyjd nedu"
     msg = EmailMessage()
-    msg['Subject'] = 'Importante: Cuestionario de Retiro Escolar SLEP'
+    msg['Subject'] = 'Importante: Certificado y Cuestionario de Retiro Escolar SLEP'
     msg['From'] = EMAIL_REMITENTE
     msg['To'] = correo_destino
     link_cuestionario = f"http://localhost:5173/encuesta-retiro/{id_matricula}"
     
-    msg.set_content(f"Estimado Apoderado,\n\nSe ha registrado el inicio del proceso de baja para el estudiante {nombre_alumno}.\nPor favor ingrese al siguiente enlace para completar el proceso: {link_cuestionario}\n\nAtentamente,\nSistema RGM")
+    # Nuevo cuerpo del correo mencionando el adjunto
+    cuerpo_correo = (
+        f"Estimado Apoderado,\n\n"
+        f"Se ha registrado oficialmente el retiro del estudiante {nombre_alumno} de nuestro establecimiento.\n\n"
+        f"📄 Adjunto a este correo encontrará el Certificado de Retiro validado por el sistema.\n\n"
+        f"Para finalizar el proceso, es obligatorio que ingrese al siguiente enlace para completar el cuestionario de retiro:\n"
+        f"{link_cuestionario}\n\n"
+        f"Atentamente,\nSistema RGM - SLEP Valparaíso"
+    )
+    msg.set_content(cuerpo_correo)
+    
+    # 🌟 Magia para adjuntar el PDF generado
+    if pdf_buffer:
+        pdf_buffer.seek(0)
+        msg.add_attachment(
+            pdf_buffer.read(), 
+            maintype='application', 
+            subtype='pdf', 
+            filename=f"Certificado_Retiro_{nombre_alumno.replace(' ', '_')}.pdf"
+        )
+
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
             smtp.login(EMAIL_REMITENTE, PASSWORD_APP)
             smtp.send_message(msg)
+        return True, "Correo con certificado enviado correctamente."
     except Exception as e:
-        print(f"No se pudo enviar el correo: {e}")
+        error_msg = str(e)
+        print(f"No se pudo enviar el correo: {error_msg}")
+        return False, error_msg
+def enviar_correo_cambio_curso(correo_destino: str, id_matricula: int, nombre_alumno: str, nuevo_curso: str, pdf_buffer: io.BytesIO = None) -> tuple[bool, str]:
+    EMAIL_REMITENTE = "basti.aravena2001@gmail.com"
+    PASSWORD_APP = "kaea ccqf qyjd nedu"
+    msg = EmailMessage()
+    msg['Subject'] = 'Importante: Comprobante y Formulario de Traslado de Curso'
+    msg['From'] = EMAIL_REMITENTE
+    msg['To'] = correo_destino
+    
+    # Enlace hacia la futura pantalla que crearás en React
+    link_cuestionario = f"http://localhost:5173/encuesta-cambio-curso/{id_matricula}"
+    
+    cuerpo_correo = (
+        f"Estimado Apoderado,\n\n"
+        f"Se ha registrado exitosamente el traslado interno del estudiante {nombre_alumno} hacia el curso {nuevo_curso}.\n\n"
+        f"📄 Adjunto a este correo encontrará el Comprobante de Traslado validado por el sistema.\n\n"
+        f"Para finalizar el proceso normativo, es obligatorio que ingrese al siguiente enlace para indicar el motivo por el cual solicitó este cambio de curso:\n"
+        f"{link_cuestionario}\n\n"
+        f"Atentamente,\nSistema RGM - SLEP Valparaíso"
+    )
+    msg.set_content(cuerpo_correo)
+    
+    if pdf_buffer:
+        pdf_buffer.seek(0)
+        msg.add_attachment(
+            pdf_buffer.read(), 
+            maintype='application', 
+            subtype='pdf', 
+            filename=f"Traslado_Curso_{nombre_alumno.replace(' ', '_')}.pdf"
+        )
 
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_REMITENTE, PASSWORD_APP)
+            smtp.send_message(msg)
+        return True, "Correo de traslado enviado correctamente."
+    except Exception as e:
+        return False, str(e)
+    
 @router.get("")
 def obtener_matriculas(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
     rol = usuario_actual.get("rol")
@@ -96,6 +159,19 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(v
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # 0. CALCULAR CORRELATIVO AUTOMÁTICO
+        # Buscamos el folio más alto registrado para este colegio, año y curso específico.
+        cursor.execute("""
+            SELECT COALESCE(MAX(numero_correlativo), 0) 
+            FROM matricula 
+            WHERE id_establecimiento = %s 
+              AND anio_escolar = %s 
+              AND curso = %s
+        """, (matricula.id_establecimiento, matricula.anio_escolar, matricula.curso))
+        
+        max_correlativo = cursor.fetchone()[0]
+        nuevo_correlativo = max_correlativo + 1 # Asignamos el siguiente número disponible
+
         # 1. REGLA DE NEGOCIO: Anular matrícula activa anterior del mismo alumno en el mismo año
         cursor.execute("""
             UPDATE matricula 
@@ -107,13 +183,13 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(v
             WHERE id_estudiante = %s AND anio_escolar = %s AND estado = 'Activa'
         """, (matricula.id_estudiante, matricula.anio_escolar))
 
-        # 2. CREACIÓN: Insertar la nueva matrícula
+        # 2. CREACIÓN: Insertar la nueva matrícula usando el nuevo_correlativo calculado
         query = """
             INSERT INTO matricula (numero_correlativo, anio_escolar, id_estudiante, id_establecimiento, fecha_matricula, nivel_ensenanza, curso, estado, cod_tipo_ensenanza, cod_grado, letra_curso, id_usuario_ejecutor) 
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_matricula;
         """
         valores = (
-            matricula.numero_correlativo, 
+            nuevo_correlativo, # <--- Usamos la variable calculada automáticamente
             matricula.anio_escolar, 
             matricula.id_estudiante, 
             matricula.id_establecimiento, 
@@ -131,7 +207,11 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(v
         
         # Confirmar los cambios
         conn.commit()
-        return {"mensaje": "Matrícula creada exitosamente. Registro anterior anulado (si existía).", "id_matricula": nuevo_id}
+        return {
+            "mensaje": f"Matrícula creada. Se asignó automáticamente el folio #{nuevo_correlativo}.", 
+            "id_matricula": nuevo_id,
+            "correlativo_asignado": nuevo_correlativo
+        }
         
     except Exception as e:
         conn.rollback()
@@ -140,26 +220,84 @@ def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(v
         cursor.close()
         conn.close()
 
+# 2. Endpoint de actualización con alertas de estado
 @router.put("/{id_matricula}")
 def actualizar_matricula(id_matricula: int, matricula: MatriculaUpdate, usuario_actual: dict = Depends(verificar_escritura)):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        mensaje_alerta = ""
+
+        # 1. Ajustes previos si es retiro
         if matricula.estado == "Retirado":
             matricula.observaciones = "Pendiente de respuesta mediante cuestionario autoaplicado."
             matricula.motivo_retiro = "Pendiente"
-            cursor.execute("SELECT e.nombres, a.correo_electronico FROM matricula m INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado WHERE m.id_matricula = %s", (id_matricula,))
-            datos_correo = cursor.fetchone()
-            if datos_correo and datos_correo[1]:
-                enviar_correo_retiro(datos_correo[1], id_matricula, datos_correo[0])
 
+        # 2. ACTUALIZAMOS LA BASE DE DATOS PRIMERO
         cursor.execute("""
             UPDATE matricula SET estado = %s, fecha_retiro = %s, motivo_retiro = %s, observaciones = %s, id_usuario_ejecutor = %s WHERE id_matricula = %s RETURNING id_matricula;
         """, (matricula.estado, matricula.fecha_retiro, matricula.motivo_retiro, matricula.observaciones, matricula.id_usuario_ejecutor, id_matricula))
         
-        if not cursor.fetchone(): raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+        if not cursor.fetchone(): 
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+
+        # 3. GENERAR PDF Y ENVIAR CORREO (Solo si es retiro)
+        if matricula.estado == "Retirado":
+            # Extraemos TODOS los datos necesarios para armar el PDF de Retiro y buscar el correo
+            cursor.execute("""
+                SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula,
+                       e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo,
+                       m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd,
+                       a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio,
+                       a.correo_electronico
+                FROM matricula m 
+                INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
+                INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+                LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
+                WHERE m.id_matricula = %s
+            """, (id_matricula,))
+            datos = cursor.fetchone()
+            
+            correo_apoderado = datos[20]
+            
+            if datos and correo_apoderado:
+                # Armamos el diccionario exacto que pide tu generador de PDF
+                rut_apod = datos[15] if datos[15] else "Sin registro"
+                nom_apod = f"{datos[16] or ''} {datos[17] or ''} {datos[18] or ''}".strip()
+                if not nom_apod: nom_apod = "Sin registro"
+                domicilio = datos[19] if datos[19] else "los registros del establecimiento"
+
+                datos_alumno = {
+                    "folio": datos[0], "anio": datos[1], "nivel": datos[2], "curso": datos[3],
+                    "fecha_matricula": datos[4], "rut": str(datos[5]).strip(),
+                    "nombre_completo": f"{datos[6]} {datos[7]} {datos[8]}".strip(),
+                    "sexo": datos[9], "estado": datos[10], "fecha_retiro": datos[11],
+                    "motivo_cambio": datos[12], "nombre_colegio": datos[13], "rbd_colegio": datos[14],
+                    "rut_apoderado": rut_apod, "nombre_apoderado": nom_apod, "domicilio": domicilio
+                }
+                
+                # Creamos el código de verificación
+                import hashlib
+                hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
+                hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
+                codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
+                
+                # 🌟 Generamos el PDF usando tu servicio
+                from services.pdf_service import generar_certificado_pdf
+                pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "RETIRO", codigo_verificacion)
+                
+                # Enviamos el correo con el PDF adjunto
+                exito, msg_error = enviar_correo_retiro(correo_apoderado, id_matricula, datos[6], pdf_buffer)
+                
+                if not exito:
+                    mensaje_alerta = f"⚠️ Retiro guardado, pero falló el envío de Gmail: {msg_error}"
+            else:
+                mensaje_alerta = "⚠️ Retiro guardado, pero el estudiante NO TIENE apoderado con correo electrónico registrado."
+
         conn.commit()
-        return {"mensaje": "Matrícula actualizada."}
+        mensaje_final = mensaje_alerta if mensaje_alerta else "Matrícula actualizada y correo enviado exitosamente."
+        return {"mensaje": mensaje_final}
+        
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -185,6 +323,25 @@ def responder_cuestionario(id_matricula: int, payload: CuestionarioRetiro):
         cur.close()
         conn.close()
 
+@router.put("/{id_matricula}/cuestionario-curso")
+def responder_cuestionario_curso(id_matricula: int, payload: CuestionarioRetiro):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT e.run_ipe FROM matricula m INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante WHERE m.id_matricula = %s", (id_matricula,))
+        resultado = cur.fetchone()
+        
+        if not resultado or resultado[0] != payload.rut_estudiante:
+            raise HTTPException(status_code=401, detail="El RUT ingresado no coincide.")
+            
+        # Reemplazamos la etiqueta "Pendiente..." por la razón real que escribió el apoderado
+        cur.execute("UPDATE matricula SET motivo_cambio_curso = %s WHERE id_matricula = %s", (payload.motivo_real, id_matricula))
+        conn.commit()
+        return {"mensaje": "Motivo de traslado guardado con éxito."}
+    finally:
+        cur.close()
+        conn.close()
+
 class CambioCursoRequest(BaseModel):
     cod_tipo_ensenanza: int
     nuevo_curso: str
@@ -195,22 +352,86 @@ def cambiar_curso(id_matricula: int, req: CambioCursoRequest, usuario_actual: di
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT anio_escolar, estado, curso, observaciones FROM matricula WHERE id_matricula = %s", (id_matricula,))
-        mat_actual = cur.fetchone()
-        if not mat_actual: raise HTTPException(status_code=404, detail="Matrícula no encontrada")
-            
-        if mat_actual[0] != datetime.now().year: raise HTTPException(status_code=400, detail="Solo se puede cambiar curso en año vigente.")
-        if mat_actual[1] != 'Activa': raise HTTPException(status_code=400, detail="El alumno debe estar activo.")
-            
-        nueva_observacion = f"{mat_actual[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Trasladado de '{mat_actual[2]}' a '{req.nuevo_curso}'."
+        # 1. Agregamos m.id_establecimiento al final de la consulta para poder calcular el folio
+        cur.execute("""
+            SELECT m.anio_escolar, m.estado, m.curso, m.observaciones, e.nombres, a.correo_electronico,
+                   m.numero_correlativo, m.nivel_ensenanza, m.fecha_matricula, e.run_ipe, e.apellido_paterno,
+                   e.apellido_materno, e.sexo, m.fecha_retiro, est.nombre, est.rbd, a.rut_pasaporte,
+                   a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio, m.id_establecimiento
+            FROM matricula m
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
+            WHERE m.id_matricula = %s
+        """, (id_matricula,))
+        datos = cur.fetchone()
         
+        if not datos: raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+        if datos[0] != datetime.now().year: raise HTTPException(status_code=400, detail="Solo se puede cambiar curso en año vigente.")
+        if datos[1] != 'Activa': raise HTTPException(status_code=400, detail="El alumno debe estar activo.")
+            
+        anio_escolar = datos[0]
+        id_establecimiento = datos[21]
+        folio_antiguo = datos[6]
+
+        # 🌟 NUEVO: Calculamos el siguiente Folio Único para el curso de DESTINO
+        cur.execute("""
+            SELECT COALESCE(MAX(numero_correlativo), 0) 
+            FROM matricula 
+            WHERE id_establecimiento = %s 
+              AND anio_escolar = %s 
+              AND curso = %s
+        """, (id_establecimiento, anio_escolar, req.nuevo_curso))
+        
+        nuevo_correlativo = cur.fetchone()[0] + 1
+
+        nueva_observacion = f"{datos[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Trasladado de '{datos[2]}' a '{req.nuevo_curso}'. Folio anterior: {folio_antiguo}. Motivo pendiente."
+        motivo_provisional = "Pendiente de respuesta mediante cuestionario autoaplicado."
+
+        # 2. ACTUALIZAR BASE DE DATOS (Asignando el nuevo correlativo)
         cur.execute("""
             UPDATE matricula 
-            SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s, motivo_cambio_curso = %s 
+            SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s, motivo_cambio_curso = %s, numero_correlativo = %s 
             WHERE id_matricula = %s
-        """, (req.cod_tipo_ensenanza, req.nuevo_curso, nueva_observacion.strip(), req.motivo_cambio_curso, id_matricula))
+        """, (req.cod_tipo_ensenanza, req.nuevo_curso, nueva_observacion.strip(), motivo_provisional, nuevo_correlativo, id_matricula))
+        
+        mensaje_alerta = ""
+        correo_apoderado = datos[5]
+        nombre_alumno = datos[4]
+        
+        # 3. GENERAR PDF Y ENVIAR CORREO
+        if correo_apoderado:
+            rut_apod = datos[16] if datos[16] else "Sin registro"
+            nom_apod = f"{datos[17] or ''} {datos[18] or ''} {datos[19] or ''}".strip()
+            if not nom_apod: nom_apod = "Sin registro"
+            domicilio = datos[20] if datos[20] else "los registros del establecimiento"
+
+            datos_alumno = {
+                "folio": nuevo_correlativo, # 🌟 Actualizado para que el PDF muestre el nuevo folio
+                "anio": datos[0], "nivel": datos[7], "curso": req.nuevo_curso,
+                "fecha_matricula": datos[8], "rut": str(datos[9]).strip(),
+                "nombre_completo": f"{datos[4]} {datos[10]} {datos[11]}".strip(),
+                "sexo": datos[12], "estado": datos[1], "fecha_retiro": datos[13],
+                "motivo_cambio": motivo_provisional, "nombre_colegio": datos[14], "rbd_colegio": datos[15],
+                "rut_apoderado": rut_apod, "nombre_apoderado": nom_apod, "domicilio": domicilio
+            }
+            
+            import hashlib
+            hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
+            hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
+            codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
+            
+            from services.pdf_service import generar_certificado_pdf
+            pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "CAMBIO_CURSO", codigo_verificacion)
+            
+            exito, msg_error = enviar_correo_cambio_curso(correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_buffer)
+            if not exito:
+                mensaje_alerta = f"⚠️ Traslado guardado, pero falló el envío a Gmail: {msg_error}"
+        else:
+            mensaje_alerta = "⚠️ Traslado guardado, pero el estudiante NO TIENE apoderado con correo registrado."
+
         conn.commit()
-        return {"status": "success", "mensaje": "Curso y motivo actualizados correctamente."}
+        return {"status": "success", "mensaje": mensaje_alerta if mensaje_alerta else "Traslado registrado y correo enviado al apoderado."}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -519,3 +740,44 @@ async def carga_masiva_sige(
     finally:
         if 'cur' in locals(): cur.close()
         if 'conn' in locals(): conn.close()
+
+@router.get("/procedencia/{rut_estudiante}")
+def obtener_colegio_procedencia(rut_estudiante: str):
+    """
+    Busca el último registro de matrícula de un estudiante por su RUT
+    para determinar su colegio de procedencia.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT est.nombre, est.rbd, m.estado, m.anio_escolar, m.curso, m.id_establecimiento
+            FROM matricula m
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            WHERE e.run_ipe = %s
+            ORDER BY m.anio_escolar DESC, m.fecha_matricula DESC, m.id_matricula DESC
+            LIMIT 1
+        """, (rut_estudiante.strip(),))
+        
+        resultado = cursor.fetchone()
+        
+        if not resultado:
+            return {
+                "encontrado": False,
+                "colegio_procedencia": "Estudiante Nuevo (Sin registros previos en el sistema)",
+                "id_establecimiento_previo": None
+            }
+            
+        return {
+            "encontrado": True,
+            "colegio_procedencia": resultado[0],
+            "rbd_procedencia": resultado[1],
+            "estado_previo": resultado[2],
+            "anio_previo": resultado[3],
+            "curso_previo": resultado[4],
+            "id_establecimiento_previo": resultado[5]
+        }
+    finally:
+        cursor.close()
+        conn.close()

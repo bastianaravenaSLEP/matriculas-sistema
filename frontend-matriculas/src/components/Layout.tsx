@@ -21,18 +21,33 @@ export default function Layout() {
   const [colegioSeleccionado, setColegioSeleccionado] = useState<string>(
     !esPerfilGlobal ? String(usuario?.id_establecimiento) : ''
   );
-
+  const [busquedaFiltro, setBusquedaFiltro] = useState('');
+  const [mostrarDropdownFiltro, setMostrarDropdownFiltro] = useState(false);
   const [establecimientos, setEstablecimientos] = useState<Establecimiento[]>([]);
 
-  useEffect(() => {
+useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       fetch('http://127.0.0.1:8000/establecimientos', { headers: { 'Authorization': `Bearer ${token}` } })
         .then(res => res.json())
-        .then(data => setEstablecimientos(data))
+        .then(data => {
+          // 🌟 ORDENAMOS POR RBD DE MENOR A MAYOR
+          const dataOrdenada = data.sort((a: Establecimiento, b: Establecimiento) => parseInt(a.rbd) - parseInt(b.rbd));
+          setEstablecimientos(dataOrdenada);
+        })
         .catch(err => console.error(err));
     }
   }, []);
+
+  // 🌟 SINCRONIZAR EL TEXTO DEL BUSCADOR CON EL COLEGIO SELECCIONADO
+  useEffect(() => {
+    if (colegioSeleccionado === '') {
+      setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
+    } else {
+      const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
+      if (col) setBusquedaFiltro(`RBD: ${col.rbd} - ${col.nombre}`);
+    }
+  }, [colegioSeleccionado, establecimientos]);
 
   const cerrarSesion = () => {
     localStorage.removeItem('token');
@@ -114,22 +129,73 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* SUB-HEADER (Filtro de Colegio / Contexto) */}
+{/* SUB-HEADER (Filtro de Colegio / Contexto) */}
       <div className="bg-white border-b border-gray-200 h-14 flex items-center px-6 shrink-0 shadow-sm z-10">
         {esPerfilGlobal ? (
-          <div className="flex items-center gap-3 w-full max-w-3xl">
+          <div className="flex items-center gap-3 w-full max-w-3xl relative">
             <span className="text-xs font-bold text-gray-500 uppercase">Filtro Institucional:</span>
-            <select 
-              value={colegioSeleccionado} onChange={(e) => setColegioSeleccionado(e.target.value)}
-              className="flex-1 border border-gray-300 rounded-md py-1.5 px-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-900 text-sm font-bold text-gray-700 cursor-pointer"
-            >
-              <option value="">🌍 Ver todos los Establecimientos (Nivel Central)</option>
-              {establecimientos.map((est) => (
-                <option key={est.id_establecimiento} value={est.id_establecimiento}>
-                  RBD: {est.rbd} - {est.nombre}
-                </option>
-              ))}
-            </select>
+            
+            {/* 🌟 NUEVO BUSCADOR INTERACTIVO */}
+            <div className="relative flex-1">
+              <input 
+                type="text"
+                value={busquedaFiltro}
+                onChange={(e) => {
+                  setBusquedaFiltro(e.target.value);
+                  setMostrarDropdownFiltro(true);
+                }}
+                onFocus={() => {
+                  setBusquedaFiltro(''); // Limpiar al hacer clic para buscar más fácil
+                  setMostrarDropdownFiltro(true);
+                }}
+                onBlur={() => {
+                  // Pequeño retraso para permitir el clic antes de cerrar la lista
+                  setTimeout(() => {
+                    setMostrarDropdownFiltro(false);
+                    // Si hizo clic fuera sin seleccionar nada, restauramos el nombre original
+                    if (colegioSeleccionado === '') {
+                      setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
+                    } else {
+                      const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
+                      if (col) setBusquedaFiltro(`RBD: ${col.rbd} - ${col.nombre}`);
+                    }
+                  }, 200);
+                }}
+                placeholder="🔍 Buscar por nombre o número de RBD..."
+                className="w-full border border-gray-300 rounded-md py-1.5 px-3 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-900 text-sm font-bold text-gray-700 cursor-text"
+              />
+              
+              {mostrarDropdownFiltro && (
+                <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-xl max-h-60 overflow-y-auto">
+                  <li 
+                    className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-100 text-gray-800 font-bold border-b border-gray-100"
+                    onClick={() => {
+                      setColegioSeleccionado('');
+                      setMostrarDropdownFiltro(false);
+                    }}
+                  >
+                    🌍 Ver todos los Establecimientos (Nivel Central)
+                  </li>
+                  {establecimientos
+                    .filter(est => 
+                      est.nombre.toLowerCase().includes(busquedaFiltro.toLowerCase()) || 
+                      String(est.rbd).includes(busquedaFiltro)
+                    )
+                    .map(est => (
+                      <li 
+                        key={est.id_establecimiento}
+                        className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-gray-700 border-b border-gray-50"
+                        onMouseDown={() => {
+                          setColegioSeleccionado(String(est.id_establecimiento));
+                          setMostrarDropdownFiltro(false);
+                        }}
+                      >
+                        RBD: {est.rbd} - {est.nombre}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex items-center gap-3">

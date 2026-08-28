@@ -10,6 +10,7 @@ import CuestionarioRetiro from '../features/matriculas/CuestionarioRetiro';
 import Verificador from '../features/documentos/Verificador';
 import Auditoria from '../features/auditoria/Auditoria';
 import Layout from '../components/Layout';
+import EncuestaCambioCurso from '../features/matriculas/CuestionarioCambio';
 
 // ============================================================================
 // COMPONENTE GUARDIÁN (Protección de Rutas)
@@ -35,6 +36,7 @@ export default function App() {
         {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
         <Route path="/login" element={<Login />} />
         <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
+        <Route path="/encuesta-cambio-curso/:id" element={<EncuestaCambioCurso />} />
 
         {/* 2. RUTAS PRIVADAS (Protegidas por el Guardián) */}
         <Route 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 import { Search, UserCheck, AlertCircle, X, Copy } from 'lucide-react';
 
 interface MatriculaBase {
@@ -31,6 +31,16 @@ export default function NuevaMatricula() {
   const [huboPrecarga, setHuboPrecarga] = useState(false);
   const [datosFaltantes, setDatosFaltantes] = useState<string[]>([]);
   const [modalFaltantes, setModalFaltantes] = useState(false);
+  const { colegioSeleccionado } = useOutletContext<any>() || { colegioSeleccionado: '' };
+  useEffect(() => {
+    if (colegioSeleccionado) {
+      setFormulario(prev => ({
+        ...prev,
+        id_establecimiento: String(colegioSeleccionado)
+      }));
+    }
+  }, [colegioSeleccionado]);
+
   
   // NUEVO: Estado con todos los campos obligatorios del apoderado
   const [formFaltantes, setFormFaltantes] = useState({
@@ -43,8 +53,12 @@ export default function NuevaMatricula() {
     telefono_apoderado: '',
     correo_apoderado: ''
   });
-  
+
+  // --- NUEVOS ESTADOS PARA PROCEDENCIA ---
+  const [colegioProcedencia, setColegioProcedencia] = useState('');
+  const [esTraslado, setEsTraslado] = useState(false);
   const [guardandoFaltantes, setGuardandoFaltantes] = useState(false);
+  
 
   // Estados para la lógica en cascada
   const [establecimientosDb, setEstablecimientosDb] = useState<any[]>([]);
@@ -66,12 +80,24 @@ export default function NuevaMatricula() {
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': `Bearer ${token}` };
 
+
     fetch('http://127.0.0.1:8000/establecimientos', { headers })
       .then(res => res.json())
       .then(data => {
         setEstablecimientosDb(data);
-        if (data.length > 0 && !formulario.id_establecimiento) {
-          setFormulario(prev => ({ ...prev, id_establecimiento: String(data[0].id_establecimiento) }));
+        
+if (data.length > 0 && !formulario.id_establecimiento) {
+          
+          // Buscamos si el colegio del filtro global existe en la lista de colegios
+          const colegioFiltro = data.find((est: any) => String(est.id_establecimiento) === String(colegioSeleccionado));
+          
+          if (colegioFiltro) {
+            // Si coincide, seleccionamos automáticamente ese
+            setFormulario(prev => ({ ...prev, id_establecimiento: String(colegioFiltro.id_establecimiento) }));
+          } else {
+            // Si el usuario está viendo "Todos los establecimientos" (Nivel Central), seleccionamos el primero por defecto
+            setFormulario(prev => ({ ...prev, id_establecimiento: String(data[0].id_establecimiento) }));
+          }
         }
       })
       .catch(err => console.error("Error establecimientos:", err));
@@ -185,7 +211,7 @@ export default function NuevaMatricula() {
     }
   };
 
-  const procesarEstudiante = (datos: any, estRun: string) => {
+  const procesarEstudiante =  async (datos: any, estRun: string) => {
     setEstudiante(datos.personal);
     setEstudianteCompleto(datos);
 
@@ -212,6 +238,32 @@ export default function NuevaMatricula() {
         correo_apoderado: datos.apoderado.correo !== "-" ? datos.apoderado.correo : ''
       });
     }
+// ---CONSULTA DE COLEGIO PREVIO ---
+    try {
+        const token = localStorage.getItem('token');
+        const resProcedencia = await fetch(`http://127.0.0.1:8000/matriculas/procedencia/${estRun}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (resProcedencia.ok) {
+            const procedencia = await resProcedencia.json();
+            
+            if (procedencia.encontrado) {
+                setColegioProcedencia(`${procedencia.colegio_procedencia} (RBD: ${procedencia.rbd_procedencia})`);
+                
+                // Si el colegio de donde viene ES DISTINTO al que está seleccionado actualmente en el select
+                if (String(procedencia.id_establecimiento_previo) !== String(formulario.id_establecimiento)) {
+                    setEsTraslado(true);
+                } else {
+                    setEsTraslado(false);
+                }
+            } else {
+                setColegioProcedencia('Estudiante Nuevo (Sin registros previos)');
+                setEsTraslado(false);
+            }
+        }
+    } catch (e) {
+        console.error("Error buscando procedencia", e);
+    }
 
     // 2. PRECARGA DE HISTORIAL
     const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estRun);
@@ -221,7 +273,6 @@ export default function NuevaMatricula() {
 
       setFormulario(prev => ({
         ...prev,
-        id_establecimiento: String(ultima.id_establecimiento),
         cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
         cursoSeleccionado: ultima.curso
       }));
@@ -310,7 +361,7 @@ export default function NuevaMatricula() {
     setError('');
 
     const payload = {
-      numero_correlativo: parseInt(formulario.numero_correlativo),
+      numero_correlativo: 0,
       anio_escolar: parseInt(formulario.anio_escolar),
       id_estudiante: estudiante.id,
       id_establecimiento: parseInt(formulario.id_establecimiento),
@@ -455,9 +506,18 @@ export default function NuevaMatricula() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+        {/* CAMPO DE PROCEDENCIA DE SOLO LECTURA */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">N° Correlativo (Folio)</label>
-              <input required type="number" name="numero_correlativo" value={formulario.numero_correlativo} onChange={handleChange} placeholder="Ej: 1042" className="w-full border border-gray-300 rounded-lg p-2 outline-none" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Colegio de Procedencia</label>
+              <input 
+                type="text" 
+                disabled 
+                value={colegioProcedencia || 'Esperando selección...'} 
+                className={`w-full border rounded-lg p-2 outline-none font-medium text-sm ${esTraslado ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-gray-100 border-gray-300 text-gray-600'}`} 
+              />
+              {esTraslado && (
+                <p className="text-xs text-orange-600 mt-1 font-bold">⚠️ Se registrará como un traslado.</p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Año Escolar</label>
