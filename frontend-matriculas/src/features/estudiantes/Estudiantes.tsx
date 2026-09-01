@@ -374,8 +374,15 @@ export default function Estudiantes() {
         </div>
       )}
 
-      {/* VISTA 2: FICHA DEL ESTUDIANTE */}
-      {datosEstudiante && (
+     {/* VISTA 2: FICHA DEL ESTUDIANTE */}
+      {datosEstudiante && (() => {
+        // 🌟 CEREBRO: Ordenamos el historial asegurando que el ID más alto (el más reciente) quede de los primeros
+        const historialOrdenado = [...datosEstudiante.historial].sort((a, b) => b.id - a.id);
+        
+        // Rescatamos la matrícula que quedó en la posición 0 (la más nueva)
+        const ultimaMatricula = historialOrdenado.length > 0 ? historialOrdenado[0] : null;
+
+        return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-8 duration-300">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 lg:col-span-1 h-fit">
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
@@ -386,11 +393,18 @@ export default function Estudiantes() {
               <div><p className="text-sm text-gray-500">RUN / IPE</p><p className="font-medium">{datosEstudiante.personal.run}</p></div>
               <div><p className="text-sm text-gray-500">Nombre Completo</p><p className="font-medium">{datosEstudiante.personal.nombres} {datosEstudiante.personal.apellidos}</p></div>
               <div><p className="text-sm text-gray-500">Fecha Nacimiento</p><p className="font-medium">{datosEstudiante.personal.fecha_nacimiento}</p></div>
+              
+              {/* 🌟 AQUÍ FORZAMOS A MOSTRAR EL COLEGIO MÁS RECIENTE CALCULADO */}
               <div className="pt-2 border-t border-gray-50">
                 <p className="text-sm text-gray-500 mb-1">Última Matrícula Registrada</p>
-                <p className="font-bold text-blue-800">{datosEstudiante.personal.colegio_actual}</p>
-                <p className="text-xs text-gray-500 font-mono">RBD: {datosEstudiante.personal.rbd_actual}</p>
+                <p className="font-bold text-blue-800">
+                  {ultimaMatricula ? ultimaMatricula.establecimiento : 'Sin registro'}
+                </p>
+                <p className="text-xs text-gray-500 font-mono">
+                  RBD: {ultimaMatricula ? ultimaMatricula.rbd : 'N/A'}
+                </p>
               </div>
+
               <div className="pt-2 border-t border-gray-50">
                 <p className="text-sm text-gray-500 mb-1">Domicilio Actual</p>
                 {!modoEdicion ? (
@@ -435,7 +449,7 @@ export default function Estudiantes() {
                 <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Clock size={24} /></div>
                 <h2 className="text-lg font-bold text-gray-800">Historial RGM</h2>
               </div>
-<table className="w-full text-left text-sm">
+                <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="text-gray-500 border-b border-gray-100">
                       <th className="pb-2">Año</th>
@@ -445,19 +459,20 @@ export default function Estudiantes() {
                     </tr>
                   </thead>
                   <tbody>
-                    {datosEstudiante.historial.length === 0 && (
+                    {/* 🌟 AQUÍ USAMOS EL HISTORIAL ORDENADO PARA LA TABLA */}
+                    {historialOrdenado.length === 0 && (
                       <tr><td colSpan={4} className="py-4 text-center text-gray-500">Sin historial de matrículas</td></tr>
                     )}
-                    {datosEstudiante.historial.map((reg: any) => (
-                      <tr key={reg.id} className="border-b border-gray-50">
-                        <td className="py-3">{reg.anio}</td>
+                    {historialOrdenado.map((reg: any) => (
+                      <tr key={reg.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                        <td className="py-3 font-semibold">{reg.anio}</td>
                         <td className="py-3">
-                          <p className="font-medium text-gray-800">{reg.establecimiento}</p>
+                          <p className="font-bold text-gray-800">{reg.establecimiento}</p>
                           <p className="text-xs text-gray-500 font-mono">RBD: {reg.rbd}</p>
                         </td>
-                        <td className="py-3 font-medium">{reg.curso}</td>
+                        <td className="py-3 font-medium text-gray-700">{reg.curso}</td>
                         <td className="py-3 text-center">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${reg.estado === 'Activa' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          <span className={`px-2 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${reg.estado === 'Activa' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-100'}`}>
                             {reg.estado}
                           </span>
                         </td>
@@ -468,7 +483,8 @@ export default function Estudiantes() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* MODAL CREAR NUEVO ESTUDIANTE */}
       {modalNuevoAbierto && (

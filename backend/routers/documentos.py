@@ -138,3 +138,45 @@ def verificar_certificado_publico(rut: str, codigo: str):
         media_type="application/pdf", 
         headers={"Content-Disposition": f"inline; filename=Verificado_{datos_alumno['rut']}.pdf"}
     )
+# --- 3. ENDPOINT: DESCARGAR COMPROBANTE DE INGRESO DIRECTO ---
+@router.get("/comprobante/{rut}")
+def descargar_comprobante_ingreso(rut: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        # 1. Buscar el ID de la matrícula más reciente de este RUT
+        cur.execute("""
+            SELECT m.id_matricula 
+            FROM matricula m
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
+            WHERE e.run_ipe = %s
+            ORDER BY m.id_matricula DESC
+            LIMIT 1
+        """, (rut,))
+        fila = cur.fetchone()
+        
+        if not fila:
+            raise HTTPException(status_code=404, detail="No se encontraron matrículas para este estudiante.")
+            
+        id_matricula_reciente = fila[0]
+    finally:
+        cur.close()
+        conn.close()
+
+    # 2. Reutilizar tu función para extraer toda la información cruzada
+    datos_alumno = obtener_datos_bd(id_matricula_reciente)
+    if not datos_alumno: 
+        raise HTTPException(status_code=404, detail="Error al extraer los datos de la matrícula.")
+
+    # Agregamos el nombre del usuario ejecutor al diccionario de datos para que el PDF lo imprima
+    datos_alumno['usuario_ejecutor'] = usuario_actual.get('nombre', 'Administrador del Sistema')
+
+    # 3. Generar el PDF en Memoria (Servicio de ReportLab)
+    pdf_buffer, titulo_pdf = generar_certificado_pdf(datos_alumno, 'COMPROBANTE_INGRESO')
+
+    # 4. Retornar el PDF como un archivo descargable
+    return StreamingResponse(
+        pdf_buffer, 
+        media_type="application/pdf", 
+        headers={"Content-Disposition": f"attachment; filename=Comprobante_Ingreso_{rut}.pdf"}
+    )

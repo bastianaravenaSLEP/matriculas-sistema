@@ -48,6 +48,8 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
         titulo_pdf = f"CERTIFICADO DE RETIRO ESCOLAR"
     elif tipo_documento == 'CAMBIO_CURSO':
         titulo_pdf = f"COMPROBANTE DE TRASLADO DE CURSO"
+    elif tipo_documento == 'COMPROBANTE_INGRESO': 
+        titulo_pdf = f"COMPROBANTE DE INGRESO DE MATRÍCULA"
     else:
         titulo_pdf = f"CERTIFICADO DE MATRÍCULA"
 
@@ -77,6 +79,8 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
         texto_principal = f"Certifico que el niño (a) / alumno (a): {nombre_alumno}, Rut: {rut_alumno}, domiciliado en {domicilio}, ha sido RETIRADO (A) del curso {curso} para el año {anio_escolar} del {nombre_colegio}; dependiente del Servicio Local de Educación Pública Valparaíso."
     elif tipo_documento == 'CAMBIO_CURSO':
         texto_principal = f"Certifico que el niño (a) / alumno (a): {nombre_alumno}, Rut: {rut_alumno}, domiciliado en {domicilio}, ha sido TRASLADADO (A) de curso exitosamente hacia el {curso} para el año {anio_escolar} del {nombre_colegio}; dependiente del Servicio Local de Educación Pública Valparaíso."
+    elif tipo_documento == 'COMPROBANTE_INGRESO': 
+        texto_principal = f"Se certifica que el estudiante: {nombre_alumno}, Rut: {rut_alumno}, domiciliado en {domicilio}, ha sido ingresado exitosamente al sistema para ser matriculado (a) en el curso {curso} para el año escolar {anio_escolar} en el {nombre_colegio}; dependiente del Servicio Local de Educación Pública Valparaíso."
     else:
         texto_principal = f"Certifico que el niño (a) / alumno (a): {nombre_alumno}, Rut: {rut_alumno}, domiciliado en {domicilio}, es Alumno (a) Regular matriculado para el año {anio_escolar} en el curso {curso} del {nombre_colegio}; dependiente del Servicio Local de Educación Pública Valparaíso."
 
@@ -84,7 +88,10 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
     hoy = datetime.now()
     fecha_str = hoy.strftime('%d/%m/%Y a las %H:%M:%S hrs.')
 
-    texto_footer = f"Se extiende el presente certificado a petición de la parte interesada, dejando constancia oficial de que el registro se encuentra activo y validado en el sistema del establecimiento a fecha {fecha_str}, trámite validado junto al Apoderado (a) titular: {nombre_apoderado}, Rut: {rut_apoderado}, para los fines que estime conveniente."
+    if tipo_documento == 'COMPROBANTE_INGRESO': # 🌟 NUEVO (Con advertencia explícita)
+        texto_footer = f"Se deja constancia oficial que el trámite fue gestionado junto al Apoderado (a) titular: {nombre_apoderado}, Rut: {rut_apoderado}. El ingreso a la plataforma fue realizado con fecha {fecha_str}. IMPORTANTE: Este documento es un comprobante de uso administrativo y no constituye el Certificado de Matrícula Oficial."
+    else:
+        texto_footer = f"Se extiende el presente certificado a petición de la parte interesada, dejando constancia oficial de que el registro se encuentra activo y validado en el sistema del establecimiento a fecha {fecha_str}, trámite validado junto al Apoderado (a) titular: {nombre_apoderado}, Rut: {rut_apoderado}, para los fines que estime conveniente."
 
     # Dibujado del texto manteniendo el justificado por márgenes
     y_pos = height - 200

@@ -6,6 +6,9 @@ python -m uvicorn main:app --reload
 2° Inicio cd frontend-matriculas
 npm run dev
 
+push git slep
+git push servicio main
+
 Contraseña Backend RGM slep
 kaea ccqf qyjd nedu
 

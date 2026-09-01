@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { jsPDF } from 'jspdf';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
-import { Search, UserCheck, AlertCircle, X, Copy } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight } from 'lucide-react';
+
 
 interface MatriculaBase {
   id_establecimiento: number;
@@ -29,8 +31,8 @@ export default function NuevaMatricula() {
 
   // Estados de Precarga y Validación Completa
   const [huboPrecarga, setHuboPrecarga] = useState(false);
-  const [cursoPrevio, setCursoPrevio] = useState(''); // 🌟 NUEVO
-  const [codigoPrevio, setCodigoPrevio] = useState<number | null>(null); // 🌟 NUEVO
+  const [cursoPrevio, setCursoPrevio] = useState(''); 
+  const [codigoPrevio, setCodigoPrevio] = useState<number | null>(null); 
   const [alertasTransicion, setAlertasTransicion] = useState<{texto: string, tipo: 'info' | 'alerta' | 'peligro'}[]>([]);
   const [datosFaltantes, setDatosFaltantes] = useState<string[]>([]);
   const [modalFaltantes, setModalFaltantes] = useState(false);
@@ -61,6 +63,8 @@ export default function NuevaMatricula() {
       }));
     }
   }, [colegioSeleccionado]);
+
+  const [matriculaExitosa, setMatriculaExitosa] = useState(false); // 🌟 NUEVO ESTADO
 
   
   // NUEVO: Estado con todos los campos obligatorios del apoderado
@@ -150,6 +154,11 @@ export default function NuevaMatricula() {
     if (codigoPlan >= 300) return 'Educación Media';
     return 'Educación Básica'; 
   };
+
+  // --- ESTADOS PARA DOCUMENTOS ---
+  const [checkCertNotas, setCheckCertNotas] = useState(false);
+  const [checkCertRetiro, setCheckCertRetiro] = useState(false);
+  const [idEstablecimientoPrevio, setIdEstablecimientoPrevio] = useState<string | null>(null);
 
   const codigosDisponibles = useMemo(() => {
     if (!formulario.id_establecimiento) return [];
@@ -260,7 +269,7 @@ export default function NuevaMatricula() {
     }
 
     // ---CONSULTA DE COLEGIO PREVIO ---
-    try {
+      try {
         const token = localStorage.getItem('token');
         const resProcedencia = await fetch(`http://127.0.0.1:8000/matriculas/procedencia/${estRun}`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -269,15 +278,16 @@ export default function NuevaMatricula() {
             const procedencia = await resProcedencia.json();
             
             if (procedencia.encontrado) {
+                setIdEstablecimientoPrevio(String(procedencia.id_establecimiento_previo)); // 🌟 NUEVO: Guardamos el ID
                 setColegioProcedencia(`${procedencia.colegio_procedencia} (RBD: ${procedencia.rbd_procedencia})`);
                 
-                // Si el colegio de donde viene ES DISTINTO al que está seleccionado actualmente en el select
                 if (String(procedencia.id_establecimiento_previo) !== String(formulario.id_establecimiento)) {
                     setEsTraslado(true);
                 } else {
                     setEsTraslado(false);
                 }
             } else {
+                setIdEstablecimientoPrevio(null); // 🌟 NUEVO: Sin colegio anterior
                 setColegioProcedencia('Estudiante Nuevo (Sin registros previos)');
                 setEsTraslado(false);
             }
@@ -285,7 +295,7 @@ export default function NuevaMatricula() {
     } catch (e) {
         console.error("Error buscando procedencia", e);
     }
-  };
+  }; // 🌟 ESTA ES LA LLAVE DE CIERRE QUE FALTABA 🌟
 
   // 🌟 EFECTO REACTIVO PARA PRECARGA DE HISTORIAL ACADÉMICO 🌟
   // Esto arregla el bug de recarga de página: Espera pacientemente a que estén listos el estudiante y las matrículas
@@ -331,7 +341,7 @@ export default function NuevaMatricula() {
       if (!respuesta.ok) throw new Error('Estudiante no encontrado en el sistema.');
       
       const datos = await respuesta.json();
-      procesarEstudiante(datos, est.run);
+      await procesarEstudiante(datos, est.run); // 🌟 AWAIT AÑADIDO AQUÍ
     } catch (err: any) {
       setError(err.message);
       setEstudiante(null);
@@ -369,7 +379,7 @@ export default function NuevaMatricula() {
       });
       
       const datosNuevos = await refreshRes.json();
-      procesarEstudiante(datosNuevos, estudiante.run);
+      await procesarEstudiante(datosNuevos, estudiante.run); // 🌟 AWAIT AÑADIDO AQUÍ TAMBIÉN
       setModalFaltantes(false);
       
     } catch (err: any) {
@@ -385,6 +395,41 @@ export default function NuevaMatricula() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormulario({ ...formulario, [e.target.name]: e.target.value });
+  };
+
+
+// 🌟 DESCARGAR COMPROBANTE GENERADO POR EL BACKEND 🌟
+  const generarComprobantePDF = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Llamamos a la ruta de tu backend que genera el PDF (Asegúrate de que la ruta coincida con tu FastAPI)
+      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!respuesta.ok) throw new Error('Error al generar el documento en el servidor');
+
+      // Convertimos la respuesta del backend en un archivo Blob (PDF)
+      const blob = await respuesta.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      // Simulamos un clic para descargar el archivo automáticamente
+      const linkDescarga = document.createElement('a');
+      linkDescarga.href = url;
+      linkDescarga.download = `Comprobante_Ingreso_${estudiante.run}.pdf`;
+      document.body.appendChild(linkDescarga);
+      linkDescarga.click();
+      
+      // Limpieza
+      linkDescarga.remove();
+      window.URL.revokeObjectURL(url);
+      
+    } catch (err: any) {
+      alert("Hubo un error al descargar el comprobante: " + err.message);
+      console.error(err);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -427,7 +472,8 @@ export default function NuevaMatricula() {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al guardar la matrícula.');
       
-      navigate('/matriculas');
+      setMatriculaExitosa(true);
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -507,7 +553,11 @@ export default function NuevaMatricula() {
             {estudiante && (
               <button 
                 type="button" 
-                onClick={() => { setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); setCursoPrevio(''); setCodigoPrevio(null); setAlertasTransicion([]); }} 
+                onClick={() => { 
+                  setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); 
+                  setCursoPrevio(''); setCodigoPrevio(null); setAlertasTransicion([]);
+                  setCheckCertNotas(false); setCheckCertRetiro(false); setIdEstablecimientoPrevio(null); // 🌟 Limpiar documentos
+                }} 
                 className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
               >
                 Cambiar Alumno
@@ -684,11 +734,64 @@ export default function NuevaMatricula() {
             <span>Nivel Real: <strong className="text-blue-600">{formulario.nivel_ensenanza}</strong></span>
           </div>
 
+          {/* 🌟 NUEVA SECCIÓN: RECEPCIÓN DE DOCUMENTOS 🌟 */}
+          <div className="border-t border-gray-200 pt-5 mt-5">
+            <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+              Recepción de Documentos Obligatorios
+            </h4>
+            <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+              
+              {/* Esta casilla SIEMPRE aparece */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={checkCertNotas}
+                  onChange={(e) => setCheckCertNotas(e.target.checked)}
+                  className="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                />
+                <div>
+                  <p className="text-sm font-bold text-gray-800 group-hover:text-blue-700 transition-colors">
+                    Se presentó el Certificado de Promoción (Notas) del año anterior
+                  </p>
+                  <p className="text-xs text-gray-500">Documento que acredita la aprobación o repitencia del último curso.</p>
+                </div>
+              </label>
+
+              {/* 🌟 Esta casilla SOLO aparece si viene de otro colegio o es totalmente nuevo */}
+              {idEstablecimientoPrevio !== String(formulario.id_establecimiento) && (
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={checkCertRetiro}
+                    onChange={(e) => setCheckCertRetiro(e.target.checked)}
+                    className="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <p className="text-sm font-bold text-gray-800 group-hover:text-blue-700 transition-colors">
+                      Se presentó el Certificado de Retiro o Traslado
+                    </p>
+                    <p className="text-xs text-gray-500">Obligatorio para alumnos provenientes de otros establecimientos.</p>
+                  </div>
+                </label>
+              )}
+            </div>
+          </div>
+
           <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
             <button type="button" onClick={() => navigate('/matriculas')} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">
               Cancelar
             </button>
-            <button type="submit" disabled={cargando || !estudiante || datosFaltantes.length > 0} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50">
+            <button 
+              type="submit" 
+              disabled={
+                cargando || 
+                !estudiante || 
+                datosFaltantes.length > 0 || 
+                !checkCertNotas || 
+                (idEstablecimientoPrevio !== String(formulario.id_establecimiento) && !checkCertRetiro)
+              } 
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
               {cargando ? 'Procesando...' : 'Confirmar Matrícula'}
             </button>
           </div>
@@ -772,7 +875,54 @@ export default function NuevaMatricula() {
             </form>
           </div>
         </div>
+
+        
+      )}
+      {/* 🌟 MODAL DE ÉXITO Y DESCARGA DE COMPROBANTE 🌟 */}
+      {matriculaExitosa && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
+            <div className="bg-[#25306B] p-6 text-center">
+              <CheckCircle className="mx-auto text-emerald-400 mb-3" size={48} />
+              <h3 className="text-xl font-bold text-white">¡Matrícula Registrada!</h3>
+              <p className="text-blue-200 text-sm mt-1">El estudiante ha sido ingresado exitosamente al sistema.</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <button 
+                onClick={generarComprobantePDF}
+                className="w-full flex items-center justify-center gap-3 bg-blue-50 text-[#006BB9] border border-blue-200 hover:bg-blue-100 py-3 rounded-lg font-bold transition-colors"
+              >
+                <Download size={20} />
+                Descargar Comprobante (PDF)
+              </button>
+
+              <button 
+                onClick={() => alert("Función en desarrollo: El envío automático de correos será integrado posteriormente mediante el servidor backend.")}
+                className="w-full flex items-center justify-center gap-3 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 py-3 rounded-lg font-bold transition-colors"
+              >
+                <Mail size={20} />
+                Enviar Comprobante por Correo
+              </button>
+
+              <div className="border-t border-gray-100 pt-4 mt-2">
+                <button 
+                  onClick={() => navigate('/matriculas')}
+                  className="w-full flex items-center justify-center gap-2 bg-[#006BB9] hover:bg-[#25306B] text-white py-3 rounded-lg font-bold transition-colors shadow-md"
+                >
+                  Finalizar y volver al inicio
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
+
+    
+
+    
   );
+  
 }
