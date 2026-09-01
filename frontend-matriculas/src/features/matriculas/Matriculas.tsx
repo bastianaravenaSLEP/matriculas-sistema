@@ -63,6 +63,10 @@ export default function Matriculas() {
   const [correoApoderadoCurso, setCorreoApoderadoCurso] = useState('');
   const [descargarLocalCurso, setDescargarLocalCurso] = useState(false);
 
+  const [cursoActual, setCursoActual] = useState('');
+  const [advertenciaNivel, setAdvertenciaNivel] = useState<string | null>(null);
+  const [codigoActual, setCodigoActual] = useState<number | null>(null);
+
   const [modalEmisionAbierto, setModalEmisionAbierto] = useState(false);
   const [datosEmision, setDatosEmision] = useState<{
     id: number;
@@ -106,7 +110,8 @@ export default function Matriculas() {
       e.target.value = ''; 
     }
   };
-const cargarMatriculas = () => {
+
+  const cargarMatriculas = () => {
     // 🚨 REGLA DE RENDIMIENTO: Evitar el colapso por miles de registros
     // Si no hay un colegio seleccionado (es decir, está en "Todos los Establecimientos"), 
     // vaciamos la tabla y detenemos la consulta masiva.
@@ -142,6 +147,7 @@ const cargarMatriculas = () => {
         setCargando(false);
       });
   };
+
   useEffect(() => {
     cargarMatriculas();
   }, [colegioSeleccionado]); 
@@ -201,7 +207,7 @@ const cargarMatriculas = () => {
       return coincideBusqueda && coincideAnio && coincideCodigo && coincideCurso;
     });
 
-resultado.sort((a, b) => {
+    resultado.sort((a, b) => {
       if (ordenFolio) {
         // 1. Primero agrupamos alfabéticamente por el nombre del curso
         if (a.curso !== b.curso) {
@@ -242,7 +248,7 @@ resultado.sort((a, b) => {
     setModalAbierto(true);
   };
 
-const confirmarRetiro = async (e: React.FormEvent) => {
+  const confirmarRetiro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado) return;
 
@@ -273,8 +279,6 @@ const confirmarRetiro = async (e: React.FormEvent) => {
 
       if (!respuesta.ok) throw new Error('Error al procesar la baja en el sistema');
 
-
-
       if (descargarLocalRetiro) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=RETIRO`, '_blank');
       }
@@ -290,17 +294,25 @@ const confirmarRetiro = async (e: React.FormEvent) => {
     }
   };
 
-  const iniciarCambioCurso = (id: number) => {
+  const iniciarCambioCurso = (id: number,  curso_actual: string, codigo_actual: number |null) => {
     setIdSeleccionado(id);
+    setCursoActual(curso_actual);
+    setCodigoActual(codigo_actual);
     setPlanDestino('');
     setCursoDestino('');
     setMotivoCambio('');
+    setAdvertenciaNivel(null); // 🌟 Limpiamos advertencias previas
     setModalCursoAbierto(true);
   };
 
-const confirmarCambioCurso = async (e: React.FormEvent) => {
+  const confirmarCambioCurso = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado || !planDestino || !cursoDestino) return;
+
+    if (advertenciaNivel) {
+      const seguro = window.confirm(`⚠️ ADVERTENCIA DE SEGURIDAD:\n\n${advertenciaNivel}\n\n¿Está completamente seguro de que desea confirmar este cambio de nivel?`);
+      if (!seguro) return; // Si el usuario da a Cancelar, abortamos el proceso
+    }
     
     const destinatarios: string[] = [];
     if (enviarDirectorCurso && correoDirectorCurso.trim()) destinatarios.push(correoDirectorCurso.trim());
@@ -328,8 +340,6 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al cambiar de curso');
 
-
-
       if (descargarLocalCurso) {
         window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=CAMBIO_CURSO`, '_blank');
       }
@@ -344,6 +354,49 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
       setProcesandoCurso(false);
     }
   };
+
+  useEffect(() => {
+    const advertencias: string[] = [];
+
+    // 1. Verificación de Código de Enseñanza
+    if (planDestino && codigoActual && planDestino !== codigoActual.toString()) {
+      advertencias.push(`• Cambio de CÓDIGO DE ENSEÑANZA (de Cod. ${codigoActual} a Cod. ${planDestino}).`);
+    }
+
+    // 2. Verificación de Salto de Curso
+    if (cursoDestino && cursoActual) {
+      const numActualMatch = cursoActual.match(/\d+/);
+      const numDestinoMatch = cursoDestino.match(/\d+/);
+
+      if (numActualMatch && numDestinoMatch) {
+        const numActual = parseInt(numActualMatch[0]);
+        const numDestino = parseInt(numDestinoMatch[0]);
+
+        if (numDestino < numActual) {
+          advertencias.push(`• Está moviendo al alumno a un grado INFERIOR (de ${numActual} a ${numDestino}).`);
+        } else if (numDestino > numActual + 1) {
+          advertencias.push(`• Está saltando múltiples grados hacia ADELANTE (de ${numActual} a ${numDestino}).`);
+        } else if (numDestino === numActual + 1) {
+          advertencias.push(`• Está adelantando al alumno al grado SIGUIENTE (de ${numActual} a ${numDestino}). Normalmente los traslados a mitad de año son en el mismo grado.`);
+        }
+      } else {
+        // Fallback para cursos sin números (Ej: Pre Kínder a Kínder)
+        const baseActual = cursoActual.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+        const baseDestino = cursoDestino.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+        
+        if (baseActual !== baseDestino) {
+          advertencias.push(`• Está cambiando el nivel del curso de '${cursoActual}' a '${cursoDestino}'.`);
+        }
+      }
+    }
+
+    // Si hay advertencias, las unimos con un salto de línea
+    if (advertencias.length > 0) {
+      setAdvertenciaNivel(advertencias.join('\n'));
+    } else {
+      setAdvertenciaNivel(null);
+    }
+  }, [cursoDestino, cursoActual, planDestino, codigoActual]);
 
   return (
     <div className="space-y-6 relative">
@@ -481,9 +534,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                           
                           {/* OCULTAMIENTO CONDICIONAL DE BOTONES DE ACCIÓN */}
                           {puedeEditar && mat.anio_escolar === anioActual && (
-                            <button onClick={() => iniciarCambioCurso(mat.id_matricula)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>
-                          )}
-                          
+                            <button onClick={() => iniciarCambioCurso(mat.id_matricula, mat.curso, mat.cod_tipo_ensenanza)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>                            )}
                           {puedeEditar && (
                             <button onClick={() => iniciarRetiro(mat.id_matricula)} className="text-red-600 hover:text-red-800 font-medium transition-colors">Retirar</button>
                           )}
@@ -534,27 +585,23 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                     <option key={curso} value={curso}>{curso}</option>
                   ))}
                 </select>
+                
+                {/* 🌟 LA ALERTA VISUAL APARECE AQUÍ */}
+                  {advertenciaNivel && (
+                  <div className="mt-2 p-2.5 bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold rounded-lg flex gap-2 items-start shadow-sm animate-pulse">
+                    <span className="text-sm">⚠️</span>
+                    <p className="whitespace-pre-line">ATENCIÓN:<br/>{advertenciaNivel}</p>
+                  </div>
+                )}
               </div>
-
-        
 
               <div className="border-t pt-3 space-y-3">
                 <p className="text-xs font-bold text-gray-700 uppercase">4. Envío Obligatorio de Comprobante</p>
                 
                 <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
-                    <input type="checkbox" checked={enviarDirectorCurso} onChange={(e) => setEnviarDirectorCurso(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                    Enviar al Director
-                  </label>
-                  {enviarDirectorCurso && (
-                    <input type="email" placeholder="correo.director@establecimiento.cl" value={correoDirectorCurso} onChange={(e) => setCorreoDirectorCurso(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />
-                  )}
-                </div>
-
-                <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
                     <input type="checkbox" checked={enviarApoderadoCurso} onChange={(e) => setEnviarApoderadoCurso(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                    Enviar al Apoderado
+                    Enviar correo
                   </label>
                   {enviarApoderadoCurso && (
                     <input type="email" placeholder="correo.apoderado@gmail.com" value={correoApoderadoCurso} onChange={(e) => setCorreoApoderadoCurso(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />
@@ -597,18 +644,8 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
                 
                 <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
-                    <input type="checkbox" checked={enviarDirectorRetiro} onChange={(e) => setEnviarDirectorRetiro(e.target.checked)} className="w-4 h-4 text-red-600 rounded" />
-                    Enviar al Director
-                  </label>
-                  {enviarDirectorRetiro && (
-                    <input type="email" placeholder="correo.director@establecimiento.cl" value={correoDirectorRetiro} onChange={(e) => setCorreoDirectorRetiro(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />
-                  )}
-                </div>
-
-                <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
                     <input type="checkbox" checked={enviarApoderadoRetiro} onChange={(e) => setEnviarApoderadoRetiro(e.target.checked)} className="w-4 h-4 text-red-600 rounded" />
-                    Enviar al Apoderado
+                    Enviar correo
                   </label>
                   {enviarApoderadoRetiro && (
                     <input type="email" placeholder="correo.apoderado@gmail.com" value={correoApoderadoRetiro} onChange={(e) => setCorreoApoderadoRetiro(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />

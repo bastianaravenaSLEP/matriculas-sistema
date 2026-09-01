@@ -126,30 +126,14 @@ window.open(`http://127.0.0.1:8000/matriculas/${idMatricula}/certificado?tipo=${
                 <h3 className="font-bold text-gray-700 text-sm flex items-center gap-2">
                   <Mail size={16} /> Enviar Comprobante por Correo
                 </h3>
-                
-                {/* BLOQUE DIRECTOR */}
-                <div className={`p-3 border rounded-lg transition-colors ${enviarDirector ? 'bg-gray-50 border-blue-300' : 'hover:bg-gray-50'}`}>
-                  <label className="flex items-center gap-3 cursor-pointer mb-2">
-                    <input type="checkbox" checked={enviarDirector} onChange={(e) => setEnviarDirector(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
-                    <p className="text-sm font-bold text-gray-800">Enviar a un Director / Institución</p>
-                  </label>
-                  {enviarDirector && (
-                    <input 
-                      type="email" 
-                      placeholder="Ingrese el correo del director..." 
-                      value={correoDirector}
-                      onChange={(e) => setCorreoDirector(e.target.value)}
-                      className="w-full border border-gray-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  )}
-                </div>
+        
 
                 {/* BLOQUE APODERADO */}
                 <div className={`p-3 border rounded-lg transition-colors ${enviarApoderado ? 'bg-gray-50 border-blue-300' : 'hover:bg-gray-50'}`}>
                   <label className="flex items-center gap-3 cursor-pointer mb-2">
                     <input type="checkbox" checked={enviarApoderado} onChange={(e) => setEnviarApoderado(e.target.checked)} className="w-5 h-5 text-blue-600 rounded" />
                     <div>
-                      <p className="text-sm font-bold text-gray-800">Enviar a un Apoderado</p>
+                      <p className="text-sm font-bold text-gray-800">Enviar correo</p>
                       {!enviarApoderado && emailApoderado && <p className="text-xs text-gray-500">Sugerencia BD: {emailApoderado}</p>}
                     </div>
                   </label>

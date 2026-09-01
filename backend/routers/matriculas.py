@@ -24,13 +24,20 @@ router = APIRouter(prefix="/matriculas", tags=["Matrículas"])
 # Función auxiliar (Uso Interno)
 def determinar_nivel_backend(curso_str: str, cod_tipo: int) -> str:
     texto = str(curso_str).lower() if curso_str else ""
-    if 'básico' in texto or 'basico' in texto: return 'Educación Básica'
-    if 'medio' in texto or 'media' in texto: return 'Educación Media'
-    if 'kinder' in texto or 'kínder' in texto or 'parvularia' in texto or 'medio mayor' in texto or 'medio menor' in texto: return 'Educación Parvularia'
     
-    if cod_tipo == 10: return 'Educación Parvularia'
-    if cod_tipo and 110 <= cod_tipo <= 119: return 'Educación Básica'
-    if cod_tipo and cod_tipo >= 300: return 'Educación Media'
+    # 1. PARVULARIA: Prioridad absoluta para palabras clave de educación inicial
+    palabras_parvularia = ['kinder', 'kínder', 'parvularia', 'sala cuna', 'nivel medio', 'heterogéneo', 'heterogeneo', 'transición']
+    if any(palabra in texto for palabra in palabras_parvularia) or cod_tipo == 10: 
+        return 'Educación Parvularia'
+    
+    # 2. BÁSICA
+    if 'básico' in texto or 'basico' in texto or (cod_tipo and 110 <= cod_tipo <= 119): 
+        return 'Educación Básica'
+    
+    # 3. MEDIA: (Solo caerá aquí si no es "Nivel Medio" de parvularia)
+    if 'medio' in texto or 'media' in texto or (cod_tipo and cod_tipo >= 300): 
+        return 'Educación Media'
+    
     return 'Educación Básica'
 
 # 1. Función de envío mejorada (ahora devuelve si tuvo éxito o no)
@@ -676,6 +683,7 @@ async def carga_masiva_sige(
 
                 # --- INSERCIÓN / ACTUALIZACIÓN DE LA MATRÍCULA ---
                 curso_texto = f"{desc_grado} {letra_curso}".strip() if desc_grado else "Sin Asignar"
+                nivel_calculado = determinar_nivel_backend(curso_texto, cod_ensenanza)
                 
                 cur.execute("""
                     SELECT id_matricula FROM matricula 
@@ -719,10 +727,10 @@ async def carga_masiva_sige(
                             estado, cod_tipo_ensenanza, cod_grado, letra_curso, curso, nivel_ensenanza,
                             anio_escolar, fecha_matricula, id_usuario_ejecutor, fecha_retiro
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Educación Básica', %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         id_estudiante, id_colegio, nuevo_correlativo, estado_matricula,
-                        cod_ensenanza, cod_grado, letra_curso, curso_texto, anio_escolar,
+                        cod_ensenanza, cod_grado, letra_curso, curso_texto,nivel_calculado, anio_escolar,
                         fecha_matricula_str, id_ejecutor, fecha_retiro_db
                     ))
                     total_alumnos_nuevos += 1

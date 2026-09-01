@@ -157,7 +157,7 @@ useEffect(() => {
                       setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
                     } else {
                       const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
-                      if (col) setBusquedaFiltro(`RBD: ${col.rbd} - ${col.nombre}`);
+                      if (col) setBusquedaFiltro(`${col.nombre}`);
                     }
                   }, 200);
                 }}
@@ -190,7 +190,7 @@ useEffect(() => {
                           setMostrarDropdownFiltro(false);
                         }}
                       >
-                        RBD: {est.rbd} - {est.nombre}
+                         {est.nombre}
                       </li>
                     ))}
                 </ul>
@@ -201,7 +201,7 @@ useEffect(() => {
           <div className="flex items-center gap-3">
             <span className="text-[10px] bg-blue-900 text-white font-bold px-2 py-1 rounded shadow-sm uppercase tracking-wider">Mi Establecimiento</span>
             <h2 className="text-sm font-extrabold text-blue-950">
-              {colegioActual ? `${colegioActual.nombre} (RBD: ${colegioActual.rbd})` : 'Cargando información...'}
+              {colegioActual ? `${colegioActual.nombre} ` : 'Cargando información...'}
             </h2>
           </div>
         )}

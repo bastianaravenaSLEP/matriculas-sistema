@@ -29,11 +29,32 @@ export default function NuevaMatricula() {
 
   // Estados de Precarga y Validación Completa
   const [huboPrecarga, setHuboPrecarga] = useState(false);
+  const [cursoPrevio, setCursoPrevio] = useState(''); // 🌟 NUEVO
+  const [codigoPrevio, setCodigoPrevio] = useState<number | null>(null); // 🌟 NUEVO
+  const [alertasTransicion, setAlertasTransicion] = useState<{texto: string, tipo: 'info' | 'alerta' | 'peligro'}[]>([]);
   const [datosFaltantes, setDatosFaltantes] = useState<string[]>([]);
   const [modalFaltantes, setModalFaltantes] = useState(false);
   const { colegioSeleccionado } = useOutletContext<any>() || { colegioSeleccionado: '' };
+
+  // 🌟 LÓGICA DE ROLES PARA SEGURIDAD 🌟
+  const usuarioString = localStorage.getItem('usuario');
+  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+  
+  // 1. Convertimos el rol a minúsculas por si acaso
+  const rolUsuario = usuario?.rol?.toLowerCase() || '';
+  
+  // 2. Bloqueamos SÍ o SÍ si el usuario tiene un colegio asignado en su sesión,
+  // o si su rol incluye las palabras "colegio" o "director".
+  const esPerfilColegio = Boolean(usuario?.id_establecimiento) || rolUsuario.includes('colegio') || rolUsuario.includes('director');
+
   useEffect(() => {
-    if (colegioSeleccionado) {
+    // Si es un colegio, forzamos SU id de establecimiento por seguridad
+    if (esPerfilColegio && usuario?.id_establecimiento) {
+      setFormulario(prev => ({
+        ...prev,
+        id_establecimiento: String(usuario.id_establecimiento)
+      }));
+    } else if (colegioSeleccionado) {
       setFormulario(prev => ({
         ...prev,
         id_establecimiento: String(colegioSeleccionado)
@@ -80,13 +101,12 @@ export default function NuevaMatricula() {
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': `Bearer ${token}` };
 
-
     fetch('http://127.0.0.1:8000/establecimientos', { headers })
       .then(res => res.json())
       .then(data => {
         setEstablecimientosDb(data);
         
-if (data.length > 0 && !formulario.id_establecimiento) {
+        if (data.length > 0 && !formulario.id_establecimiento) {
           
           // Buscamos si el colegio del filtro global existe en la lista de colegios
           const colegioFiltro = data.find((est: any) => String(est.id_establecimiento) === String(colegioSeleccionado));
@@ -238,7 +258,8 @@ if (data.length > 0 && !formulario.id_establecimiento) {
         correo_apoderado: datos.apoderado.correo !== "-" ? datos.apoderado.correo : ''
       });
     }
-// ---CONSULTA DE COLEGIO PREVIO ---
+
+    // ---CONSULTA DE COLEGIO PREVIO ---
     try {
         const token = localStorage.getItem('token');
         const resProcedencia = await fetch(`http://127.0.0.1:8000/matriculas/procedencia/${estRun}`, {
@@ -264,23 +285,36 @@ if (data.length > 0 && !formulario.id_establecimiento) {
     } catch (e) {
         console.error("Error buscando procedencia", e);
     }
-
-    // 2. PRECARGA DE HISTORIAL
-    const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estRun);
-    if (historicas.length > 0) {
-      historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
-      const ultima = historicas[0];
-
-      setFormulario(prev => ({
-        ...prev,
-        cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
-        cursoSeleccionado: ultima.curso
-      }));
-      setHuboPrecarga(true);
-    } else {
-      setHuboPrecarga(false);
-    }
   };
+
+  // 🌟 EFECTO REACTIVO PARA PRECARGA DE HISTORIAL ACADÉMICO 🌟
+  // Esto arregla el bug de recarga de página: Espera pacientemente a que estén listos el estudiante y las matrículas
+  useEffect(() => {
+    if (estudiante && todasLasMatriculas.length > 0) {
+      const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estudiante.run);
+      
+      if (historicas.length > 0) {
+        historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
+        const ultima = historicas[0];
+
+        setCursoPrevio(ultima.curso);
+        setCodigoPrevio(ultima.cod_tipo_ensenanza ? Number(ultima.cod_tipo_ensenanza) : null);
+
+        if (!huboPrecarga) {
+          setFormulario(prev => ({
+            ...prev,
+            cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
+            cursoSeleccionado: ultima.curso
+          }));
+          setHuboPrecarga(true);
+        }
+      } else {
+        setCursoPrevio('');
+        setCodigoPrevio(null);
+        setHuboPrecarga(false);
+      }
+    }
+  }, [estudiante, todasLasMatriculas, huboPrecarga]);
 
   const seleccionarEstudiante = async (est: any) => {
     setRutBusqueda(est.run);
@@ -401,6 +435,52 @@ if (data.length > 0 && !formulario.id_establecimiento) {
     }
   };
 
+  useEffect(() => {
+    // Si no hay un estudiante seleccionado, o no tiene historial, no hacemos nada
+    if (!estudiante || !cursoPrevio || !formulario.cursoSeleccionado) {
+      setAlertasTransicion([]);
+      return;
+    }
+
+    const alertas: {texto: string, tipo: 'info' | 'alerta' | 'peligro'}[] = [];
+
+    // 1. Verificación de Código de Enseñanza
+    if (codigoPrevio && formulario.cod_tipo_ensenanza && String(codigoPrevio) !== String(formulario.cod_tipo_ensenanza)) {
+      alertas.push({texto: `Cambio de Plan de Estudio (de Cod. ${codigoPrevio} a Cod. ${formulario.cod_tipo_ensenanza}).`, tipo: 'alerta'});
+    }
+
+    // 2. Verificación de Salto/Repitencia Numérica
+    const numPrevioMatch = cursoPrevio.match(/\d+/);
+    const numDestinoMatch = formulario.cursoSeleccionado.match(/\d+/);
+
+    if (numPrevioMatch && numDestinoMatch) {
+      const numPrevio = parseInt(numPrevioMatch[0]);
+      const numDestino = parseInt(numDestinoMatch[0]);
+
+      if (numDestino === numPrevio + 1) {
+        alertas.push({texto: `Promoción: El estudiante avanza al curso siguiente (de ${numPrevio} a ${numDestino}).`, tipo: 'info'});
+      } else if (numDestino === numPrevio) {
+        alertas.push({texto: `Repitencia: El estudiante mantiene el mismo nivel cursado (${numPrevio}).`, tipo: 'alerta'});
+      } else if (numDestino < numPrevio) {
+        alertas.push({texto: `Retroceso abrupto: Está matriculando al estudiante en un grado INFERIOR al que ya cursó (de ${numPrevio} a ${numDestino}).`, tipo: 'peligro'});
+      } else if (numDestino > numPrevio + 1) {
+        alertas.push({texto: `Salto abrupto: Está adelantando al estudiante múltiples grados (de ${numPrevio} a ${numDestino}).`, tipo: 'peligro'});
+      }
+    } else {
+      // 3. Fallback para cursos sin número (Ej: Pre Kínder, Kínder, Sala Cuna)
+      const basePrevio = cursoPrevio.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+      const baseDestino = formulario.cursoSeleccionado.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+      
+      if (basePrevio === baseDestino) {
+        alertas.push({texto: `Repitencia: El estudiante se mantiene en el nivel '${cursoPrevio}'.`, tipo: 'alerta'});
+      } else {
+        alertas.push({texto: `Transición de nivel preescolar: de '${cursoPrevio}' a '${formulario.cursoSeleccionado}'.`, tipo: 'info'});
+      }
+    }
+
+    setAlertasTransicion(alertas);
+  }, [formulario.cursoSeleccionado, formulario.cod_tipo_ensenanza, cursoPrevio, codigoPrevio, estudiante]);
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
       <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
@@ -427,7 +507,7 @@ if (data.length > 0 && !formulario.id_establecimiento) {
             {estudiante && (
               <button 
                 type="button" 
-                onClick={() => { setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); }} 
+                onClick={() => { setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); setCursoPrevio(''); setCodigoPrevio(null); setAlertasTransicion([]); }} 
                 className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
               >
                 Cambiar Alumno
@@ -494,15 +574,30 @@ if (data.length > 0 && !formulario.id_establecimiento) {
         <h3 className="font-semibold text-gray-700 mb-6">Paso 2: Datos de Matrícula y Establecimiento</h3>
         
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* 🌟 SELECT DE ESTABLECIMIENTO BLOQUEADO PARA COLEGIOS 🌟 */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Establecimiento Educacional</label>
-            <select name="id_establecimiento" value={formulario.id_establecimiento} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-medium text-gray-800">
+            <select 
+              name="id_establecimiento" 
+              value={formulario.id_establecimiento} 
+              onChange={handleChange} 
+              required 
+              disabled={esPerfilColegio}
+              className={`w-full border rounded-lg p-2 outline-none font-medium ${
+                esPerfilColegio ? 'bg-gray-100 border-gray-300 text-gray-500 cursor-not-allowed' : 'bg-white border-gray-300 text-gray-800'
+              }`}
+            >
               {establecimientosDb.map((est) => (
                 <option key={est.id_establecimiento} value={est.id_establecimiento}>
                   RBD: {est.rbd} - {est.nombre}
                 </option>
               ))}
             </select>
+            {esPerfilColegio && (
+              <p className="text-xs text-gray-500 mt-1 font-bold">
+                * Asignado automáticamente a su establecimiento por seguridad.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -531,6 +626,7 @@ if (data.length > 0 && !formulario.id_establecimiento) {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Código de Plan (Tipo Enseñanza)</label>
               <select name="cod_tipo_ensenanza" value={formulario.cod_tipo_ensenanza} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-mono">
@@ -556,11 +652,30 @@ if (data.length > 0 && !formulario.id_establecimiento) {
               </select>
             </div>
           </div>
+          
+                      {/* ALERTAS DE TRANSICIÓN ACADÉMICA */}
+          {alertasTransicion.length > 0 && (
+            <div className="flex flex-col gap-2 mt-2">
+              {alertasTransicion.map((alerta, index) => (
+                <div key={index} className={`p-3 rounded-lg border text-sm font-medium flex items-start gap-2 ${
+                  alerta.tipo === 'info' ? 'bg-blue-50 border-blue-200 text-blue-800' :
+                  alerta.tipo === 'alerta' ? 'bg-orange-50 border-orange-200 text-orange-800' :
+                  'bg-red-50 border-red-200 text-red-800'
+                }`}>
+                  <span className="mt-0.5 text-base leading-none">
+                    {alerta.tipo === 'info' ? '✅' : alerta.tipo === 'alerta' ? '⚠️' : '🚨'}
+                  </span>
+                  <p>{alerta.texto}</p>
+                </div>
+              ))}
+            </div>
+          )}
 
           {huboPrecarga && (
             <div className="bg-emerald-50 text-emerald-700 text-xs font-bold p-2 rounded border border-emerald-200">
               ✓ Se ha precargado exitosamente la información del establecimiento y curso anterior.
             </div>
+            
           )}
 
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs text-gray-500 flex justify-between">

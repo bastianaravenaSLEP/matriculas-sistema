@@ -61,7 +61,7 @@ export default function Inicio() {
         </Link>
 
         {/* 3. BOTÓN DASHBOARD */}
-        <Link to="/dashboard" className="group bg-white rounded-xl shadow-sm border border-gray-200 hover:border-purple-600 hover:shadow-lg transition-all flex flex-col overflow-hidden">
+        <Link to="/inicio" className="group bg-white rounded-xl shadow-sm border border-gray-200 hover:border-purple-600 hover:shadow-lg transition-all flex flex-col overflow-hidden">
           <div className="p-6 flex-1">
             <div className="w-14 h-14 bg-purple-50 text-purple-700 rounded-lg flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <PieChart size={32} />
