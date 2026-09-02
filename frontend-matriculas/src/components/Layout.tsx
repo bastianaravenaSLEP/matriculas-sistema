@@ -1,60 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, FolderOpen, Users, LogOut, Activity, Landmark, PieChart} from 'lucide-react';
-
-interface Establecimiento {
-  id_establecimiento: number;
-  rbd: string;
-  nombre: string;
-}
+import React from 'react';
+import { Outlet, Link } from 'react-router-dom';
+import { Home, FolderOpen, Users, LogOut, Activity, PieChart} from 'lucide-react';
+import { useLayout } from './hooks/useLayout';
 
 export default function Layout() {
-  const location = useLocation();
-  const navigate = useNavigate();
-
-  const usuarioString = localStorage.getItem('usuario');
-  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
-
-  const esPerfilGlobal = ['SLEP', 'admin_slep', 'Visualizador_SLEP'].includes(usuario?.rol);
-  const puedeVerAuditoria = !['Colegio', 'Visualizador_Colegio'].includes(usuario?.rol);
-
-  const [colegioSeleccionado, setColegioSeleccionado] = useState<string>(
-    !esPerfilGlobal ? String(usuario?.id_establecimiento) : ''
-  );
-  const [busquedaFiltro, setBusquedaFiltro] = useState('');
-  const [mostrarDropdownFiltro, setMostrarDropdownFiltro] = useState(false);
-  const [establecimientos, setEstablecimientos] = useState<Establecimiento[]>([]);
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      fetch('http://127.0.0.1:8000/establecimientos', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(res => res.json())
-        .then(data => {
-          const dataOrdenada = data.sort((a: Establecimiento, b: Establecimiento) => parseInt(a.rbd) - parseInt(b.rbd));
-          setEstablecimientos(dataOrdenada);
-        })
-        .catch(err => console.error(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (colegioSeleccionado === '') {
-      setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
-    } else {
-      const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
-      if (col) setBusquedaFiltro(`RBD: ${col.rbd} - ${col.nombre}`);
-    }
-  }, [colegioSeleccionado, establecimientos]);
-
-  const cerrarSesion = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('usuario');
-    navigate('/login');
-  };
-  
-  const isActive = (path: string) => location.pathname === path;
-  const colegioActual = establecimientos.find(e => e.id_establecimiento.toString() === colegioSeleccionado);
+  const {
+    usuario,
+    esPerfilGlobal,
+    puedeVerAuditoria,
+    colegioSeleccionado, setColegioSeleccionado,
+    busquedaFiltro, setBusquedaFiltro,
+    mostrarDropdownFiltro, setMostrarDropdownFiltro,
+    establecimientos,
+    cerrarSesion,
+    isActive,
+    colegioActual
+  } = useLayout();
 
   return (
     <div className="flex flex-col h-screen bg-[#EDF0F5] font-['Museo_Sans',_sans-serif]">
@@ -91,7 +52,7 @@ export default function Layout() {
             <Link to="/estudiantes" className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all text-sm font-medium ${isActive('/estudiantes') ? 'bg-[#006BB9] text-white shadow-inner border-b-2 border-[#FF1D3D]' : 'text-blue-200 hover:bg-[#006BB9] hover:text-white border-b-2 border-transparent'}`}>
               <Users size={18} /> Estudiantes
             </Link>
-             <Link to="/inicio" className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all text-sm font-medium ${isActive('/dashboard') ? 'bg-[#006BB9] text-white shadow-inner border-b-2 border-[#FF1D3D]' : 'text-blue-200 hover:bg-[#006BB9] hover:text-white border-b-2 border-transparent'}`}>
+             <Link to="/inicio" className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all text-sm font-medium ${isActive('/inicio') ? 'bg-[#006BB9] text-white shadow-inner border-b-2 border-[#FF1D3D]' : 'text-blue-200 hover:bg-[#006BB9] hover:text-white border-b-2 border-transparent'}`}>
               <PieChart size={18} /> Panel de Control
             </Link>
             

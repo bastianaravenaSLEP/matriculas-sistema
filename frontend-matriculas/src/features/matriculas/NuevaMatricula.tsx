@@ -1,531 +1,20 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { jsPDF } from 'jspdf';
-import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
+import React from 'react';
 import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight } from 'lucide-react';
-
-
-interface MatriculaBase {
-  id_establecimiento: number;
-  cod_tipo_ensenanza: number | null;
-  tipo_ensenanza: string;
-  nivel_ensenanza: string;
-  curso: string;
-  estudiante_rut: string;
-  anio_escolar: number;
-}
+import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 
 export default function NuevaMatricula() {
-  const navigate = useNavigate();
-  const location = useLocation(); 
   
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState('');
-
-  // Estados para búsqueda de estudiantes
-  const [rutBusqueda, setRutBusqueda] = useState('');
-  const [estudiante, setEstudiante] = useState<any>(null);
-  const [estudianteCompleto, setEstudianteCompleto] = useState<any>(null);
-  const [estudiantesDb, setEstudiantesDb] = useState<any[]>([]);
-  const [sugerencias, setSugerencias] = useState<any[]>([]);
-  const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
-
-  // Estados de Precarga y Validación Completa
-  const [huboPrecarga, setHuboPrecarga] = useState(false);
-  const [cursoPrevio, setCursoPrevio] = useState(''); 
-  const [codigoPrevio, setCodigoPrevio] = useState<number | null>(null); 
-  const [alertasTransicion, setAlertasTransicion] = useState<{texto: string, tipo: 'info' | 'alerta' | 'peligro'}[]>([]);
-  const [datosFaltantes, setDatosFaltantes] = useState<string[]>([]);
-  const [modalFaltantes, setModalFaltantes] = useState(false);
-  const { colegioSeleccionado } = useOutletContext<any>() || { colegioSeleccionado: '' };
-
-  // 🌟 LÓGICA DE ROLES PARA SEGURIDAD 🌟
-  const usuarioString = localStorage.getItem('usuario');
-  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
-  
-  // 1. Convertimos el rol a minúsculas por si acaso
-  const rolUsuario = usuario?.rol?.toLowerCase() || '';
-  
-  // 2. Bloqueamos SÍ o SÍ si el usuario tiene un colegio asignado en su sesión,
-  // o si su rol incluye las palabras "colegio" o "director".
-  const esPerfilColegio = Boolean(usuario?.id_establecimiento) || rolUsuario.includes('colegio') || rolUsuario.includes('director');
-
-  useEffect(() => {
-    // Si es un colegio, forzamos SU id de establecimiento por seguridad
-    if (esPerfilColegio && usuario?.id_establecimiento) {
-      setFormulario(prev => ({
-        ...prev,
-        id_establecimiento: String(usuario.id_establecimiento)
-      }));
-    } else if (colegioSeleccionado) {
-      setFormulario(prev => ({
-        ...prev,
-        id_establecimiento: String(colegioSeleccionado)
-      }));
-    }
-  }, [colegioSeleccionado]);
-
-  const [matriculaExitosa, setMatriculaExitosa] = useState(false); // 🌟 NUEVO ESTADO
-
-  
-  // NUEVO: Estado con todos los campos obligatorios del apoderado
-  const [formFaltantes, setFormFaltantes] = useState({
-    domicilio_estudiante: '',
-    rut_apoderado: '',
-    nombres_apoderado: '',
-    apellido_paterno_apoderado: '',
-    apellido_materno_apoderado: '',
-    domicilio_apoderado: '',
-    telefono_apoderado: '',
-    correo_apoderado: ''
-  });
-
-  // --- NUEVOS ESTADOS PARA PROCEDENCIA ---
-  const [colegioProcedencia, setColegioProcedencia] = useState('');
-  const [esTraslado, setEsTraslado] = useState(false);
-  const [guardandoFaltantes, setGuardandoFaltantes] = useState(false);
-  
-
-  // Estados para la lógica en cascada
-  const [establecimientosDb, setEstablecimientosDb] = useState<any[]>([]);
-  const [todasLasMatriculas, setTodasLasMatriculas] = useState<MatriculaBase[]>([]);
-
-  const [formulario, setFormulario] = useState({
-    id_establecimiento: '',
-    numero_correlativo: '',
-    anio_escolar: '2026',
-    fecha_matricula: new Date().toISOString().split('T')[0],
-    nivel_ensenanza: 'Educación Básica',
-    cod_tipo_ensenanza: '',
-    cursoSeleccionado: '',
-    cod_grado: 1,
-    letra_curso: 'A',
-  });
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    const headers = { 'Authorization': `Bearer ${token}` };
-
-    fetch('http://127.0.0.1:8000/establecimientos', { headers })
-      .then(res => res.json())
-      .then(data => {
-        setEstablecimientosDb(data);
-        
-        if (data.length > 0 && !formulario.id_establecimiento) {
-          
-          // Buscamos si el colegio del filtro global existe en la lista de colegios
-          const colegioFiltro = data.find((est: any) => String(est.id_establecimiento) === String(colegioSeleccionado));
-          
-          if (colegioFiltro) {
-            // Si coincide, seleccionamos automáticamente ese
-            setFormulario(prev => ({ ...prev, id_establecimiento: String(colegioFiltro.id_establecimiento) }));
-          } else {
-            // Si el usuario está viendo "Todos los establecimientos" (Nivel Central), seleccionamos el primero por defecto
-            setFormulario(prev => ({ ...prev, id_establecimiento: String(data[0].id_establecimiento) }));
-          }
-        }
-      })
-      .catch(err => console.error("Error establecimientos:", err));
-
-    fetch('http://127.0.0.1:8000/matriculas', { headers })
-      .then(res => res.json())
-      .then(data => setTodasLasMatriculas(data))
-      .catch(err => console.error("Error matrículas:", err));
-
-    fetch('http://127.0.0.1:8000/estudiante', { headers })
-      .then(res => res.json())
-      .then(datos => {
-        setEstudiantesDb(datos);
-        const rutPre = location.state?.rutPreseleccionado;
-        if (rutPre) {
-          const encontrado = datos.find((est: any) => est.run === rutPre);
-          if (encontrado) seleccionarEstudiante(encontrado);
-        }
-      })
-      .catch(err => console.error("Error estudiantes:", err));
-  }, [location.state]);
-
-  const determinarNivelInteligente = (cursoStr: string, codigoPlan: number) => {
-    const texto = cursoStr.toLowerCase();
-    if (texto.includes('básico') || texto.includes('basico')) return 'Educación Básica';
-    if (texto.includes('medio') || texto.includes('media')) return 'Educación Media';
-    if (texto.includes('parvularia') || texto.includes('kínder') || texto.includes('kinder') || texto.includes('pre-kínder') || texto.includes('sala cuna')) return 'Educación Parvularia';
-    if (codigoPlan === 10) return 'Educación Parvularia';
-    if (codigoPlan >= 110 && codigoPlan <= 119) return 'Educación Básica';
-    if (codigoPlan >= 300) return 'Educación Media';
-    return 'Educación Básica'; 
-  };
-
-  // --- ESTADOS PARA DOCUMENTOS ---
-  const [checkCertNotas, setCheckCertNotas] = useState(false);
-  const [checkCertRetiro, setCheckCertRetiro] = useState(false);
-  const [idEstablecimientoPrevio, setIdEstablecimientoPrevio] = useState<string | null>(null);
-
-  const codigosDisponibles = useMemo(() => {
-    if (!formulario.id_establecimiento) return [];
-    const idEst = Number(formulario.id_establecimiento);
-    const filtradas = todasLasMatriculas.filter(m => Number(m.id_establecimiento) === idEst);
-    const mapaCodigos = new Map();
-    filtradas.forEach(m => {
-      if (m.cod_tipo_ensenanza !== null && m.cod_tipo_ensenanza !== undefined) {
-        mapaCodigos.set(Number(m.cod_tipo_ensenanza), m.tipo_ensenanza || 'Plan de Estudio');
-      }
-    });
-    return Array.from(mapaCodigos.entries()).map(([codigo, nombre]) => ({ codigo, nombre }));
-  }, [formulario.id_establecimiento, todasLasMatriculas]);
-
-  const cursosDisponibles = useMemo(() => {
-    if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza) return [];
-    const idEst = Number(formulario.id_establecimiento);
-    const codEns = Number(formulario.cod_tipo_ensenanza);
-    const filtradas = todasLasMatriculas.filter(
-      m => Number(m.id_establecimiento) === idEst && Number(m.cod_tipo_ensenanza) === codEns
-    );
-    const cursosSet = new Set<string>();
-    filtradas.forEach(m => {
-      if (m.curso) cursosSet.add(m.curso);
-    });
-    return Array.from(cursosSet).sort();
-  }, [formulario.id_establecimiento, formulario.cod_tipo_ensenanza, todasLasMatriculas]);
-
-  useEffect(() => {
-    if (codigosDisponibles.length > 0) {
-      const existe = codigosDisponibles.find(c => String(c.codigo) === formulario.cod_tipo_ensenanza);
-      if (!existe) {
-        setFormulario(prev => ({ ...prev, cod_tipo_ensenanza: String(codigosDisponibles[0].codigo), cursoSeleccionado: '' }));
-      }
-    }
-  }, [formulario.id_establecimiento, codigosDisponibles]);
-
-  useEffect(() => {
-    if (cursosDisponibles.length > 0) {
-      if (!cursosDisponibles.includes(formulario.cursoSeleccionado)) {
-        seleccionarCurso(cursosDisponibles[0]);
-      } else {
-        seleccionarCurso(formulario.cursoSeleccionado);
-      }
-    }
-  }, [formulario.cod_tipo_ensenanza, cursosDisponibles]);
-
-  const seleccionarCurso = (cursoStr: string) => {
-    const matchNumero = cursoStr.match(/\d+/);
-    const gradoNum = matchNumero ? parseInt(matchNumero[0], 10) : 1;
-    const partes = cursoStr.trim().split(' ');
-    const letraEncontrada = partes.length > 0 ? partes[partes.length - 1] : 'A';
-    const letraFinal = letraEncontrada.length <= 2 ? letraEncontrada.replace(/[^A-Z]/gi, '') || 'A' : 'A';
-    const codigoActual = Number(formulario.cod_tipo_ensenanza) || 110;
-    const nivelCalculado = determinarNivelInteligente(cursoStr, codigoActual);
-
-    setFormulario(prev => ({
-      ...prev,
-      cursoSeleccionado: cursoStr,
-      nivel_ensenanza: nivelCalculado,
-      cod_grado: gradoNum,
-      letra_curso: letraFinal
-    }));
-  };
-
-  const handleEscribirBuscador = (texto: string) => {
-    setRutBusqueda(texto);
-    if (texto.length > 1) {
-      const textoLimpio = texto.toLowerCase();
-      const filtrados = estudiantesDb.filter(est => 
-        est.run.toLowerCase().includes(textoLimpio) || 
-        est.nombre_completo.toLowerCase().includes(textoLimpio)
-      );
-      setSugerencias(filtrados);
-      setMostrarSugerencias(true);
-    } else {
-      setSugerencias([]);
-      setMostrarSugerencias(false);
-    }
-  };
-
-  const procesarEstudiante =  async (datos: any, estRun: string) => {
-    setEstudiante(datos.personal);
-    setEstudianteCompleto(datos);
-
-    // 1. VALIDACIÓN ESTRICTA (Si falta un dato base, se exige completar todo el formulario)
-    const faltan: string[] = [];
-    if (!datos.personal.domicilio || datos.personal.domicilio === "Sin registrar") faltan.push("Domicilio del Estudiante");
-    if (!datos.apoderado.rut || datos.apoderado.rut === "Sin registrar") faltan.push("RUT del Apoderado");
-    if (!datos.apoderado.nombre || datos.apoderado.nombre === "Pendiente") faltan.push("Nombre Completo del Apoderado");
-    if (!datos.apoderado.telefono || datos.apoderado.telefono === "-") faltan.push("Teléfono del Apoderado");
-    if (!datos.apoderado.correo || datos.apoderado.correo === "-") faltan.push("Correo del Apoderado");
-    
-    setDatosFaltantes(faltan);
-
-    if (faltan.length > 0) {
-      // Pre-cargamos lo que haya disponible para no borrar datos existentes
-      setFormFaltantes({
-        domicilio_estudiante: datos.personal.domicilio !== "Sin registrar" ? datos.personal.domicilio : '',
-        rut_apoderado: datos.apoderado.rut !== "Sin registrar" ? datos.apoderado.rut : '',
-        nombres_apoderado: '',
-        apellido_paterno_apoderado: '',
-        apellido_materno_apoderado: '',
-        domicilio_apoderado: '',
-        telefono_apoderado: datos.apoderado.telefono !== "-" ? datos.apoderado.telefono : '',
-        correo_apoderado: datos.apoderado.correo !== "-" ? datos.apoderado.correo : ''
-      });
-    }
-
-    // ---CONSULTA DE COLEGIO PREVIO ---
-      try {
-        const token = localStorage.getItem('token');
-        const resProcedencia = await fetch(`http://127.0.0.1:8000/matriculas/procedencia/${estRun}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (resProcedencia.ok) {
-            const procedencia = await resProcedencia.json();
-            
-            if (procedencia.encontrado) {
-                setIdEstablecimientoPrevio(String(procedencia.id_establecimiento_previo)); // 🌟 NUEVO: Guardamos el ID
-                setColegioProcedencia(`${procedencia.colegio_procedencia} (RBD: ${procedencia.rbd_procedencia})`);
-                
-                if (String(procedencia.id_establecimiento_previo) !== String(formulario.id_establecimiento)) {
-                    setEsTraslado(true);
-                } else {
-                    setEsTraslado(false);
-                }
-            } else {
-                setIdEstablecimientoPrevio(null); // 🌟 NUEVO: Sin colegio anterior
-                setColegioProcedencia('Estudiante Nuevo (Sin registros previos)');
-                setEsTraslado(false);
-            }
-        }
-    } catch (e) {
-        console.error("Error buscando procedencia", e);
-    }
-  }; // 🌟 ESTA ES LA LLAVE DE CIERRE QUE FALTABA 🌟
-
-  // 🌟 EFECTO REACTIVO PARA PRECARGA DE HISTORIAL ACADÉMICO 🌟
-  // Esto arregla el bug de recarga de página: Espera pacientemente a que estén listos el estudiante y las matrículas
-  useEffect(() => {
-    if (estudiante && todasLasMatriculas.length > 0) {
-      const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estudiante.run);
-      
-      if (historicas.length > 0) {
-        historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
-        const ultima = historicas[0];
-
-        setCursoPrevio(ultima.curso);
-        setCodigoPrevio(ultima.cod_tipo_ensenanza ? Number(ultima.cod_tipo_ensenanza) : null);
-
-        if (!huboPrecarga) {
-          setFormulario(prev => ({
-            ...prev,
-            cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
-            cursoSeleccionado: ultima.curso
-          }));
-          setHuboPrecarga(true);
-        }
-      } else {
-        setCursoPrevio('');
-        setCodigoPrevio(null);
-        setHuboPrecarga(false);
-      }
-    }
-  }, [estudiante, todasLasMatriculas, huboPrecarga]);
-
-  const seleccionarEstudiante = async (est: any) => {
-    setRutBusqueda(est.run);
-    setMostrarSugerencias(false);
-    setCargando(true);
-    setError('');
-    setHuboPrecarga(false);
-    
-    try {
-      const token = localStorage.getItem('token');
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${est.run}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!respuesta.ok) throw new Error('Estudiante no encontrado en el sistema.');
-      
-      const datos = await respuesta.json();
-      await procesarEstudiante(datos, est.run); // 🌟 AWAIT AÑADIDO AQUÍ
-    } catch (err: any) {
-      setError(err.message);
-      setEstudiante(null);
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  const guardarDatosFaltantes = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!estudiante) return;
-    setGuardandoFaltantes(true);
-
-    try {
-      const token = localStorage.getItem('token');
-      
-      // 1. Envío al Backend
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}`, {
-        method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(formFaltantes) // Ahora envía los 8 campos exactos
-      });
-
-      if (!respuesta.ok) throw new Error('Error al guardar la información');
-      
-      // 2. Cache-Buster
-      const timestamp = new Date().getTime();
-      const refreshRes = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}?t=${timestamp}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` },
-        cache: 'no-store' 
-      });
-      
-      const datosNuevos = await refreshRes.json();
-      await procesarEstudiante(datosNuevos, estudiante.run); // 🌟 AWAIT AÑADIDO AQUÍ TAMBIÉN
-      setModalFaltantes(false);
-      
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setGuardandoFaltantes(false);
-    }
-  };
-
-  const copiarDomicilio = () => {
-    setFormFaltantes(prev => ({ ...prev, domicilio_apoderado: prev.domicilio_estudiante }));
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormulario({ ...formulario, [e.target.name]: e.target.value });
-  };
-
-
-// 🌟 DESCARGAR COMPROBANTE GENERADO POR EL BACKEND 🌟
-  const generarComprobantePDF = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      
-      // Llamamos a la ruta de tu backend que genera el PDF (Asegúrate de que la ruta coincida con tu FastAPI)
-      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!respuesta.ok) throw new Error('Error al generar el documento en el servidor');
-
-      // Convertimos la respuesta del backend en un archivo Blob (PDF)
-      const blob = await respuesta.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      // Simulamos un clic para descargar el archivo automáticamente
-      const linkDescarga = document.createElement('a');
-      linkDescarga.href = url;
-      linkDescarga.download = `Comprobante_Ingreso_${estudiante.run}.pdf`;
-      document.body.appendChild(linkDescarga);
-      linkDescarga.click();
-      
-      // Limpieza
-      linkDescarga.remove();
-      window.URL.revokeObjectURL(url);
-      
-    } catch (err: any) {
-      alert("Hubo un error al descargar el comprobante: " + err.message);
-      console.error(err);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!estudiante || datosFaltantes.length > 0) return;
-
-    setCargando(true);
-    setError('');
-
-    const payload = {
-      numero_correlativo: 0,
-      anio_escolar: parseInt(formulario.anio_escolar),
-      id_estudiante: estudiante.id,
-      id_establecimiento: parseInt(formulario.id_establecimiento),
-      fecha_matricula: formulario.fecha_matricula,
-      nivel_ensenanza: formulario.nivel_ensenanza,
-      curso: formulario.cursoSeleccionado,
-      estado: 'Activa',
-      fecha_retiro: null,
-      motivo_retiro: null,
-      observaciones: 'Matrícula ingresada desde portal transaccional.',
-      id_usuario_ejecutor: 1,
-      cod_tipo_ensenanza: formulario.cod_tipo_ensenanza ? parseInt(formulario.cod_tipo_ensenanza) : null,
-      cod_grado: formulario.cod_grado,
-      letra_curso: formulario.letra_curso
-    };
-
-    const token = localStorage.getItem('token');
-
-    try {
-      const respuesta = await fetch('http://127.0.0.1:8000/matriculas', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const datos = await respuesta.json();
-      if (!respuesta.ok) throw new Error(datos.detail || 'Error al guardar la matrícula.');
-      
-      setMatriculaExitosa(true);
-
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  useEffect(() => {
-    // Si no hay un estudiante seleccionado, o no tiene historial, no hacemos nada
-    if (!estudiante || !cursoPrevio || !formulario.cursoSeleccionado) {
-      setAlertasTransicion([]);
-      return;
-    }
-
-    const alertas: {texto: string, tipo: 'info' | 'alerta' | 'peligro'}[] = [];
-
-    // 1. Verificación de Código de Enseñanza
-    if (codigoPrevio && formulario.cod_tipo_ensenanza && String(codigoPrevio) !== String(formulario.cod_tipo_ensenanza)) {
-      alertas.push({texto: `Cambio de Plan de Estudio (de Cod. ${codigoPrevio} a Cod. ${formulario.cod_tipo_ensenanza}).`, tipo: 'alerta'});
-    }
-
-    // 2. Verificación de Salto/Repitencia Numérica
-    const numPrevioMatch = cursoPrevio.match(/\d+/);
-    const numDestinoMatch = formulario.cursoSeleccionado.match(/\d+/);
-
-    if (numPrevioMatch && numDestinoMatch) {
-      const numPrevio = parseInt(numPrevioMatch[0]);
-      const numDestino = parseInt(numDestinoMatch[0]);
-
-      if (numDestino === numPrevio + 1) {
-        alertas.push({texto: `Promoción: El estudiante avanza al curso siguiente (de ${numPrevio} a ${numDestino}).`, tipo: 'info'});
-      } else if (numDestino === numPrevio) {
-        alertas.push({texto: `Repitencia: El estudiante mantiene el mismo nivel cursado (${numPrevio}).`, tipo: 'alerta'});
-      } else if (numDestino < numPrevio) {
-        alertas.push({texto: `Retroceso abrupto: Está matriculando al estudiante en un grado INFERIOR al que ya cursó (de ${numPrevio} a ${numDestino}).`, tipo: 'peligro'});
-      } else if (numDestino > numPrevio + 1) {
-        alertas.push({texto: `Salto abrupto: Está adelantando al estudiante múltiples grados (de ${numPrevio} a ${numDestino}).`, tipo: 'peligro'});
-      }
-    } else {
-      // 3. Fallback para cursos sin número (Ej: Pre Kínder, Kínder, Sala Cuna)
-      const basePrevio = cursoPrevio.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
-      const baseDestino = formulario.cursoSeleccionado.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
-      
-      if (basePrevio === baseDestino) {
-        alertas.push({texto: `Repitencia: El estudiante se mantiene en el nivel '${cursoPrevio}'.`, tipo: 'alerta'});
-      } else {
-        alertas.push({texto: `Transición de nivel preescolar: de '${cursoPrevio}' a '${formulario.cursoSeleccionado}'.`, tipo: 'info'});
-      }
-    }
-
-    setAlertasTransicion(alertas);
-  }, [formulario.cursoSeleccionado, formulario.cod_tipo_ensenanza, cursoPrevio, codigoPrevio, estudiante]);
+  // EXTRAEMOS TODO DEL CUSTOM HOOK
+  const {
+    navigate, cargando, error, rutBusqueda, estudiante, setEstudiante,
+    sugerencias, mostrarSugerencias, setMostrarSugerencias, huboPrecarga, setHuboPrecarga,
+    alertasTransicion, setAlertasTransicion, datosFaltantes, setDatosFaltantes,
+    modalFaltantes, setModalFaltantes, esPerfilColegio, matriculaExitosa,
+    formFaltantes, setFormFaltantes, colegioProcedencia, esTraslado, guardandoFaltantes,
+    establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
+    idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
+    seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio
+  } = useNuevaMatricula();
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
@@ -554,9 +43,9 @@ export default function NuevaMatricula() {
               <button 
                 type="button" 
                 onClick={() => { 
-                  setEstudiante(null); setRutBusqueda(''); setHuboPrecarga(false); setDatosFaltantes([]); 
+                  setEstudiante(null); handleEscribirBuscador(''); setHuboPrecarga(false); setDatosFaltantes([]); 
                   setCursoPrevio(''); setCodigoPrevio(null); setAlertasTransicion([]);
-                  setCheckCertNotas(false); setCheckCertRetiro(false); setIdEstablecimientoPrevio(null); // 🌟 Limpiar documentos
+                  setCheckCertNotas(false); setCheckCertRetiro(false); setIdEstablecimientoPrevio(null);
                 }} 
                 className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
               >
@@ -624,7 +113,7 @@ export default function NuevaMatricula() {
         <h3 className="font-semibold text-gray-700 mb-6">Paso 2: Datos de Matrícula y Establecimiento</h3>
         
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* 🌟 SELECT DE ESTABLECIMIENTO BLOQUEADO PARA COLEGIOS 🌟 */}
+          {/* SELECT DE ESTABLECIMIENTO BLOQUEADO PARA COLEGIOS */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Establecimiento Educacional</label>
             <select 
@@ -651,7 +140,7 @@ export default function NuevaMatricula() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-        {/* CAMPO DE PROCEDENCIA DE SOLO LECTURA */}
+            {/* CAMPO DE PROCEDENCIA DE SOLO LECTURA */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Colegio de Procedencia</label>
               <input 
@@ -703,7 +192,7 @@ export default function NuevaMatricula() {
             </div>
           </div>
           
-                      {/* ALERTAS DE TRANSICIÓN ACADÉMICA */}
+          {/* ALERTAS DE TRANSICIÓN ACADÉMICA */}
           {alertasTransicion.length > 0 && (
             <div className="flex flex-col gap-2 mt-2">
               {alertasTransicion.map((alerta, index) => (
@@ -725,7 +214,6 @@ export default function NuevaMatricula() {
             <div className="bg-emerald-50 text-emerald-700 text-xs font-bold p-2 rounded border border-emerald-200">
               ✓ Se ha precargado exitosamente la información del establecimiento y curso anterior.
             </div>
-            
           )}
 
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs text-gray-500 flex justify-between">
@@ -734,14 +222,13 @@ export default function NuevaMatricula() {
             <span>Nivel Real: <strong className="text-blue-600">{formulario.nivel_ensenanza}</strong></span>
           </div>
 
-          {/* 🌟 NUEVA SECCIÓN: RECEPCIÓN DE DOCUMENTOS 🌟 */}
+          {/* NUEVA SECCIÓN: RECEPCIÓN DE DOCUMENTOS */}
           <div className="border-t border-gray-200 pt-5 mt-5">
             <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
               Recepción de Documentos Obligatorios
             </h4>
             <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
               
-              {/* Esta casilla SIEMPRE aparece */}
               <label className="flex items-start gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -757,7 +244,6 @@ export default function NuevaMatricula() {
                 </div>
               </label>
 
-              {/* 🌟 Esta casilla SOLO aparece si viene de otro colegio o es totalmente nuevo */}
               {idEstablecimientoPrevio !== String(formulario.id_establecimiento) && (
                 <label className="flex items-start gap-3 cursor-pointer group">
                   <input
@@ -798,7 +284,7 @@ export default function NuevaMatricula() {
         </form>
       </div>
 
-      {/* MODAL COMPLETAR DATOS FALTANTES - FORMULARIO ESTRICTO DE 8 CAMPOS */}
+      {/* MODAL COMPLETAR DATOS FALTANTES */}
       {modalFaltantes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -809,7 +295,6 @@ export default function NuevaMatricula() {
             
             <form onSubmit={guardarDatosFaltantes} className="p-5 space-y-6">
               
-              {/* Sección 1: Estudiante */}
               <div>
                 <h4 className="text-sm font-bold text-blue-800 border-b pb-1 mb-3">1. Datos del Estudiante</h4>
                 <div>
@@ -818,7 +303,6 @@ export default function NuevaMatricula() {
                 </div>
               </div>
 
-              {/* Sección 2: Apoderado */}
               <div>
                 <h4 className="text-sm font-bold text-emerald-800 border-b pb-1 mb-3">2. Identificación del Apoderado Titular</h4>
                 
@@ -875,10 +359,9 @@ export default function NuevaMatricula() {
             </form>
           </div>
         </div>
-
-        
       )}
-      {/* 🌟 MODAL DE ÉXITO Y DESCARGA DE COMPROBANTE 🌟 */}
+
+      {/* MODAL DE ÉXITO Y DESCARGA DE COMPROBANTE */}
       {matriculaExitosa && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
@@ -919,10 +402,5 @@ export default function NuevaMatricula() {
         </div>
       )}
     </div>
-
-    
-
-    
   );
-  
 }

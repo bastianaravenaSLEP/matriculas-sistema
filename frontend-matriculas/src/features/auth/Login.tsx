@@ -1,73 +1,18 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
 import { Lock, Mail, ShieldCheck } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
+import { useLogin } from './hooks/useLogin';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [rol, setRol] = useState('COLEGIO');
-  const [cargando, setCargando] = useState(false);
-  
-  const navigate = useNavigate();
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setCargando(true);
-
-    try {
-      const respuesta = await fetch('http://127.0.0.1:8000/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, rol })
-      });
-
-      const datos = await respuesta.json();
-
-      if (!respuesta.ok) throw new Error(datos.detail || 'Error al iniciar sesión');
-
-      localStorage.setItem('token', datos.access_token);
-      localStorage.setItem('usuario', JSON.stringify(datos.usuario));
-      navigate('/');
-      
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  // --- NUEVA LÓGICA DE LOGIN CON GOOGLE ---
-  const handleGoogleSuccess = async (credentialResponse: any) => {
-    setError('');
-    setCargando(true);
-
-    try {
-      const respuesta = await fetch('http://127.0.0.1:8000/login/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          token: credentialResponse.credential, // El token crudo que envía Google
-          rol: rol // El rol que está seleccionado en el combobox
-        })
-      });
-
-      const datos = await respuesta.json();
-
-      if (!respuesta.ok) throw new Error(datos.detail || 'Error al iniciar sesión con Google');
-
-      localStorage.setItem('token', datos.access_token);
-      localStorage.setItem('usuario', JSON.stringify(datos.usuario));
-      navigate('/');
-      
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setCargando(false);
-    }
-  };
+  const {
+    email, setEmail,
+    password, setPassword,
+    error, setError,
+    rol, setRol,
+    cargando,
+    handleLogin,
+    handleGoogleSuccess
+  } = useLogin();
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-4">
@@ -82,7 +27,6 @@ export default function Login() {
       <div className="bg-blue-950 p-8 text-center border-b-4 border-red-600">
           <p className="text-blue-200 text-xs font-bold tracking-widest uppercase mb-4">Ministerio de Educación</p>
           
-          {/* Contenedor flex con alineación centrada */}
           <div className="flex flex-col items-center justify-center my-2">
               <img 
                 src="/images/logo_slep.png"
@@ -101,7 +45,6 @@ export default function Login() {
             </div>
           )}
 
-          {/* COMBBOX DE ROLES MOVIDO ARRIBA PARA QUE SIRVA PARA AMBOS MÉTODOS */}
           <div className="mb-6">
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">1. Seleccione su Perfil Institucional</label>
             <select 
@@ -113,7 +56,6 @@ export default function Login() {
             </select>
           </div>
 
-          {/* 🌟 AQUÍ ESTÁ LA INTEGRACIÓN DEL BOTÓN DE GOOGLE */}
           <div className="mb-6 flex justify-center">
             <GoogleLogin
               onSuccess={handleGoogleSuccess}

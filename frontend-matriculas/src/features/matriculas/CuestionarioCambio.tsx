@@ -1,63 +1,25 @@
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React from 'react';
+import { useCuestionarioCambio } from './hooks/useCuestionarioCambio';
 
 export default function EncuestaCambioCurso() {
-  const { id } = useParams<{ id: string }>();
-  
-  const [rutEstudiante, setRutEstudiante] = useState('');
-  const [motivo, setMotivo] = useState('');
-  
-  const [cargando, setCargando] = useState(false);
-  const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setCargando(true);
-    setMensaje(null);
-
-    try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario-curso`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          rut_estudiante: rutEstudiante,
-          motivo_real: motivo
-        })
-      });
-
-      const datos = await respuesta.json();
-
-      if (!respuesta.ok) {
-        throw new Error(datos.detail || 'Ocurrió un error al guardar el motivo.');
-      }
-
-      setMensaje({ texto: 'Formulario enviado con éxito. Puede cerrar esta pestaña.', tipo: 'exito' });
-      setRutEstudiante('');
-      setMotivo('');
-    } catch (error: any) {
-      setMensaje({ texto: error.message, tipo: 'error' });
-    } finally {
-      setCargando(false);
-    }
-  };
+  const {
+    rutEstudiante, setRutEstudiante,
+    motivo, setMotivo,
+    cargando,
+    mensaje,
+    handleSubmit
+  } = useCuestionarioCambio();
 
   return (
-    /* 🌟 Fondeo más oscuro (slate-200) para crear contraste real con la tarjeta blanca */
     <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4 sm:p-8">
-      
-      {/* 🌟 Tarjeta con sombra profunda (shadow-2xl) y bordes redondeados */}
       <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden border border-gray-200">
         
-        {/* 🌟 Franja superior institucional (Azul y Rojo SLEP) */}
         <div className="absolute top-0 left-0 w-full h-2 flex">
           <div className="w-1/2 bg-blue-700"></div>
           <div className="w-1/2 bg-red-600"></div>
         </div>
 
         <div className="text-center mb-8 mt-2">
-          {/* 🌟 Logo más grande (h-20 a h-24) */}
           <img 
             src="/images/logo-slep.negro.png" 
             alt="Logo SLEP" 

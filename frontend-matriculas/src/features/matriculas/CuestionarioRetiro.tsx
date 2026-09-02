@@ -1,56 +1,26 @@
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React from 'react';
+import { useCuestionarioRetiro } from './hooks/useCuestionarioRetiro';
 
 export default function CuestionarioRetiro() {
-  // Capturamos el ID de la matrícula directamente desde la URL (Ej: /encuesta-retiro/5)
-  const { id } = useParams(); 
-  
-  const [rutEstudiante, setRutEstudiante] = useState('');
-  const [motivo, setMotivo] = useState('');
-  const [estado, setEstado] = useState<'formulario' | 'cargando' | 'exito' | 'error'>('formulario');
-  const [mensajeError, setMensajeError] = useState('');
-
-  const enviarCuestionario = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setEstado('cargando');
-    
-    try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          rut_estudiante: rutEstudiante, 
-          motivo_real: motivo 
-        }),
-      });
-
-      if (!respuesta.ok) {
-        const err = await respuesta.json();
-        throw new Error(err.detail || 'Error de conexión con el servidor.');
-      }
-      
-      setEstado('exito');
-    } catch (err: any) {
-      setMensajeError(err.message);
-      setEstado('error');
-    }
-  };
+  const {
+    rutEstudiante, setRutEstudiante,
+    motivo, setMotivo,
+    estado,
+    mensajeError,
+    enviarCuestionario
+  } = useCuestionarioRetiro();
 
   return (
-    /* 🌟 Fondeo oscuro para crear contraste real con la tarjeta blanca */
     <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4 sm:p-8">
       
-      {/* 🌟 Tarjeta con sombra profunda y bordes redondeados */}
       <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden border border-gray-200">
         
-        {/* 🌟 Franja superior institucional (Azul y Rojo SLEP) */}
         <div className="absolute top-0 left-0 w-full h-2 flex">
           <div className="w-1/2 bg-blue-700"></div>
           <div className="w-1/2 bg-red-600"></div>
         </div>
 
         <div className="text-center mb-8 mt-2">
-          {/* 🌟 Logo Institucional */}
           <img 
             src="/images/logo-slep.negro.png" 
             alt="Logo SLEP" 
@@ -64,7 +34,6 @@ export default function CuestionarioRetiro() {
           </p>
         </div>
 
-        {/* VISTA 1: ÉXITO */}
         {estado === 'exito' ? (
           <div className="bg-emerald-50 text-emerald-800 p-6 rounded-xl text-center border border-emerald-200 shadow-inner">
             <div className="text-5xl mb-3">✅</div>
@@ -74,7 +43,6 @@ export default function CuestionarioRetiro() {
             </p>
           </div>
         ) : (
-          /* VISTA 2: FORMULARIO */
           <form onSubmit={enviarCuestionario} className="space-y-6">
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
@@ -106,7 +74,6 @@ export default function CuestionarioRetiro() {
               ></textarea>
             </div>
 
-            {/* MENSAJE DE ERROR */}
             {estado === 'error' && (
               <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2">
                 <span>❌</span> {mensajeError}

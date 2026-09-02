@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { FileText, Mail, X, CheckCircle, Send, Download, Eye } from 'lucide-react';
+import { useModalEmisionDocumento } from './hooks/useModalEmisionDocumento';
 
 interface ModalEmisionProps {
   isOpen: boolean;
   onClose: () => void;
   idMatricula: number;
   nombreAlumno: string;
-  emailApoderado?: string; // Solo recibimos este para pre-rellenar si existe
+  emailApoderado?: string; 
   tipoDocumento: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO';
 }
 
@@ -14,80 +15,19 @@ export default function ModalEmisionDocumento({
   isOpen, onClose, idMatricula, nombreAlumno, emailApoderado, tipoDocumento
 }: ModalEmisionProps) {
   
-  const [enviarDirector, setEnviarDirector] = useState(false);
-  const [correoDirector, setCorreoDirector] = useState('');
-
-  const [enviarApoderado, setEnviarApoderado] = useState(false);
-  const [correoApoderado, setCorreoApoderado] = useState('');
-  
-  const [cargando, setCargando] = useState(false);
-  const [mensajeExito, setMensajeExito] = useState('');
-  const [mostrarVisor, setMostrarVisor] = useState(false);
-
-  // Al abrir el modal, pre-rellenamos el correo del apoderado si viene de la base de datos
-  useEffect(() => {
-    if (emailApoderado) {
-      setCorreoApoderado(emailApoderado);
-    }
-  }, [emailApoderado]);
+  const {
+    enviarDirector, // Extraemos pero no se usa en la vista actual según tu código, lo dejamos por si a futuro lo usas
+    enviarApoderado, setEnviarApoderado,
+    correoApoderado, setCorreoApoderado,
+    cargando,
+    mensajeExito,
+    mostrarVisor, setMostrarVisor,
+    getTitulo,
+    handleEnviarCorreos,
+    handleDescargarLocal
+  } = useModalEmisionDocumento(idMatricula, tipoDocumento, emailApoderado, onClose);
 
   if (!isOpen) return null;
-
-  const getTitulo = () => {
-    switch (tipoDocumento) {
-      case 'MATRICULA': return 'Emitir Certificado de Matrícula';
-      case 'RETIRO': return 'Emitir Comprobante de Retiro';
-      case 'CAMBIO_CURSO': return 'Emitir Certificado de Cambio';
-    }
-  };
-
-  const handleEnviarCorreos = async () => {
-    // Recopilar los correos que estén chequeados y no estén vacíos
-    const destinatarios: string[] = [];
-    if (enviarDirector && correoDirector.trim() !== '') destinatarios.push(correoDirector.trim());
-    if (enviarApoderado && correoApoderado.trim() !== '') destinatarios.push(correoApoderado.trim());
-
-    if (destinatarios.length === 0) {
-      alert('Debe ingresar y marcar al menos un correo electrónico para realizar el envío.');
-      return;
-    }
-
-    setCargando(true);
-    const token = localStorage.getItem('token');
-    
-    try {
-      const res = await fetch('http://127.0.0.1:8000/documentos/emitir', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          id_matricula: idMatricula,
-          tipo_documento: tipoDocumento,
-          destinatarios: destinatarios // Enviamos el array limpio al backend
-        })
-      });
-
-      if (!res.ok) throw new Error('Error al enviar los documentos por correo');
-      
-      const data = await res.json();
-      setMensajeExito(data.message);
-      
-      setTimeout(() => {
-        setMensajeExito('');
-        onClose();
-      }, 2500);
-
-    } catch (error: any) {
-      alert(error.message);
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  const handleDescargarLocal = () => {
-window.open(`http://127.0.0.1:8000/matriculas/${idMatricula}/certificado?tipo=${tipoDocumento}`, '_blank');  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
@@ -127,7 +67,6 @@ window.open(`http://127.0.0.1:8000/matriculas/${idMatricula}/certificado?tipo=${
                   <Mail size={16} /> Enviar Comprobante por Correo
                 </h3>
         
-
                 {/* BLOQUE APODERADO */}
                 <div className={`p-3 border rounded-lg transition-colors ${enviarApoderado ? 'bg-gray-50 border-blue-300' : 'hover:bg-gray-50'}`}>
                   <label className="flex items-center gap-3 cursor-pointer mb-2">

@@ -1,13 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { FolderOpen, Users, Activity, PieChart, ArrowRight } from 'lucide-react';
+import { useInicio } from './hooks/useInicio';
 
 export default function Inicio() {
-  const usuarioString = localStorage.getItem('usuario');
-  const usuario = usuarioString ? JSON.parse(usuarioString) : null;
-  
-  // Verificamos si tiene permisos para ver trazabilidad
-  const puedeVerAuditoria = !['Colegio', 'Visualizador_Colegio'].includes(usuario?.rol);
+  const { usuario, puedeVerAuditoria } = useInicio();
 
   return (
     <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
