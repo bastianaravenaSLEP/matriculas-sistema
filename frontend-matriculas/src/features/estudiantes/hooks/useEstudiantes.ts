@@ -1,6 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 
+// 🌟 INTERFAZ: Le decimos a TypeScript exactamente qué campos tiene nuestro formulario
+export interface NuevoEstudianteForm {
+  run: string;
+  nombres: string;
+  apellido_paterno: string;
+  apellido_materno: string;
+  fecha_nacimiento: string;
+  sexo: string;
+  domicilio: string;
+  latitud: string;
+  longitud: string;
+  run_apoderado: string;
+  nombres_apoderado: string;
+  apellido_paterno_apoderado: string;
+  apellido_materno_apoderado: string;
+  domicilio_apoderado: string;
+  telefono_apoderado: string;
+  correo_apoderado: string;
+  // Campos Migrantes Opcionales
+  pais_origen_estudiante?: string;
+  doc_extranjero_estudiante?: string;
+  pais_origen_apoderado?: string;
+  doc_extranjero_apoderado?: string;
+}
+
 export const formatearRUT = (rut: string) => {
   const actual = rut.replace(/^0+/, "").replace(/[^0-9kK]/g, "").toUpperCase();
   if (actual.length <= 1) return actual;
@@ -31,7 +56,6 @@ export const useEstudiantes = () => {
   const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
   const navigate = useNavigate();
 
-  // --- LÓGICA DE ROLES ---
   const usuarioString = localStorage.getItem('usuario');
   const usuario = usuarioString ? JSON.parse(usuarioString) : null;
   const puedeEditar = !['Visualizador_SLEP', 'Visualizador_Colegio'].includes(usuario?.rol);
@@ -50,9 +74,12 @@ export const useEstudiantes = () => {
   const [estudianteCreadoExito, setEstudianteCreadoExito] = useState(false);
   const [rutRecienCreado, setRutRecienCreado] = useState('');
 
-  const [nuevoEstudiante, setNuevoEstudiante] = useState({
+  // 🌟 ESTADO INICIAL: Agregamos los campos de extranjería
+  const [nuevoEstudiante, setNuevoEstudiante] = useState<NuevoEstudianteForm>({
     run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', domicilio: '', latitud:'', longitud:'',
-    run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: ''
+    run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '',
+    pais_origen_estudiante: '', doc_extranjero_estudiante: '',
+    pais_origen_apoderado: '', doc_extranjero_apoderado: ''
   });
 
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -221,17 +248,33 @@ export const useEstudiantes = () => {
     setSugerenciasMapa([]);
   };
 
+  // 🌟 VALIDACIÓN INTELIGENTE: Detecta el IPE e ignora la validación RUT tradicional
   const handleCrearEstudiante = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validarRUT(nuevoEstudiante.run)) {
+    const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
+    const esIpaApoderado = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
+
+    // Validaciones Estudiante
+    if (!esIpeEstudiante && !validarRUT(nuevoEstudiante.run)) {
       alert("⚠️ El RUT del Estudiante no es válido. Revisa que el dígito verificador sea correcto.");
       return;
     }
-    if (!validarRUT(nuevoEstudiante.run_apoderado)) {
+    if (esIpeEstudiante && (!nuevoEstudiante.pais_origen_estudiante || !nuevoEstudiante.doc_extranjero_estudiante)) {
+      alert("⚠️ El estudiante tiene un IPE. Debes ingresar obligatoriamente su País de Origen y Documento Nacional.");
+      return;
+    }
+
+    // Validaciones Apoderado
+    if (!esIpaApoderado && !validarRUT(nuevoEstudiante.run_apoderado)) {
       alert("⚠️ El RUT del Apoderado no es válido. Revisa que el dígito verificador sea correcto.");
       return;
     }
+    if (esIpaApoderado && (!nuevoEstudiante.pais_origen_apoderado || !nuevoEstudiante.doc_extranjero_apoderado)) {
+      alert("⚠️ El apoderado tiene un IPA. Debes ingresar obligatoriamente su País de Origen y Documento Nacional.");
+      return;
+    }
+
     if (!nuevoEstudiante.latitud || !nuevoEstudiante.longitud) {
       alert("⚠️ Acción requerida: Debes validar el Domicilio Actual usando el botón 'Buscar' antes de crear al estudiante.");
       return;
@@ -249,13 +292,21 @@ export const useEstudiantes = () => {
         },
         body: JSON.stringify(nuevoEstudiante),
       });
-      if (!respuesta.ok) throw new Error('Error al guardar. Verifica que el RUT no esté duplicado en la base de datos.');
+      if (!respuesta.ok) throw new Error('Error al guardar. Verifica que el RUT/IPE no esté duplicado en la base de datos.');
       
       setRutRecienCreado(nuevoEstudiante.run);
       setEstudianteCreadoExito(true);
       cargarDirectorio();
 
-      setNuevoEstudiante({ run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', domicilio: '',latitud:'', longitud:'', run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '' });
+      // Resetear estado completo
+      setNuevoEstudiante({ 
+        run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', 
+        domicilio: '', latitud:'', longitud:'', 
+        run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', 
+        domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '',
+        pais_origen_estudiante: '', doc_extranjero_estudiante: '',
+        pais_origen_apoderado: '', doc_extranjero_apoderado: ''
+      });
     } catch (err: any) {
       alert(err.message);
     } finally {

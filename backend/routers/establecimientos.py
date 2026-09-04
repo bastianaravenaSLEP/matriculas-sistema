@@ -1,21 +1,13 @@
-from fastapi import APIRouter, HTTPException, Depends
-from database import get_db_connection
+# routers/establecimientos.py
+from fastapi import APIRouter, Depends
 from security import obtener_usuario_actual
+
+# Importamos la capa de servicio
+from services import establecimientos_service
 
 router = APIRouter(prefix="/establecimientos", tags=["Establecimientos Educacionales"])
 
 @router.get("")
 def obtener_establecimientos(usuario_actual: dict = Depends(obtener_usuario_actual)):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id_establecimiento, rbd, nombre FROM establecimiento ORDER BY nombre ASC")
-        filas = cur.fetchall()
-        
-        colegios = [{"id_establecimiento": f[0], "rbd": f[1], "nombre": f[2]} for f in filas]
-        return colegios
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Error interno de la base de datos")
-    finally:
-        if 'cur' in locals(): cur.close()
-        if 'conn' in locals(): conn.close()
+    # Delegamos la consulta a la base de datos al servicio
+    return establecimientos_service.obtener_establecimientos_db()

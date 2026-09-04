@@ -14,7 +14,11 @@ class MatriculaCreate(BaseModel):
     cod_tipo_ensenanza: Optional[int] = None
     cod_grado: Optional[int] = None
     letra_curso: Optional[str] = None
-
+    es_excedente: bool = False
+    numero_resolucion_excedente: Optional[str] = None
+    fecha_resolucion_excedente: Optional[date] = None
+    es_alumno_practica: Optional[bool] = False
+    
 class MatriculaUpdate(BaseModel):
     estado: str
     fecha_retiro: Optional[date] = None

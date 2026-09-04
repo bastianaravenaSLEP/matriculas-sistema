@@ -1,6 +1,6 @@
 import React from 'react';
 import { Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, UserPlus, Edit2, Save, X, CheckCircle } from 'lucide-react';
-import { useEstudiantes } from './hooks/useEstudiantes'; // O la ruta donde lo hayas guardado
+import { useEstudiantes } from './hooks/useEstudiantes'; 
 
 export default function Estudiantes() {
   const {
@@ -18,6 +18,10 @@ export default function Estudiantes() {
     nuevoEstudiante, setNuevoEstudiante, formatearRUT, handleCrearEstudiante,
     creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion
   } = useEstudiantes();
+
+  // 🌟 VARIABLES PARA UI: Detectan en tiempo real si los campos son IPE/IPA
+  const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
+  const esIpaApoderado = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto relative">
@@ -37,7 +41,6 @@ export default function Estudiantes() {
         
         {!datosEstudiante ? (
           <div className="flex gap-3">
-            {/* OCULTAMIENTO CONDICIONAL DE BOTONES DE CREACIÓN */}
             {puedeEditar && (
               <>
                 <input 
@@ -60,7 +63,6 @@ export default function Estudiantes() {
           </div>
         ) : (
           !modoEdicion ? (
-            // OCULTAMIENTO CONDICIONAL DEL BOTÓN DE EDICIÓN
             puedeEditar && (
               <button onClick={() => setModoEdicion(true)} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                 <Edit2 size={18} /> Editar Datos
@@ -119,10 +121,7 @@ export default function Estudiantes() {
 
      {/* VISTA 2: FICHA DEL ESTUDIANTE */}
       {datosEstudiante && (() => {
-        // CEREBRO: Ordenamos el historial asegurando que el ID más alto (el más reciente) quede de los primeros
         const historialOrdenado = [...datosEstudiante.historial].sort((a, b) => b.id - a.id);
-        
-        // Rescatamos la matrícula que quedó en la posición 0 (la más nueva)
         const ultimaMatricula = historialOrdenado.length > 0 ? historialOrdenado[0] : null;
 
         return (
@@ -137,7 +136,6 @@ export default function Estudiantes() {
               <div><p className="text-sm text-gray-500">Nombre Completo</p><p className="font-medium">{datosEstudiante.personal.nombres} {datosEstudiante.personal.apellidos}</p></div>
               <div><p className="text-sm text-gray-500">Fecha Nacimiento</p><p className="font-medium">{datosEstudiante.personal.fecha_nacimiento}</p></div>
               
-              {/* AQUÍ FORZAMOS A MOSTRAR EL COLEGIO MÁS RECIENTE CALCULADO */}
               <div className="pt-2 border-t border-gray-50">
                 <p className="text-sm text-gray-500 mb-1">Última Matrícula Registrada</p>
                 <p className="font-bold text-blue-800">
@@ -202,7 +200,6 @@ export default function Estudiantes() {
                     </tr>
                   </thead>
                   <tbody>
-                    {/* AQUÍ USAMOS EL HISTORIAL ORDENADO PARA LA TABLA */}
                     {historialOrdenado.length === 0 && (
                       <tr><td colSpan={4} className="py-4 text-center text-gray-500">Sin historial de matrículas</td></tr>
                     )}
@@ -265,8 +262,49 @@ export default function Estudiantes() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">RUT o IPE <span className="text-red-500">*</span></label>
-                      <input required type="text" placeholder="Ej: 21123456-7" value={nuevoEstudiante.run} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none text-sm font-mono" maxLength={10} />
+                      <input required type="text" placeholder="Ej: 21123456-7" value={nuevoEstudiante.run} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none text-sm font-mono" maxLength={12} />
                     </div>
+
+                    {/* 🌟 FORMULARIO CONDICIONAL ESTUDIANTE IPE */}
+                    {esIpeEstudiante && (
+                      <div className="col-span-full bg-blue-50 border border-blue-200 p-4 rounded-lg mt-2 mb-2 animate-in slide-in-from-top-2">
+                        <h4 className="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                          <span>🌍</span> Identificador Provisorio Escolar (IPE) Detectado
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-blue-800 mb-1">País de Origen <span className="text-red-500">*</span></label>
+                            <select 
+                              required={esIpeEstudiante}
+                              value={nuevoEstudiante.pais_origen_estudiante || ''}
+                              onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, pais_origen_estudiante: e.target.value})}
+                              className="w-full border border-blue-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                            >
+                              <option value="">Seleccione país...</option>
+                              <option value="Venezuela">Venezuela</option>
+                              <option value="Colombia">Colombia</option>
+                              <option value="Perú">Perú</option>
+                              <option value="Bolivia">Bolivia</option>
+                              <option value="Haití">Haití</option>
+                              <option value="Ecuador">Ecuador</option>
+                              <option value="Otro">Otro país</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-blue-800 mb-1">Documento de Identidad Extranjero <span className="text-red-500">*</span></label>
+                            <input 
+                              required={esIpeEstudiante}
+                              type="text" 
+                              value={nuevoEstudiante.doc_extranjero_estudiante || ''}
+                              onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, doc_extranjero_estudiante: e.target.value})}
+                              placeholder="N° de Pasaporte o DNI"
+                              className="w-full border border-blue-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Nombres <span className="text-red-500">*</span></label>
                       <input required type="text" value={nuevoEstudiante.nombres} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, nombres: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-blue-500 outline-none text-sm" />
@@ -318,8 +356,49 @@ export default function Estudiantes() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">RUT o Pasaporte <span className="text-red-500">*</span></label>
-                      <input required type="text" placeholder="Ej: 12345678-9" value={nuevoEstudiante.run_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run_apoderado: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 outline-none text-sm font-mono" maxLength={10} />
+                      <input required type="text" placeholder="Ej: 12345678-9" value={nuevoEstudiante.run_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run_apoderado: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 outline-none text-sm font-mono" maxLength={12} />
                     </div>
+
+                    {/* 🌟 FORMULARIO CONDICIONAL APODERADO IPA */}
+                    {esIpaApoderado && (
+                      <div className="col-span-full bg-emerald-50 border border-emerald-200 p-4 rounded-lg mt-2 mb-2 animate-in slide-in-from-top-2">
+                        <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">
+                          <span>🌍</span> Identificador Provisorio de Apoderado (IPA) Detectado
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-emerald-800 mb-1">País de Origen <span className="text-red-500">*</span></label>
+                            <select 
+                              required={esIpaApoderado}
+                              value={nuevoEstudiante.pais_origen_apoderado || ''}
+                              onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, pais_origen_apoderado: e.target.value})}
+                              className="w-full border border-emerald-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                            >
+                              <option value="">Seleccione país...</option>
+                              <option value="Venezuela">Venezuela</option>
+                              <option value="Colombia">Colombia</option>
+                              <option value="Perú">Perú</option>
+                              <option value="Bolivia">Bolivia</option>
+                              <option value="Haití">Haití</option>
+                              <option value="Ecuador">Ecuador</option>
+                              <option value="Otro">Otro país</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-emerald-800 mb-1">Documento de Identidad Extranjero <span className="text-red-500">*</span></label>
+                            <input 
+                              required={esIpaApoderado}
+                              type="text" 
+                              value={nuevoEstudiante.doc_extranjero_apoderado || ''}
+                              onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, doc_extranjero_apoderado: e.target.value})}
+                              placeholder="N° de Pasaporte o DNI"
+                              className="w-full border border-emerald-300 rounded p-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1">Nombres <span className="text-red-500">*</span></label>
                       <input required type="text" value={nuevoEstudiante.nombres_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, nombres_apoderado: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 outline-none text-sm" />

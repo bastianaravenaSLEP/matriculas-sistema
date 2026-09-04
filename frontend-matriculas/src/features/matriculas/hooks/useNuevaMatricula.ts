@@ -9,6 +9,7 @@ export interface MatriculaBase {
   curso: string;
   estudiante_rut: string;
   anio_escolar: number;
+  estado?: string; // 🌟 Añadimos el estado para contar solo las Activas
 }
 
 export const useNuevaMatricula = () => {
@@ -18,7 +19,6 @@ export const useNuevaMatricula = () => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
 
-  // Estados para búsqueda de estudiantes
   const [rutBusqueda, setRutBusqueda] = useState('');
   const [estudiante, setEstudiante] = useState<any>(null);
   const [estudianteCompleto, setEstudianteCompleto] = useState<any>(null);
@@ -26,7 +26,6 @@ export const useNuevaMatricula = () => {
   const [sugerencias, setSugerencias] = useState<any[]>([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
 
-  // Estados de Precarga y Validación Completa
   const [huboPrecarga, setHuboPrecarga] = useState(false);
   const [cursoPrevio, setCursoPrevio] = useState(''); 
   const [codigoPrevio, setCodigoPrevio] = useState<number | null>(null); 
@@ -35,7 +34,6 @@ export const useNuevaMatricula = () => {
   const [modalFaltantes, setModalFaltantes] = useState(false);
   const { colegioSeleccionado } = useOutletContext<any>() || { colegioSeleccionado: '' };
 
-  // --- LÓGICA DE ROLES PARA SEGURIDAD ---
   const usuarioString = localStorage.getItem('usuario');
   const usuario = usuarioString ? JSON.parse(usuarioString) : null;
   const rolUsuario = usuario?.rol?.toLowerCase() || '';
@@ -43,7 +41,6 @@ export const useNuevaMatricula = () => {
 
   const [matriculaExitosa, setMatriculaExitosa] = useState(false); 
 
-  // Estado con todos los campos obligatorios del apoderado
   const [formFaltantes, setFormFaltantes] = useState({
     domicilio_estudiante: '',
     rut_apoderado: '',
@@ -55,12 +52,10 @@ export const useNuevaMatricula = () => {
     correo_apoderado: ''
   });
 
-  // --- NUEVOS ESTADOS PARA PROCEDENCIA ---
   const [colegioProcedencia, setColegioProcedencia] = useState('');
   const [esTraslado, setEsTraslado] = useState(false);
   const [guardandoFaltantes, setGuardandoFaltantes] = useState(false);
   
-  // Estados para la lógica en cascada
   const [establecimientosDb, setEstablecimientosDb] = useState<any[]>([]);
   const [todasLasMatriculas, setTodasLasMatriculas] = useState<MatriculaBase[]>([]);
 
@@ -74,12 +69,44 @@ export const useNuevaMatricula = () => {
     cursoSeleccionado: '',
     cod_grado: 1,
     letra_curso: 'A',
+    es_excedente: false,
+    numero_resolucion_excedente: '',
+    fecha_resolucion_excedente: '',
+    es_alumno_practica: false
   });
 
-  // --- ESTADOS PARA DOCUMENTOS ---
   const [checkCertNotas, setCheckCertNotas] = useState(false);
   const [checkCertRetiro, setCheckCertRetiro] = useState(false);
   const [idEstablecimientoPrevio, setIdEstablecimientoPrevio] = useState<string | null>(null);
+
+  // ============================================================================
+  // 🌟 NUEVO: LÓGICA DE CONTROL DE CUPOS MÁXIMOS (45 ESTUDIANTES)
+  // ============================================================================
+  const LIMITE_CUPOS = 45;
+
+  const cuposOcupados = useMemo(() => {
+    if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza || !formulario.cursoSeleccionado) return 0;
+    
+    // Filtramos cruzando todos los datos para dar con el curso exacto
+    return todasLasMatriculas.filter(m =>
+      String(m.id_establecimiento) === String(formulario.id_establecimiento) &&
+      String(m.anio_escolar) === String(formulario.anio_escolar) &&
+      String(m.cod_tipo_ensenanza) === String(formulario.cod_tipo_ensenanza) &&
+      m.curso === formulario.cursoSeleccionado &&
+      (m.estado === 'Activa' || !m.estado) // Solo contamos a los activos
+    ).length;
+  }, [formulario.id_establecimiento, formulario.anio_escolar, formulario.cod_tipo_ensenanza, formulario.cursoSeleccionado, todasLasMatriculas]);
+
+  // Si se llega al límite, forzamos que sea excedente automáticamente
+  useEffect(() => {
+    if (cuposOcupados >= LIMITE_CUPOS) {
+      setFormulario(prev => ({ ...prev, es_excedente: true }));
+    } else {
+      // Si cambia a un curso vacío, le quitamos el excedente automático por precaución
+      setFormulario(prev => ({ ...prev, es_excedente: false }));
+    }
+  }, [cuposOcupados]);
+  // ============================================================================
 
   useEffect(() => {
     if (esPerfilColegio && usuario?.id_establecimiento) {
@@ -322,7 +349,7 @@ export const useNuevaMatricula = () => {
     }
   };
 
-const guardarDatosFaltantes = async (e: React.FormEvent) => {
+  const guardarDatosFaltantes = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!estudiante) return;
     setGuardandoFaltantes(true);
@@ -363,14 +390,25 @@ const guardarDatosFaltantes = async (e: React.FormEvent) => {
     setFormFaltantes(prev => ({ ...prev, domicilio_apoderado: prev.domicilio_estudiante }));
   };
 
+  const colegioSeleccionadoObj = establecimientosDb.find(e => String(e.id_establecimiento) === String(formulario.id_establecimiento));
+  const esColegioEMTP = colegioSeleccionadoObj && ['1518', '1519', '1525'].includes(String(colegioSeleccionadoObj.rbd));
+
+  const nombreCurso = formulario.cursoSeleccionado.toLowerCase();
+  const esCuartoMedio = nombreCurso.includes('4') && nombreCurso.includes('medio');
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormulario({ ...formulario, [e.target.name]: e.target.value });
+    const { name, value, type } = e.target;
+    const val = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+
+    setFormulario((prev) => ({
+      ...prev,
+      [name]: val,
+    }));
   };
 
   const generarComprobantePDF = async () => {
     try {
       const token = localStorage.getItem('token');
-      
       const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -418,7 +456,11 @@ const guardarDatosFaltantes = async (e: React.FormEvent) => {
       id_usuario_ejecutor: 1,
       cod_tipo_ensenanza: formulario.cod_tipo_ensenanza ? parseInt(formulario.cod_tipo_ensenanza) : null,
       cod_grado: formulario.cod_grado,
-      letra_curso: formulario.letra_curso
+      letra_curso: formulario.letra_curso,
+      es_excedente: formulario.es_excedente,
+      numero_resolucion_excedente: formulario.numero_resolucion_excedente || null,
+      fecha_resolucion_excedente: formulario.fecha_resolucion_excedente || null,
+      es_alumno_practica: formulario.es_alumno_practica
     };
 
     const token = localStorage.getItem('token');
@@ -487,7 +529,6 @@ const guardarDatosFaltantes = async (e: React.FormEvent) => {
     setAlertasTransicion(alertas);
   }, [formulario.cursoSeleccionado, formulario.cod_tipo_ensenanza, cursoPrevio, codigoPrevio, estudiante]);
 
-  // --- LO IMPORTANTE: Retornamos todo lo necesario a la vista ---
   return {
     navigate, cargando, error, rutBusqueda, setRutBusqueda, estudiante, setEstudiante,
     sugerencias, mostrarSugerencias, setMostrarSugerencias, huboPrecarga, setHuboPrecarga,
@@ -496,6 +537,7 @@ const guardarDatosFaltantes = async (e: React.FormEvent) => {
     formFaltantes, setFormFaltantes, colegioProcedencia, esTraslado, guardandoFaltantes,
     establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
-    seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio
+    seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio,
+    esColegioEMTP, esCuartoMedio, cuposOcupados, LIMITE_CUPOS // 🌟 Añadido al return
   };
 };

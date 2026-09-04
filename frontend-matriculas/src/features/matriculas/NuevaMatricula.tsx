@@ -3,24 +3,32 @@ import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, A
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 
 export default function NuevaMatricula() {
-  
-  // EXTRAEMOS TODO DEL CUSTOM HOOK
   const {
-    navigate, cargando, error, rutBusqueda, estudiante, setEstudiante,
-    sugerencias, mostrarSugerencias, setMostrarSugerencias, huboPrecarga, setHuboPrecarga,
-    alertasTransicion, setAlertasTransicion, datosFaltantes, setDatosFaltantes,
-    modalFaltantes, setModalFaltantes, esPerfilColegio, matriculaExitosa,
-    formFaltantes, setFormFaltantes, colegioProcedencia, esTraslado, guardandoFaltantes,
-    establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
-    idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
-    seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio
+    navigate, cargando, error, matriculaExitosa,
+    rutBusqueda, estudiante, setEstudiante,
+    sugerencias, mostrarSugerencias, setMostrarSugerencias, 
+    handleEscribirBuscador, seleccionarEstudiante,
+    datosFaltantes, setDatosFaltantes, modalFaltantes, setModalFaltantes,
+    formFaltantes, setFormFaltantes, guardandoFaltantes, guardarDatosFaltantes, copiarDomicilio,
+    formulario, handleChange, establecimientosDb, esPerfilColegio,
+    codigosDisponibles, cursosDisponibles, seleccionarCurso,
+    colegioProcedencia, esTraslado, huboPrecarga, setHuboPrecarga,
+    idEstablecimientoPrevio, setIdEstablecimientoPrevio,
+    setCursoPrevio, setCodigoPrevio, alertasTransicion, setAlertasTransicion,
+    esColegioEMTP,esCuartoMedio,
+    checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
+    handleSubmit, generarComprobantePDF,
+    cuposOcupados, LIMITE_CUPOS // 🌟 Variables traídas del hook
   } = useNuevaMatricula();
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
+      
       <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
       
-      {/* PASO 1: ESTUDIANTE */}
+      {/* =======================================================================
+          PASO 1: BÚSQUEDA E IDENTIFICACIÓN DEL ESTUDIANTE
+          ======================================================================= */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="font-semibold text-gray-700 mb-4">Paso 1: Identificación del Estudiante</h3>
         
@@ -84,7 +92,6 @@ export default function NuevaMatricula() {
               <p className="text-lg font-bold text-gray-900">{estudiante.nombres} {estudiante.apellidos}</p>
               <p className="text-sm text-gray-600 mb-1">RUT: {estudiante.run}</p>
               
-              {/* ALERTA DE DATOS FALTANTES */}
               {datosFaltantes.length > 0 && (
                 <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                   <div className="flex items-center gap-2 text-orange-800 font-bold text-sm mb-1">
@@ -108,12 +115,14 @@ export default function NuevaMatricula() {
         )}
       </div>
 
-      {/* PASO 2: DATOS ACADÉMICOS */}
+      {/* =======================================================================
+          PASO 2: DATOS DE MATRÍCULA Y ESTABLECIMIENTO
+          ======================================================================= */}
       <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-200 transition-opacity ${(!estudiante || datosFaltantes.length > 0) ? 'opacity-50 pointer-events-none' : ''}`}>
         <h3 className="font-semibold text-gray-700 mb-6">Paso 2: Datos de Matrícula y Establecimiento</h3>
         
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* SELECT DE ESTABLECIMIENTO BLOQUEADO PARA COLEGIOS */}
+          
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Establecimiento Educacional</label>
             <select 
@@ -140,7 +149,6 @@ export default function NuevaMatricula() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {/* CAMPO DE PROCEDENCIA DE SOLO LECTURA */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Colegio de Procedencia</label>
               <input 
@@ -165,7 +173,6 @@ export default function NuevaMatricula() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Código de Plan (Tipo Enseñanza)</label>
               <select name="cod_tipo_ensenanza" value={formulario.cod_tipo_ensenanza} onChange={handleChange} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-mono">
@@ -178,9 +185,22 @@ export default function NuevaMatricula() {
                 )}
               </select>
             </div>
+            
+            {/* 🌟 NUEVO: INDICADOR DE CUPOS EN EL SELECTOR DE CURSO */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Curso (Sala)</label>
-              <select name="cursoSeleccionado" value={formulario.cursoSeleccionado} onChange={(e) => seleccionarCurso(e.target.value)} required className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white font-bold text-blue-800">
+              <div className="flex justify-between items-end mb-1">
+                <label className="block text-sm font-medium text-gray-700">Curso (Sala)</label>
+                {formulario.cursoSeleccionado && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm transition-colors ${
+                    cuposOcupados >= LIMITE_CUPOS ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                  }`}>
+                    Cupos: {cuposOcupados} / {LIMITE_CUPOS}
+                  </span>
+                )}
+              </div>
+              <select name="cursoSeleccionado" value={formulario.cursoSeleccionado} onChange={(e) => seleccionarCurso(e.target.value)} required className={`w-full border rounded-lg p-2 outline-none font-bold transition-colors ${
+                cuposOcupados >= LIMITE_CUPOS ? 'border-red-300 text-red-800 bg-red-50' : 'border-gray-300 text-blue-800 bg-white'
+              }`}>
                 {cursosDisponibles.length === 0 ? (
                   <option value="">Seleccione un plan primero</option>
                 ) : (
@@ -192,7 +212,6 @@ export default function NuevaMatricula() {
             </div>
           </div>
           
-          {/* ALERTAS DE TRANSICIÓN ACADÉMICA */}
           {alertasTransicion.length > 0 && (
             <div className="flex flex-col gap-2 mt-2">
               {alertasTransicion.map((alerta, index) => (
@@ -222,13 +241,11 @@ export default function NuevaMatricula() {
             <span>Nivel Real: <strong className="text-blue-600">{formulario.nivel_ensenanza}</strong></span>
           </div>
 
-          {/* NUEVA SECCIÓN: RECEPCIÓN DE DOCUMENTOS */}
           <div className="border-t border-gray-200 pt-5 mt-5">
             <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
               Recepción de Documentos Obligatorios
             </h4>
             <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
-              
               <label className="flex items-start gap-3 cursor-pointer group">
                 <input
                   type="checkbox"
@@ -263,6 +280,110 @@ export default function NuevaMatricula() {
             </div>
           </div>
 
+          {/* =======================================================================
+              🌟 NUEVO: SECCIÓN EXCEDENTES CON BLOQUEO AUTOMÁTICO
+              ======================================================================= */}
+          <div className="border-t border-gray-200 pt-5 mt-5">
+            <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+              Condición de Matrícula
+            </h4>
+            
+            <div className={`p-4 rounded-lg border transition-colors ${formulario.es_excedente ? (cuposOcupados >= LIMITE_CUPOS ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200') : 'bg-gray-50 border-gray-200'}`}>
+              
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input 
+                  type="checkbox" 
+                  name="es_excedente"
+                  checked={formulario.es_excedente}
+                  onChange={handleChange}
+                  disabled={cuposOcupados >= LIMITE_CUPOS} // Bloqueamos si llegó al límite
+                  className={`mt-1 w-4 h-4 rounded focus:ring-2 cursor-pointer transition-colors ${
+                    cuposOcupados >= LIMITE_CUPOS ? 'text-red-600 focus:ring-red-500 border-red-300' : 'text-orange-600 focus:ring-orange-500 border-gray-300'
+                  }`}
+                />
+                <div>
+                  <p className={`text-sm font-bold transition-colors ${
+                    cuposOcupados >= LIMITE_CUPOS ? 'text-red-900' : (formulario.es_excedente ? 'text-orange-900' : 'text-gray-800 group-hover:text-orange-700')
+                  }`}>
+                    Matricular como Estudiante Excedente (Sobrecupo)
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {cuposOcupados >= LIMITE_CUPOS 
+                      ? <span className="text-red-600 font-bold">⚠️ El curso ha alcanzado su máxima capacidad legal ({LIMITE_CUPOS}). Esta opción es obligatoria para continuar.</span>
+                      : "Seleccione esta opción solo si el estudiante ingresa por sobre el cupo máximo autorizado mediante resolución ministerial."
+                    }
+                  </p>
+                </div>
+              </label>
+
+              {formulario.es_excedente && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-orange-200 animate-in slide-in-from-top-2">
+                  <div>
+                    <label className="block text-xs font-bold text-orange-800 mb-1">
+                      N° de Resolución Autorizatoria <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      required={formulario.es_excedente} 
+                      type="text" 
+                      name="numero_resolucion_excedente"
+                      value={formulario.numero_resolucion_excedente}
+                      onChange={handleChange}
+                      placeholder="Ej: RES-EXT-2026-001"
+                      className="w-full border border-orange-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white transition-all" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-orange-800 mb-1">
+                      Fecha de Resolución <span className="text-red-500">*</span>
+                    </label>
+                    <input 
+                      required={formulario.es_excedente} 
+                      type="date" 
+                      name="fecha_resolucion_excedente"
+                      value={formulario.fecha_resolucion_excedente}
+                      onChange={handleChange}
+                      className="w-full border border-orange-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white transition-all" 
+                    />
+                  </div>
+                  <div className="md:col-span-2 text-xs text-orange-800 font-medium bg-white p-2.5 rounded border border-orange-100 shadow-sm flex gap-2 items-start">
+                    <span className="text-sm">⚠️</span>
+                    <p>
+                      <strong>Nota Normativa:</strong> En caso de que este estudiante sea retirado en el futuro, su cupo no podrá ser reemplazado por otro en el registro general sin una nueva resolución.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+          {(esColegioEMTP && esCuartoMedio) && (
+            <div className="border-t border-gray-200 pt-5 mt-5 animate-in slide-in-from-top-2">
+              <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
+                Condición de Titulación (EMTP)
+              </h4>
+              
+              <div className={`p-4 rounded-lg border transition-colors ${formulario.es_alumno_practica ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
+                <label className="flex items-start gap-3 cursor-pointer group">
+                  <input 
+                    type="checkbox" 
+                    name="es_alumno_practica"
+                    checked={formulario.es_alumno_practica}
+                    onChange={handleChange}
+                    className="mt-1 w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 cursor-pointer transition-colors"
+                  />
+                  <div>
+                    <p className={`text-sm font-bold transition-colors ${formulario.es_alumno_practica ? 'text-purple-900' : 'text-gray-800 group-hover:text-purple-700'}`}>
+                      Matricular exclusivamente para Práctica Profesional
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Para estudiantes egresados de 4° año EMTP que retornan para elaborar su plan de práctica y certificar su titulación.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+          )}
+          </div>
+
           <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
             <button type="button" onClick={() => navigate('/matriculas')} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">
               Cancelar
@@ -284,7 +405,9 @@ export default function NuevaMatricula() {
         </form>
       </div>
 
-      {/* MODAL COMPLETAR DATOS FALTANTES */}
+      {/* =======================================================================
+          MODAL 1: ACTUALIZACIÓN DE DATOS FALTANTES 
+          ======================================================================= */}
       {modalFaltantes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -294,7 +417,6 @@ export default function NuevaMatricula() {
             </div>
             
             <form onSubmit={guardarDatosFaltantes} className="p-5 space-y-6">
-              
               <div>
                 <h4 className="text-sm font-bold text-blue-800 border-b pb-1 mb-3">1. Datos del Estudiante</h4>
                 <div>
@@ -361,7 +483,9 @@ export default function NuevaMatricula() {
         </div>
       )}
 
-      {/* MODAL DE ÉXITO Y DESCARGA DE COMPROBANTE */}
+      {/* =======================================================================
+          MODAL 2: ÉXITO Y GENERACIÓN DE DOCUMENTOS 
+          ======================================================================= */}
       {matriculaExitosa && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
@@ -401,6 +525,7 @@ export default function NuevaMatricula() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

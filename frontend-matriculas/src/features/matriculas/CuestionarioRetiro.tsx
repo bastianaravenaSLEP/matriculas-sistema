@@ -1,25 +1,53 @@
+/**
+ * @fileoverview CuestionarioRetiro.tsx
+ * @description Formulario externo/público diseñado para que los apoderados justifiquen 
+ * los motivos de retiro o baja de un estudiante. Esta información alimenta la base de datos 
+ * de trazabilidad institucional.
+ * @feature Matrículas
+ * 
+ * @dependencies
+ * - useCuestionarioRetiro: Custom hook que maneja el estado del formulario y la petición POST.
+ * 
+ * @notes
+ * - Pantalla de vista única (fuera del Layout principal del sistema).
+ * - Muestra un mensaje de éxito estático una vez completado, bloqueando un doble envío.
+ */
+
 import React from 'react';
 import { useCuestionarioRetiro } from './hooks/useCuestionarioRetiro';
 
 export default function CuestionarioRetiro() {
+  // ============================================================================
+  // EXTRACCIÓN DE ESTADOS Y FUNCIONES DESDE EL HOOK
+  // ============================================================================
   const {
+    // 1. Datos del Formulario
     rutEstudiante, setRutEstudiante,
     motivo, setMotivo,
+    
+    // 2. Estados de Carga y Retroalimentación
     estado,
     mensajeError,
+    
+    // 3. Acciones
     enviarCuestionario
   } = useCuestionarioRetiro();
 
+  // ============================================================================
+  // RENDERIZADO DE LA INTERFAZ
+  // ============================================================================
   return (
     <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4 sm:p-8">
       
       <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden border border-gray-200">
         
+        {/* FRANJA DE COLORES INSTITUCIONALES */}
         <div className="absolute top-0 left-0 w-full h-2 flex">
           <div className="w-1/2 bg-blue-700"></div>
           <div className="w-1/2 bg-red-600"></div>
         </div>
 
+        {/* CABECERA Y LOGO */}
         <div className="text-center mb-8 mt-2">
           <img 
             src="/images/logo-slep.negro.png" 
@@ -34,7 +62,9 @@ export default function CuestionarioRetiro() {
           </p>
         </div>
 
+        {/* CONTENIDO PRINCIPAL: ÉXITO O FORMULARIO */}
         {estado === 'exito' ? (
+          // --- VISTA DE ÉXITO ---
           <div className="bg-emerald-50 text-emerald-800 p-6 rounded-xl text-center border border-emerald-200 shadow-inner">
             <div className="text-5xl mb-3">✅</div>
             <p className="font-bold text-lg mb-2">Formulario Recibido</p>
@@ -43,7 +73,10 @@ export default function CuestionarioRetiro() {
             </p>
           </div>
         ) : (
+          // --- VISTA DE FORMULARIO ---
           <form onSubmit={enviarCuestionario} className="space-y-6">
+            
+            {/* CAMPO: RUT */}
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
                 RUT del Estudiante <span className="text-xs text-gray-400 normal-case font-medium">(Medida de Seguridad)</span>
@@ -59,6 +92,7 @@ export default function CuestionarioRetiro() {
               />
             </div>
             
+            {/* CAMPO: MOTIVO */}
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
                 Motivo principal del retiro
@@ -74,12 +108,14 @@ export default function CuestionarioRetiro() {
               ></textarea>
             </div>
 
+            {/* MENSAJE DE ERROR */}
             {estado === 'error' && (
               <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2">
                 <span>❌</span> {mensajeError}
               </div>
             )}
             
+            {/* BOTÓN DE ENVÍO */}
             <button 
               type="submit" 
               disabled={estado === 'cargando' || !rutEstudiante || !motivo}

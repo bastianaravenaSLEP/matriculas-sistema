@@ -4,47 +4,37 @@ import ModalEmisionDocumento from '../../components/ModalEmisionDocumento';
 import { useMatriculas } from './hooks/useMatriculas'; 
 
 export default function Matriculas() {
-  
-  // EXTRAEMOS TODO DEL CUSTOM HOOK
   const {
     colegioSeleccionado, puedeEditar, anioActual,
-    cargando, error, 
+    cargando, error, subiendoArchivo,
     busqueda, setBusqueda,
     filtroAnio, setFiltroAnio,
     filtroCodigo, setFiltroCodigo,
     filtroCurso, setFiltroCurso,
     ordenEstado, setOrdenEstado,
-    modalCursoAbierto, setModalCursoAbierto,
-    procesandoCurso,
-    planDestino, setPlanDestino,
-    cursoDestino, setCursoDestino,
-    modalAbierto, setModalAbierto,
-    fechaRetiro, setFechaRetiro,
-    procesandoRetiro,
-    subiendoArchivo,
-    enviarApoderadoRetiro, setEnviarApoderadoRetiro,
-    correoApoderadoRetiro, setCorreoApoderadoRetiro,
-    descargarLocalRetiro, setDescargarLocalRetiro,
-    enviarApoderadoCurso, setEnviarApoderadoCurso,
-    correoApoderadoCurso, setCorreoApoderadoCurso,
-    descargarLocalCurso, setDescargarLocalCurso,
-    advertenciaNivel,
-    modalEmisionAbierto, setModalEmisionAbierto,
-    datosEmision,
     aniosUnicos, codigosUnicos, cursosUnicos, estructuraColegio, matriculasProcesadas,
-    manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso
+    modalCursoAbierto, setModalCursoAbierto, procesandoCurso,
+    planDestino, setPlanDestino, cursoDestino, setCursoDestino, advertenciaNivel,
+    enviarApoderadoCurso, setEnviarApoderadoCurso, correoApoderadoCurso, setCorreoApoderadoCurso,
+    descargarLocalCurso, setDescargarLocalCurso,
+    modalAbierto, setModalAbierto, procesandoRetiro, fechaRetiro, setFechaRetiro,
+    enviarApoderadoRetiro, setEnviarApoderadoRetiro, correoApoderadoRetiro, setCorreoApoderadoRetiro,
+    descargarLocalRetiro, setDescargarLocalRetiro,
+    modalEmisionAbierto, setModalEmisionAbierto, datosEmision,
+    manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, 
+    iniciarCambioCurso, confirmarCambioCurso,
+    mostrarCupos, cuposOcupados, LIMITE_CUPOS // 🌟 Variables extraídas del hook
   } = useMatriculas();
 
   return (
     <div className="space-y-6 relative">
+      
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <h1 className="text-2xl font-bold text-gray-800">Registro de Matrículas</h1>
         
         <div className="flex flex-wrap gap-3">
-          {/* OCULTAMIENTO CONDICIONAL DE BOTONES SUPERIORES */}
           {puedeEditar && (
             <>
-              {/* ATRIBUTO MULTIPLE AÑADIDO AQUÍ */}
               <input 
                 type="file" accept=".csv, .xls, .xlsx" 
                 id="csv-upload-matriculas" className="hidden" 
@@ -67,7 +57,6 @@ export default function Matriculas() {
         </div>
       </div>                         
 
-      {/* MENSAJE CUANDO NO HAY COLEGIO SELECCIONADO */}
       {!cargando && !error && !colegioSeleccionado && (
         <div className="bg-blue-50 border border-blue-200 p-10 rounded-xl shadow-sm text-center flex flex-col items-center justify-center">
           <div className="text-4xl mb-4">🏫</div>
@@ -78,6 +67,9 @@ export default function Matriculas() {
           </p>
         </div>
       )}
+
+      {cargando && <p className="text-gray-500 font-medium">Cargando base de datos...</p>}
+      {error && <p className="text-red-500 font-medium">Error: {error}</p>}
 
       {!cargando && !error && matriculasProcesadas.length >= 0 && colegioSeleccionado && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -109,18 +101,40 @@ export default function Matriculas() {
         </div>
       )}
 
-      {cargando && <p className="text-gray-500">Cargando base de datos...</p>}
-      {error && <p className="text-red-500 font-medium">Error: {error}</p>}
-
+      {/* =======================================================================
+          TABLA PRINCIPAL DE REGISTROS DE MATRÍCULA
+          ======================================================================= */}
       {!cargando && !error && colegioSeleccionado && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 text-xs font-medium text-gray-500 flex flex-wrap gap-2 items-center">
-            <span className="font-bold text-gray-700">Mostrando {matriculasProcesadas.length} resultados</span>
+          
+          {/* 🌟 NUEVO: BARRA INFORMATIVA CON INDICADOR DE CUPOS */}
+          <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex flex-wrap gap-4 items-center justify-between">
+            <span className="text-xs font-bold text-gray-700">
+              Mostrando {matriculasProcesadas.length} resultados
+            </span>
+            
+            {/* Lógica Condicional: Se muestra solo cuando los 3 filtros están seleccionados */}
+            {mostrarCupos && (
+              <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                cuposOcupados >= LIMITE_CUPOS 
+                  ? 'bg-red-100 text-red-700 border-red-200' 
+                  : 'bg-blue-100 text-blue-700 border-blue-200'
+              }`}>
+                <span>👥 Ocupación en sala:</span>
+                <span className="text-sm">{cuposOcupados} / {LIMITE_CUPOS}</span>
+                
+                {cuposOcupados >= LIMITE_CUPOS && (
+                  <span className="ml-2 uppercase bg-red-600 text-white px-2 py-0.5 rounded-full text-[10px] tracking-wider animate-pulse">
+                    Límite Legal Alcanzado
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
+              <tr className="bg-white border-b border-gray-200 text-xs text-gray-500 uppercase tracking-wider">
                 <th className="p-4 font-medium">Folio</th>
                 <th className="p-4 font-medium text-center">RBD</th>
                 <th className="p-4 font-medium">Estudiante</th>
@@ -162,6 +176,7 @@ export default function Matriculas() {
                         {mat.estado}
                       </span>
                     </td>
+                    
                     <td className="p-4 text-right">
                       {mat.estado === 'Activa' && (
                         <div className="flex justify-end gap-3">
@@ -169,7 +184,6 @@ export default function Matriculas() {
                             Emitir Doc.
                           </button>
                           
-                          {/* OCULTAMIENTO CONDICIONAL DE BOTONES DE ACCIÓN */}
                           {puedeEditar && mat.anio_escolar === anioActual && (
                             <button onClick={() => iniciarCambioCurso(mat.id_matricula, mat.curso, mat.cod_tipo_ensenanza)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>                            )}
                           {puedeEditar && (
@@ -186,6 +200,9 @@ export default function Matriculas() {
         </div>
       )}
 
+      {/* =======================================================================
+          MODAL A: CAMBIO DE CURSO (TRASLADO INTERNO)
+          ======================================================================= */}
       {modalCursoAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -223,7 +240,6 @@ export default function Matriculas() {
                   ))}
                 </select>
                 
-                {/* 🌟 LA ALERTA VISUAL APARECE AQUÍ */}
                   {advertenciaNivel && (
                   <div className="mt-2 p-2.5 bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold rounded-lg flex gap-2 items-start shadow-sm animate-pulse">
                     <span className="text-sm">⚠️</span>
@@ -264,6 +280,9 @@ export default function Matriculas() {
         </div>
       )}
 
+      {/* =======================================================================
+          MODAL B: RETIRO DE ESTUDIANTE (BAJA OFICIAL)
+          ======================================================================= */}
       {modalAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -308,6 +327,9 @@ export default function Matriculas() {
         </div>
       )}
 
+      {/* =======================================================================
+          MODAL C: EMISIÓN GENÉRICA DE DOCUMENTOS
+          ======================================================================= */}
       {modalEmisionAbierto && datosEmision && (
         <ModalEmisionDocumento
           isOpen={modalEmisionAbierto}

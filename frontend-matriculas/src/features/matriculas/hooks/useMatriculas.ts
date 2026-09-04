@@ -74,7 +74,7 @@ export const useMatriculas = () => {
 
   const anioActual = new Date().getFullYear();
 
-const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const archivos = e.target.files;
     if (!archivos || archivos.length === 0) return;
 
@@ -219,6 +219,21 @@ const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     return resultado;
   }, [matriculas, busqueda, filtroAnio, filtroCodigo, filtroCurso, ordenFolio, ordenEstado]);
 
+  // ============================================================================
+  // 🌟 NUEVO: LÓGICA DE INDICADOR INTELIGENTE DE CUPOS (45 ALUMNOS)
+  // ============================================================================
+  const LIMITE_CUPOS = 45;
+  
+  // Solo se mostrará el cuadro informativo si los 3 filtros principales están seleccionados
+  const mostrarCupos = filtroAnio !== '' && filtroCodigo !== '' && filtroCurso !== '';
+
+  const cuposOcupados = useMemo(() => {
+    if (!mostrarCupos) return 0;
+    // Solo contamos las matrículas que están activas dentro del curso que ya filtramos arriba
+    return matriculasProcesadas.filter(m => m.estado === 'Activa').length;
+  }, [matriculasProcesadas, mostrarCupos]);
+  // ============================================================================
+
   const abrirModalEmision = (idMatricula: number, tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO') => {
     const matricula = matriculas.find(m => m.id_matricula === idMatricula);
     if (matricula) {
@@ -237,7 +252,7 @@ const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setModalAbierto(true);
   };
 
-const confirmarRetiro = async (e: React.FormEvent) => {
+  const confirmarRetiro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado) return;
 
@@ -294,7 +309,7 @@ const confirmarRetiro = async (e: React.FormEvent) => {
     setModalCursoAbierto(true);
   };
 
-const confirmarCambioCurso = async (e: React.FormEvent) => {
+  const confirmarCambioCurso = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado || !planDestino || !cursoDestino) return;
 
@@ -409,6 +424,7 @@ const confirmarCambioCurso = async (e: React.FormEvent) => {
     modalEmisionAbierto, setModalEmisionAbierto,
     datosEmision,
     aniosUnicos, codigosUnicos, cursosUnicos, estructuraColegio, matriculasProcesadas,
-    manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso
+    manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso,
+    mostrarCupos, cuposOcupados, LIMITE_CUPOS // 🌟 Añadimos las nuevas variables al return
   };
 };
