@@ -1,5 +1,15 @@
-* Dar la opcion de poder contar la cantidad de matriculados que hay en cada curso para el tema de los
-alumnos excedentes
-    Ya existe pero poder llevarlo al registro de matriculas y asi que la cantidad sea mas visible
+* REvisar la exportacion para que se haga por curso y no todos los cursos pertenecientes a un codigo
 
 *SAcar los Jardines del sistema
+
+* agregar para que se guarde los documentos al ingreso de matriculas y ver  a que base de datos se guardaran los
+documentos 
+
+*el comprobante de matricula el boton no funciona de mandar por correo, solo el de la descarga 
+
+*Mo aparece en la trazabilidad cuando se cambia un dato del estudiante 
+
+*Cambiar que al poner la lista en los años se cambia y luego debo de seleccionar todos los años para
+poder selccionar los otros años
+
+*cambiar dashboard mas estetico y desplegables 
