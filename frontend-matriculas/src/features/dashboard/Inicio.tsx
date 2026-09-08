@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, UserMinus, GraduationCap, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { Users, UserMinus, GraduationCap, ChevronDown, ChevronUp, BarChart3, ChevronRight } from 'lucide-react';
 import { useInicio2 } from './hooks/useInicio2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -12,59 +12,132 @@ export default function Inicio() {
     setAnioSeleccionado
   } = useInicio2();
 
-  // Controla qué acordeón está abierto
+  // Controladores de estado para el acordeón anidado y el gráfico
+  const [tipoExpandido, setTipoExpandido] = useState<string | null>(null);
   const [nivelExpandido, setNivelExpandido] = useState<string | null>(null);
-  
-  // Controla QUÉ datos está mostrando el gráfico ('activos', 'retiros', o el nombre de un nivel ej: '1° Básico')
   const [graficoActivo, setGraficoActivo] = useState<string>('activos');
 
   // ============================================================================
-  // AGRUPACIÓN INTELIGENTE DE CURSOS
+  // LÓGICA DE CATEGORIZACIÓN (CORREGIDA PARA PÁRVULOS)
   // ============================================================================
-  const cursosAgrupados = useMemo(() => {
+  const categorizarNivel = (nombre: string) => {
+    const textoNormalizado = nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    // 1. Prioridad Absoluta: Párvulos (Atrapa "Medio Mayor/Menor" antes de que caigan a Educación Media)
+    if (
+      textoNormalizado.includes('parvulo') || 
+      textoNormalizado.includes('transicion') || 
+      textoNormalizado.includes('kinder') || 
+      textoNormalizado.includes('sala cuna') ||
+      textoNormalizado.includes('medio mayor') ||
+      textoNormalizado.includes('medio menor') ||
+      textoNormalizado.includes('heterogeneo')
+    ) {
+      return 'Educación Parvularia';
+    }
+    
+    // 2. Básica
+    if (textoNormalizado.includes('basico') || textoNormalizado.includes('basica')) {
+      return 'Educación Básica';
+    }
+    
+    // 3. Media (Solo caerán aquí los 1°, 2°, 3° y 4° Medio)
+    if (textoNormalizado.includes('medio') || textoNormalizado.includes('media')) {
+      return 'Educación Media';
+    }
+    
+    // 4. Adultos
+    if (textoNormalizado.includes('adulto')) {
+      return 'Educación de Adultos';
+    }
+    
+    return 'Otra Enseñanza';
+  };
+
+  // ============================================================================
+  // ÁRBOL ACADÉMICO: TIPO ENSEÑANZA -> NIVEL -> CURSO
+  // ============================================================================
+  const arbolAcademico = useMemo(() => {
     if (!estadisticas?.por_curso || !Array.isArray(estadisticas.por_curso)) return [];
     
-    const agrupacion: Record<string, { display: string, total: number, cursos: any[] }> = {};
+    const categorias: Record<string, { tipo: string, total: number, niveles: Record<string, { display: string, total: number, cursos: any[] }> }> = {};
     
     estadisticas.por_curso.forEach((curso: any) => {
       const nombreSeguro = String(curso?.nombre || "");
       if (!nombreSeguro) return;
 
+      // 1. Separar el Nivel Base de la letra (Ej: "1er nivel de Transición (Pre-kinder) A" -> "1er nivel de Transición (Pre-kinder)")
       const match = nombreSeguro.match(/^(.*?)\s+([A-Za-z])$/);
-      const nombreBase = match ? match[1].trim() : nombreSeguro.trim();
-      const key = nombreBase.toLowerCase();
+      const displayNivel = match ? match[1].trim() : nombreSeguro.trim(); 
       
-      if (!agrupacion[key]) {
-        const displayFormat = nombreBase.charAt(0).toUpperCase() + nombreBase.slice(1).toLowerCase();
-        agrupacion[key] = { display: displayFormat, total: 0, cursos: [] };
+      // 2. Determinar la Categoría Principal
+      const tipoCategoria = categorizarNivel(displayNivel);
+
+      // 3. Crear las ramas del árbol si no existen
+      if (!categorias[tipoCategoria]) {
+        categorias[tipoCategoria] = { tipo: tipoCategoria, total: 0, niveles: {} };
       }
       
-      agrupacion[key].total += Number(curso?.cantidad || 0);
-      agrupacion[key].cursos.push(curso);
+      // 🌟 SOLUCIÓN A LA DUPLICIDAD: Llave de agrupación a prueba de errores humanos
+      const keyNivel = displayNivel
+        .toLowerCase() // Todo a minúscula
+        .normalize("NFD") 
+        .replace(/[\u0300-\u036f]/g, "") // Quita tildes (básico -> basico)
+        .replace(/[º°]/g, "°")           // Unifica símbolos de grado (º y °)
+        .replace(/\s+/g, "")             // Borra TODOS los espacios
+        .trim();
+
+      if (!categorias[tipoCategoria].niveles[keyNivel]) {
+        // Formateamos el título para que se vea ordenado y elegante en la pantalla
+        let nombreBonito = displayNivel.replace(/[º]/g, "°"); 
+        nombreBonito = nombreBonito.charAt(0).toUpperCase() + nombreBonito.slice(1);
+
+        categorias[tipoCategoria].niveles[keyNivel] = { display: nombreBonito, total: 0, cursos: [] };
+      }
+      
+      // 4. Sumar los totales en cascada y guardar el curso
+      const cantidad = Number(curso?.cantidad || 0);
+      categorias[tipoCategoria].total += cantidad;
+      categorias[tipoCategoria].niveles[keyNivel].total += cantidad;
+      categorias[tipoCategoria].niveles[keyNivel].cursos.push(curso);
     });
     
-    return Object.values(agrupacion);
+    // Convertir a Arreglo
+    return Object.values(categorias).map(cat => ({
+      ...cat,
+      niveles: Object.values(cat.niveles)
+    }));
   }, [estadisticas]);
 
-  // Manejador del clic en el acordeón
-  const toggleNivel = (nombreNivel: string) => {
-    if (nivelExpandido === nombreNivel) {
+  // Manejadores de clics
+  const toggleTipo = (tipo: string) => {
+    if (tipoExpandido === tipo) {
+      setTipoExpandido(null);
       setNivelExpandido(null);
-      setGraficoActivo('activos'); // Si cerramos el acordeón, volvemos al gráfico global
+      setGraficoActivo('activos');
     } else {
-      setNivelExpandido(nombreNivel);
-      setGraficoActivo(nombreNivel); // El gráfico ahora mostrará la data de este nivel
+      setTipoExpandido(tipo);
+      setNivelExpandido(null);
+      setGraficoActivo(tipo); 
     }
   };
 
-// ============================================================================
+  const toggleNivel = (nivelDisplay: string, tipoParent: string) => {
+    if (nivelExpandido === nivelDisplay) {
+      setNivelExpandido(null);
+      setGraficoActivo(tipoParent); 
+    } else {
+      setNivelExpandido(nivelDisplay);
+      setGraficoActivo(nivelDisplay); 
+    }
+  };
+
+  // ============================================================================
   // DATOS DEL GRÁFICO LATERAL (100% REALES DESDE LA BD)
   // ============================================================================
   const datosGrafico = useMemo(() => {
-    // 1. Verificamos si el backend nos envió el historial real
     if (!estadisticas?.historico || !Array.isArray(estadisticas.historico)) return [];
 
-    // 2. Mapeamos directamente el arreglo histórico real que armó Python
     return estadisticas.historico.map((hist: any) => {
       let valorParaGrafico = 0;
 
@@ -73,13 +146,24 @@ export default function Inicio() {
       } else if (graficoActivo === 'retiros') {
         valorParaGrafico = hist.retiros || 0;
       } else {
-        // graficoActivo tiene el nombre del nivel (ej: "1° Medio")
-        // Lo buscamos en el diccionario de cursos reales que mandó Python
-        // Comparamos en minúsculas para evitar problemas de formato
-        const llaveEncontrada = Object.keys(hist.cursos || {}).find(
-          k => k.toLowerCase() === graficoActivo.toLowerCase()
-        );
-        valorParaGrafico = llaveEncontrada ? hist.cursos[llaveEncontrada] : 0;
+        const esCategoria = arbolAcademico.find(cat => cat.tipo === graficoActivo);
+        
+        if (esCategoria) {
+          // Sumar todos los cursos de ese año que pertenezcan a esa categoría (Ej: Toda la Parvularia)
+          let sumaCategoria = 0;
+          Object.keys(hist.cursos || {}).forEach(nombreCurso => {
+            if (categorizarNivel(nombreCurso) === graficoActivo) {
+              sumaCategoria += hist.cursos[nombreCurso];
+            }
+          });
+          valorParaGrafico = sumaCategoria;
+        } else {
+          // Nivel Específico (Ej: "1er nivel de Transición (Pre-kinder)")
+          const llaveEncontrada = Object.keys(hist.cursos || {}).find(
+            k => k.toLowerCase() === graficoActivo.toLowerCase()
+          );
+          valorParaGrafico = llaveEncontrada ? hist.cursos[llaveEncontrada] : 0;
+        }
       }
 
       return {
@@ -87,20 +171,25 @@ export default function Inicio() {
         cantidad: valorParaGrafico
       };
     }); 
-  }, [estadisticas, graficoActivo]);
+  }, [estadisticas, graficoActivo, arbolAcademico]);
 
-  // Configuración de colores y títulos dinámicos para el gráfico
+  // Configuración de visuales dinámicas del gráfico
   let tituloGrafico = "";
   let colorCabecera = "";
+  const esVistaCategoria = arbolAcademico.some(c => c.tipo === graficoActivo);
+
   if (graficoActivo === 'activos') {
     tituloGrafico = "Estudiantes Activos (General)";
     colorCabecera = "bg-blue-950";
   } else if (graficoActivo === 'retiros') {
     tituloGrafico = "Retiros Oficiales (General)";
     colorCabecera = "bg-red-700";
+  } else if (esVistaCategoria) {
+    tituloGrafico = `Análisis: ${graficoActivo}`;
+    colorCabecera = "bg-indigo-900"; 
   } else {
     tituloGrafico = `Ocupación: ${graficoActivo}`;
-    colorCabecera = "bg-emerald-700";
+    colorCabecera = "bg-emerald-700"; 
   }
 
   return (
@@ -144,9 +233,8 @@ export default function Inicio() {
         <>
           {/* --- TARJETAS SUPERIORES --- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
             <div 
-              onClick={(e) => { e.preventDefault(); setGraficoActivo('activos'); setNivelExpandido(null); }}
+              onClick={(e) => { e.preventDefault(); setGraficoActivo('activos'); setTipoExpandido(null); setNivelExpandido(null); }}
               className={`bg-white p-6 rounded-r-lg shadow-sm border transition-all cursor-pointer flex items-center gap-5 group relative ${graficoActivo === 'activos' ? 'border-blue-900 ring-2 ring-blue-100 bg-blue-50/30' : 'border-gray-200 border-l-4 border-l-blue-900 hover:bg-blue-50'}`}
             >
               <div className={`p-3 rounded-md transition-transform ${graficoActivo === 'activos' ? 'bg-blue-900 text-white shadow-md scale-110' : 'bg-blue-100 text-blue-900 group-hover:scale-110'}`}>
@@ -162,7 +250,7 @@ export default function Inicio() {
             </div>
 
             <div 
-              onClick={(e) => { e.preventDefault(); setGraficoActivo('retiros'); setNivelExpandido(null); }}
+              onClick={(e) => { e.preventDefault(); setGraficoActivo('retiros'); setTipoExpandido(null); setNivelExpandido(null); }}
               className={`bg-white p-6 rounded-r-lg shadow-sm border transition-all cursor-pointer flex items-center gap-5 group relative ${graficoActivo === 'retiros' ? 'border-red-600 ring-2 ring-red-100 bg-red-50/30' : 'border-gray-200 border-l-4 border-l-red-600 hover:bg-red-50'}`}
             >
               <div className={`p-3 rounded-md transition-transform ${graficoActivo === 'retiros' ? 'bg-red-600 text-white shadow-md scale-110' : 'bg-red-100 text-red-600 group-hover:scale-110'}`}>
@@ -176,62 +264,92 @@ export default function Inicio() {
                  <BarChart3 size={24} className={graficoActivo === 'retiros' ? 'text-red-600' : 'opacity-50'} />
               </div>
             </div>
-
           </div>
 
-          {/* --- ÁREA PRINCIPAL --- */}
+          {/* --- ÁREA PRINCIPAL: ACORDEÓN ANIDADO (IZQ) Y GRÁFICO (DER) --- */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             
-            {/* 1. ACORDEÓN DE CURSOS */}
+            {/* 1. ACORDEÓN DE TIPO DE ENSEÑANZA Y CURSOS */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
               <div className="flex items-center gap-3 mb-5 border-b border-gray-200 pb-3">
                 <GraduationCap className="text-blue-900" size={24} />
-                <h3 className="text-lg font-extrabold text-gray-800 uppercase tracking-wide">Distribución por Curso</h3>
+                <h3 className="text-lg font-extrabold text-gray-800 uppercase tracking-wide">Estructura Académica</h3>
               </div>
               
               <div className="space-y-3 max-h-[450px] overflow-y-auto pr-2 custom-scrollbar">
-                {cursosAgrupados.map((grupo: any, index: number) => {
-                  const estaExpandido = nivelExpandido === grupo.display;
+                {arbolAcademico.map((categoria: any, indexCat: number) => {
+                  const estaCategoriaExpandida = tipoExpandido === categoria.tipo;
 
                   return (
-                    <div key={index} className="border border-gray-200 rounded-lg overflow-hidden transition-all">
+                    <div key={indexCat} className="border border-gray-200 rounded-lg overflow-hidden transition-all shadow-sm">
+                      {/* NIVEL 1: TIPO DE ENSEÑANZA */}
                       <button 
                         type="button"
-                        onClick={() => toggleNivel(grupo.display)}
-                        className={`w-full flex justify-between items-center p-3 sm:p-4 transition-colors ${estaExpandido ? 'bg-emerald-700 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-800'}`}
+                        onClick={() => toggleTipo(categoria.tipo)}
+                        className={`w-full flex justify-between items-center p-3 sm:p-4 transition-colors ${estaCategoriaExpandida ? 'bg-indigo-900 text-white' : 'bg-gray-50 hover:bg-gray-100 text-gray-800'}`}
                       >
-                        <span className="font-bold text-sm sm:text-base text-left">{grupo.display}</span>
+                        <span className="font-extrabold text-sm sm:text-base text-left tracking-wide">{categoria.tipo}</span>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className={`font-extrabold px-3 py-1 rounded-full text-xs shadow-sm ${estaExpandido ? 'bg-white text-emerald-800' : 'bg-blue-100 text-blue-900'}`}>
-                            {grupo.total} alumnos
+                          <span className={`font-black px-3 py-1 rounded-full text-xs shadow-sm ${estaCategoriaExpandida ? 'bg-white text-indigo-900' : 'bg-indigo-100 text-indigo-900'}`}>
+                            {categoria.total}
                           </span>
-                          {estaExpandido ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                          {estaCategoriaExpandida ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                         </div>
                       </button>
 
-                      {estaExpandido && (
-                        <div className="bg-white p-4 animate-in slide-in-from-top-2">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {grupo.cursos.map((curso: any, idx: number) => (
-                              <div key={idx} className="flex justify-between items-center bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-md">
-                                <span className="text-emerald-900 text-sm font-semibold truncate pr-2" title={curso.nombre || 'Desconocido'}>
-                                  {curso.nombre || 'Desconocido'}
-                                </span>
-                                <span className="font-bold text-gray-700 bg-white border border-gray-200 px-2 py-0.5 rounded text-xs shadow-sm">
-                                  {curso.cantidad || 0}
-                                </span>
+                      {/* NIVEL 2: GRADOS/NIVELES */}
+                      {estaCategoriaExpandida && (
+                        <div className="bg-indigo-50/30 p-2 sm:p-4 animate-in slide-in-from-top-2 space-y-2">
+                          {categoria.niveles.map((nivel: any, indexNiv: number) => {
+                            const esteNivelExpandido = nivelExpandido === nivel.display;
+
+                            return (
+                              <div key={indexNiv} className="border border-emerald-100 rounded-lg bg-white overflow-hidden shadow-sm">
+                                <button 
+                                  type="button"
+                                  onClick={() => toggleNivel(nivel.display, categoria.tipo)}
+                                  className={`w-full flex justify-between items-center p-3 transition-colors ${esteNivelExpandido ? 'bg-emerald-700 text-white' : 'hover:bg-emerald-50 text-gray-700'}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    {!esteNivelExpandido && <ChevronRight size={16} className="text-emerald-600" />}
+                                    <span className="font-bold text-sm text-left">{nivel.display}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`font-bold px-2.5 py-0.5 rounded text-xs ${esteNivelExpandido ? 'bg-white text-emerald-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                                      {nivel.total}
+                                    </span>
+                                  </div>
+                                </button>
+
+                                {/* NIVEL 3: SALAS/CURSOS ESPECÍFICOS */}
+                                {esteNivelExpandido && (
+                                  <div className="p-3 bg-emerald-50/50 border-t border-emerald-100">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {nivel.cursos.map((curso: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white border border-emerald-200 px-3 py-2 rounded-md">
+                                          <span className="text-emerald-900 text-xs font-bold truncate pr-2" title={curso.nombre}>
+                                            {curso.nombre}
+                                          </span>
+                                          <span className="font-black text-gray-600 text-xs">
+                                            {curso.cantidad}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   );
                 })}
                 
-                {cursosAgrupados.length === 0 && (
+                {arbolAcademico.length === 0 && (
                   <div className="text-center py-8 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                    <p className="text-sm text-gray-500 font-medium">No hay registros de cursos para este periodo.</p>
+                    <p className="text-sm text-gray-500 font-medium">No hay registros académicos para este periodo.</p>
                   </div>
                 )}
               </div>
@@ -263,11 +381,13 @@ export default function Inicio() {
                         
                         let color = '#D1D5DB'; 
                         if (graficoActivo === 'activos') {
-                          color = esSeleccionado ? '#1E3A8A' : '#93C5FD'; // Azul
+                          color = esSeleccionado ? '#1E3A8A' : '#93C5FD'; 
                         } else if (graficoActivo === 'retiros') {
-                          color = esSeleccionado ? '#DC2626' : '#FCA5A5'; // Rojo
+                          color = esSeleccionado ? '#DC2626' : '#FCA5A5'; 
+                        } else if (arbolAcademico.some(c => c.tipo === graficoActivo)) {
+                          color = esSeleccionado ? '#312E81' : '#A5B4FC'; 
                         } else {
-                          color = esSeleccionado ? '#047857' : '#6EE7B7'; // Esmeralda para niveles
+                          color = esSeleccionado ? '#047857' : '#6EE7B7'; 
                         }
 
                         return <Cell key={`cell-${index}`} fill={color} className="transition-all duration-300" />;
@@ -278,7 +398,7 @@ export default function Inicio() {
               </div>
               
               <div className="px-6 py-4 bg-gray-50 rounded-b-xl border-t border-gray-100 text-xs text-gray-500 text-center">
-                El gráfico destaca el año filtrado. Si tu base de datos aún no provee el histórico completo, los años grises muestran una proyección de tendencia.
+                Visualizando línea de tiempo real extraída de los registros históricos del sistema SIGE.
               </div>
             </div>
 
