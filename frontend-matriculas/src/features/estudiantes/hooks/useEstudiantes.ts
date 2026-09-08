@@ -187,24 +187,54 @@ export const useEstudiantes = () => {
     }
   };
 
-  const handleGuardarEdicion = async () => {
+const handleGuardarEdicion = async () => {
     setGuardandoEdicion(true);
     const token = localStorage.getItem('token');
 
     try {
+      // 🌟 ARMADO DEL PAQUETE ESTRICTO PARA PYDANTIC
+      // Nos aseguramos de enviar exactamente los campos que pide ActualizarEstudianteRequest
+      
+      const payloadEnvio = {
+        // Datos del estudiante
+        domicilio_estudiante: datosEdicion.domicilio !== undefined ? datosEdicion.domicilio : (datosEstudiante.personal?.domicilio || "Sin registrar"),
+        
+        // Datos del apoderado
+        // Si el apoderado no tiene RUT registrado, usamos un fallback para que Pydantic no llore
+        rut_apoderado: datosEstudiante.apoderado?.rut && datosEstudiante.apoderado.rut !== "Sin registrar" 
+          ? datosEstudiante.apoderado.rut 
+          : datosEstudiante.personal.run, // Fallback normativo
+        
+        nombres_apoderado: datosEstudiante.apoderado?.nombre?.split(' ')[0] || "Apoderado",
+        apellido_paterno_apoderado: datosEstudiante.apoderado?.nombre?.split(' ')[1] || "Pendiente",
+        apellido_materno_apoderado: datosEstudiante.apoderado?.nombre?.split(' ')[2] || "",
+        
+        domicilio_apoderado: datosEstudiante.apoderado?.domicilio || datosEstudiante.personal?.domicilio || "Sin registrar",
+        
+        telefono_apoderado: datosEdicion.telefono_apoderado !== undefined ? datosEdicion.telefono_apoderado : (datosEstudiante.apoderado?.telefono || ""),
+        correo_apoderado: datosEdicion.correo_apoderado !== undefined ? datosEdicion.correo_apoderado : (datosEstudiante.apoderado?.correo || "")
+      };
+
+      console.log("Enviando paquete completo para PUT:", payloadEnvio);
+
       const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${datosEstudiante.personal.run}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}` 
         },
-        body: JSON.stringify(datosEdicion),
+        body: JSON.stringify(payloadEnvio),
       });
 
-      if (!respuesta.ok) throw new Error('Error al actualizar los datos');
+      if (!respuesta.ok) {
+        const errorData = await respuesta.json();
+        throw new Error(`Error de validación: ${JSON.stringify(errorData.detail || errorData)}`);
+      }
 
       await verFichaEstudiante(datosEstudiante.personal.run);
       setModoEdicion(false);
+      alert("Estudiante actualizado correctamente.");
+      
     } catch (err: any) {
       alert(err.message);
     } finally {

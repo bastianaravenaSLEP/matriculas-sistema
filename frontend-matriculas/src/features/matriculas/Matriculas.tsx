@@ -23,7 +23,7 @@ export default function Matriculas() {
     modalEmisionAbierto, setModalEmisionAbierto, datosEmision,
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, 
     iniciarCambioCurso, confirmarCambioCurso,
-    mostrarCupos, cuposOcupados, LIMITE_CUPOS,descargandoExcel, exportarAExcel
+    mostrarCupos, cuposOcupados, capacidadSala,descargandoExcel, exportarAExcel
   } = useMatriculas();
 
   return (
@@ -126,14 +126,14 @@ export default function Matriculas() {
             {/* Lógica Condicional: Se muestra solo cuando los 3 filtros están seleccionados */}
             {mostrarCupos && (
               <div className={`flex items-center gap-3 px-4 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                cuposOcupados >= LIMITE_CUPOS 
+                cuposOcupados >= capacidadSala
                   ? 'bg-red-100 text-red-700 border-red-200' 
                   : 'bg-blue-100 text-blue-700 border-blue-200'
               }`}>
                 <span>👥 Ocupación en sala:</span>
-                <span className="text-sm">{cuposOcupados} / {LIMITE_CUPOS}</span>
+                <span className="text-sm">{cuposOcupados} / {capacidadSala}</span>
                 
-                {cuposOcupados >= LIMITE_CUPOS && (
+                {cuposOcupados >= capacidadSala && (
                   <span className="ml-2 uppercase bg-red-600 text-white px-2 py-0.5 rounded-full text-[10px] tracking-wider animate-pulse">
                     Límite Legal Alcanzado
                   </span>
