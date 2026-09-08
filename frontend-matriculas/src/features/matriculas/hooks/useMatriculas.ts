@@ -60,6 +60,7 @@ export const useMatriculas = () => {
   const [enviarApoderadoCurso, setEnviarApoderadoCurso] = useState(true);
   const [correoApoderadoCurso, setCorreoApoderadoCurso] = useState('');
   const [descargarLocalCurso, setDescargarLocalCurso] = useState(false);
+  const [descargandoExcel, setDescargandoExcel] = useState(false);
 
   const [cursoActual, setCursoActual] = useState('');
   const [advertenciaNivel, setAdvertenciaNivel] = useState<string | null>(null);
@@ -359,6 +360,48 @@ export const useMatriculas = () => {
     }
   };
 
+  const exportarAExcel = async () => {
+    if (!colegioSeleccionado) return;
+    setDescargandoExcel(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Armar la URL con los parámetros de filtro actuales
+      let url = `http://127.0.0.1:8000/matriculas/exportar-excel?establecimiento_id=${colegioSeleccionado}`;      if (filtroAnio) url += `&anio=${filtroAnio}`;
+      if (filtroCodigo) url += `&codigo_plan=${filtroCodigo}`;
+
+      const respuesta = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!respuesta.ok) throw new Error('Error al generar el archivo Excel.');
+
+      // Convertir la respuesta a un Blob (archivo binario)
+      const blob = await respuesta.blob();
+      const urlBlob = window.URL.createObjectURL(blob);
+      
+      // Forzar la descarga en el navegador
+      const linkDescarga = document.createElement('a');
+      linkDescarga.href = urlBlob;
+      linkDescarga.download = `Registro_Matriculas_${colegioSeleccionado}.xlsx`;
+      document.body.appendChild(linkDescarga);
+      linkDescarga.click();
+      
+      // Limpieza
+      linkDescarga.remove();
+      window.URL.revokeObjectURL(urlBlob);
+
+    } catch (err: any) {
+      alert("Hubo un error al descargar el Excel: " + err.message);
+    } finally {
+      setDescargandoExcel(false);
+    }
+  };
+
   useEffect(() => {
     const advertencias: string[] = [];
 
@@ -425,6 +468,6 @@ export const useMatriculas = () => {
     datosEmision,
     aniosUnicos, codigosUnicos, cursosUnicos, estructuraColegio, matriculasProcesadas,
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso,
-    mostrarCupos, cuposOcupados, LIMITE_CUPOS // 🌟 Añadimos las nuevas variables al return
+    mostrarCupos, cuposOcupados, LIMITE_CUPOS, descargandoExcel, exportarAExcel
   };
 };
