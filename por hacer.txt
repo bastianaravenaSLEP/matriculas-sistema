@@ -9,7 +9,21 @@ documentos
 
 *Mo aparece en la trazabilidad cuando se cambia un dato del estudiante 
 
-*Cambiar que al poner la lista en los años se cambia y luego debo de seleccionar todos los años para
-poder selccionar los otros años
+*Cambiar formulario de retiro a desplegables y que sea obligatorio guardar la informacion estudiante
+(Revisar correo CArlos)
 
-*cambiar dashboard mas estetico y desplegables 
+*ver otras opciones de graficos mas modernas 
+
+cambios hechos
+*auditoria cambiarla para que se reflejen los cambios 
+
+*trazabilidad
+*cuenta de correo
+*cuestionario de encuesta con desplegables
+*cambio de curso con el mismo desplegables
+*numero de folio 
+*hacer tabla con los motivos (tratar de cambiar la BD actual)
+sacra boton sige
+SLEP solo debe tener visualizador 
+
+cambiar que diga renovacion matricula y no nueva 

@@ -25,6 +25,7 @@ class MatriculaUpdate(BaseModel):
     motivo_retiro: Optional[str] = None
     observaciones: Optional[str] = None
     id_usuario_ejecutor: int 
+    correo_destino: Optional[str] = None
 
 class CuestionarioRetiro(BaseModel):
     rut_estudiante: str 

@@ -138,7 +138,8 @@ def actualizar_estado_matricula_db(id_matricula: int, matricula):
                 WHERE m.id_matricula = %s
             """, (id_matricula,))
             datos = cursor.fetchone()
-            correo_apoderado = datos[20] if datos else None
+            correo_ingresado = getattr(matricula, 'correo_destino', None)
+            correo_apoderado = correo_ingresado if correo_ingresado else (datos[20] if datos else None)
             
             if datos and correo_apoderado:
                 rut_apod = datos[15] if datos[15] else "Sin registro"
@@ -249,7 +250,8 @@ def registrar_cambio_curso_db(id_matricula: int, req):
         """, (req.cod_tipo_ensenanza, req.nuevo_curso, nueva_observacion.strip(), motivo_provisional, nuevo_correlativo, id_matricula))
         
         mensaje_alerta = ""
-        correo_apoderado = datos[5]
+        correo_ingresado = getattr(req, 'correo_destino', None)      
+        correo_apoderado = correo_ingresado if correo_ingresado else datos[5]  
         nombre_alumno = datos[4]
         
         if correo_apoderado:
