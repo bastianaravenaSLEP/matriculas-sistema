@@ -5,7 +5,8 @@ export const useCuestionarioRetiro = () => {
   const { id } = useParams(); 
   
   const [rutEstudiante, setRutEstudiante] = useState('');
-  const [motivo, setMotivo] = useState('');
+  const [motivoPrincipal, setMotivoPrincipal] = useState('');
+  const [motivoDetalle, setMotivoDetalle] = useState('');
   const [estado, setEstado] = useState<'formulario' | 'cargando' | 'exito' | 'error'>('formulario');
   const [mensajeError, setMensajeError] = useState('');
 
@@ -13,19 +14,22 @@ export const useCuestionarioRetiro = () => {
     e.preventDefault();
     setEstado('cargando');
     
+    // 🌟 UNIMOS EL DESPLEGABLE CON EL TEXTO LIBRE PARA GUARDARLO ORDENADO
+    const textoConsolidado = `[Motivo Principal]: ${motivoPrincipal}\n[Detalles Adicionales]: ${motivoDetalle.trim() || 'Sin comentarios adicionales.'}`;
+
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           rut_estudiante: rutEstudiante, 
-          motivo_real: motivo 
+          motivo_real: textoConsolidado 
         }),
       });
 
       if (!respuesta.ok) {
         const err = await respuesta.json();
-        throw new Error(err.detail || 'Error de connection con el servidor.');
+        throw new Error(err.detail || 'Error de conexión con el servidor.');
       }
       
       setEstado('exito');
@@ -37,7 +41,8 @@ export const useCuestionarioRetiro = () => {
 
   return {
     rutEstudiante, setRutEstudiante,
-    motivo, setMotivo,
+    motivoPrincipal, setMotivoPrincipal,
+    motivoDetalle, setMotivoDetalle,
     estado,
     mensajeError,
     enviarCuestionario

@@ -62,4 +62,5 @@ def crear_estudiante(payload: CrearEstudianteRequest, usuario_actual: dict = Dep
 
 @router.put("/{rut}")
 def actualizar_datos_estudiante(rut: str, req: ActualizarEstudianteRequest, usuario_actual: dict = Depends(verificar_escritura)):
-    return estudiante_service.actualizar_datos_estudiante_db(rut, req)
+    id_usuario = usuario_actual.get("id_usuario")
+    return estudiante_service.actualizar_datos_estudiante_db(rut, req, id_usuario)

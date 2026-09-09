@@ -1,126 +1,86 @@
-/**
- * @fileoverview CuestionarioRetiro.tsx
- * @description Formulario externo/público diseñado para que los apoderados justifiquen 
- * los motivos de retiro o baja de un estudiante. Esta información alimenta la base de datos 
- * de trazabilidad institucional.
- * @feature Matrículas
- * 
- * @dependencies
- * - useCuestionarioRetiro: Custom hook que maneja el estado del formulario y la petición POST.
- * 
- * @notes
- * - Pantalla de vista única (fuera del Layout principal del sistema).
- * - Muestra un mensaje de éxito estático una vez completado, bloqueando un doble envío.
- */
-
 import React from 'react';
 import { useCuestionarioRetiro } from './hooks/useCuestionarioRetiro';
 
 export default function CuestionarioRetiro() {
-  // ============================================================================
-  // EXTRACCIÓN DE ESTADOS Y FUNCIONES DESDE EL HOOK
-  // ============================================================================
   const {
-    // 1. Datos del Formulario
     rutEstudiante, setRutEstudiante,
-    motivo, setMotivo,
-    
-    // 2. Estados de Carga y Retroalimentación
+    motivoPrincipal, setMotivoPrincipal,
+    motivoDetalle, setMotivoDetalle,
     estado,
     mensajeError,
-    
-    // 3. Acciones
     enviarCuestionario
   } = useCuestionarioRetiro();
 
-  // ============================================================================
-  // RENDERIZADO DE LA INTERFAZ
-  // ============================================================================
   return (
     <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4 sm:p-8">
-      
       <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden border border-gray-200">
         
-        {/* FRANJA DE COLORES INSTITUCIONALES */}
         <div className="absolute top-0 left-0 w-full h-2 flex">
           <div className="w-1/2 bg-blue-700"></div>
           <div className="w-1/2 bg-red-600"></div>
         </div>
 
-        {/* CABECERA Y LOGO */}
         <div className="text-center mb-8 mt-2">
-          <img 
-            src="/images/logo-slep.negro.png" 
-            alt="Logo SLEP" 
-            className="h-24 mx-auto mb-5 object-contain" 
-          />
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-blue-950 tracking-tight">
-            Cuestionario de Retiro
-          </h2>
-          <p className="text-sm text-gray-500 mt-3 font-medium">
-            Por normativa del SLEP, solicitamos nos indique los motivos del retiro. Esta información es estrictamente confidencial.
-          </p>
+          <img src="/images/logo-slep.negro.png" alt="Logo SLEP" className="h-24 mx-auto mb-5 object-contain" />
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-blue-950 tracking-tight">Cuestionario de Retiro</h2>
+          <p className="text-sm text-gray-500 mt-3 font-medium">Por normativa del SLEP, solicitamos nos indique los motivos del retiro. Esta información es estrictamente confidencial.</p>
         </div>
 
-        {/* CONTENIDO PRINCIPAL: ÉXITO O FORMULARIO */}
         {estado === 'exito' ? (
-          // --- VISTA DE ÉXITO ---
           <div className="bg-emerald-50 text-emerald-800 p-6 rounded-xl text-center border border-emerald-200 shadow-inner">
             <div className="text-5xl mb-3">✅</div>
             <p className="font-bold text-lg mb-2">Formulario Recibido</p>
-            <p className="text-sm font-medium">
-              Sus respuestas han sido registradas de forma segura en el sistema. Muchas gracias por su tiempo, puede cerrar esta pestaña.
-            </p>
+            <p className="text-sm font-medium">Sus respuestas han sido registradas de forma segura en el sistema. Muchas gracias por su tiempo, puede cerrar esta pestaña.</p>
           </div>
         ) : (
-          // --- VISTA DE FORMULARIO ---
           <form onSubmit={enviarCuestionario} className="space-y-6">
             
-            {/* CAMPO: RUT */}
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
                 RUT del Estudiante <span className="text-xs text-gray-400 normal-case font-medium">(Medida de Seguridad)</span>
               </label>
-              <input 
-                required 
-                type="text" 
-                placeholder="Ej: 21123456-7"
-                value={rutEstudiante} 
-                onChange={(e) => setRutEstudiante(e.target.value)}
-                disabled={estado === 'cargando'}
-                className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none transition-all bg-gray-50 focus:bg-white"
-              />
+              <input required type="text" placeholder="Ej: 21123456-7" value={rutEstudiante} onChange={(e) => setRutEstudiante(e.target.value)} disabled={estado === 'cargando'} className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none transition-all bg-gray-50 focus:bg-white" />
             </div>
             
-            {/* CAMPO: MOTIVO */}
+            {/* 🌟 NUEVO: DESPLEGABLE CON OPCIONES DE LA IMAGEN */}
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
                 Motivo principal del retiro
               </label>
-              <textarea 
-                required 
-                rows={4} 
-                placeholder="Por favor, detalle brevemente los motivos de la baja..."
-                value={motivo} 
-                onChange={(e) => setMotivo(e.target.value)}
-                disabled={estado === 'cargando'}
-                className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none resize-none transition-all bg-gray-50 focus:bg-white"
-              ></textarea>
+              <select required value={motivoPrincipal} onChange={(e) => setMotivoPrincipal(e.target.value)} disabled={estado === 'cargando'} className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none transition-all bg-gray-50 focus:bg-white cursor-pointer">
+                <option value="">Seleccione una opción...</option>
+                <option value="Problemas de convivencia en el establecimiento (estudiante y/o apoderado)">Problemas de convivencia en el establecimiento (estudiante y/o apoderado)</option>
+                <option value="Este establecimiento no cuenta con buena infraestructura">Este establecimiento no cuenta con buena infraestructura</option>
+                <option value="Mi hijo/a no ha podido integrarse en su curso">Mi hijo/a no ha podido integrarse en su curso</option>
+                <option value="Por comodidad (cercanía al hogar y/o trabajo)">Por comodidad (cercanía al hogar y/o trabajo)</option>
+                <option value="Este establecimiento no entrega la calidad educativa que espero">Este establecimiento no entrega la calidad educativa que espero</option>
+                <option value="La forma en que se entrega la enseñanza">La forma en que se entrega la enseñanza</option>
+                <option value="No entregan el apoyo especializado que mi hijo/a requiere">No entregan el apoyo especializado que mi hijo/a requiere</option>
+                <option value="Mis ingresos familiares me permitirían buscar una mejor opción">Mis ingresos familiares me permitirían buscar una mejor opción</option>
+                <option value="Prefiero la formación valórica de otros establecimientos">Prefiero la formación valórica de otros establecimientos</option>
+                <option value="El calendario de actividades no se suele respetar">El calendario de actividades no se suele respetar</option>
+                <option value="Se deja de lado a mi hijo/a por priorizar apoyo a NEE">Se deja de lado a mi hijo/a por priorizar apoyo a NEE</option>
+                <option value="Este establecimiento no entrega la oferta académica deseada">Este establecimiento no entrega la oferta académica deseada</option>
+                <option value="Mayor prestigio y/o tradición de otros establecimientos">Mayor prestigio y/o tradición de otros establecimientos</option>
+                <option value="Otro">Otro ¿Cuál?</option>
+              </select>
             </div>
 
-            {/* MENSAJE DE ERROR */}
-            {estado === 'error' && (
-              <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2">
-                <span>❌</span> {mensajeError}
+            {/* 🌟 RECUADRO DE TEXTO PARA DESCRIPCIÓN MÁS COMPLETA */}
+            {motivoPrincipal && (
+              <div className="animate-in fade-in slide-in-from-top-2">
+                <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
+                  {motivoPrincipal === 'Otro' ? 'Especifique el motivo (Obligatorio)' : 'Detalles Adicionales (Opcional)'}
+                </label>
+                <textarea required={motivoPrincipal === 'Otro'} rows={3} placeholder="Puede añadir más detalles o comentarios sobre su decisión aquí..." value={motivoDetalle} onChange={(e) => setMotivoDetalle(e.target.value)} disabled={estado === 'cargando'} className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none resize-none transition-all bg-gray-50 focus:bg-white"></textarea>
               </div>
             )}
+
+            {estado === 'error' && (
+              <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2"><span>❌</span> {mensajeError}</div>
+            )}
             
-            {/* BOTÓN DE ENVÍO */}
-            <button 
-              type="submit" 
-              disabled={estado === 'cargando' || !rutEstudiante || !motivo}
-              className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-            >
+            <button type="submit" disabled={estado === 'cargando' || !rutEstudiante || !motivoPrincipal || (motivoPrincipal === 'Otro' && !motivoDetalle.trim())} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2">
               {estado === 'cargando' ? 'Enviando información segura...' : 'Enviar Respuestas'}
             </button>
           </form>

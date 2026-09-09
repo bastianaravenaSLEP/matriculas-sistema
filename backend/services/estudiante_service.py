@@ -1,6 +1,7 @@
 # services/estudiante_service.py
 from fastapi import HTTPException
 from database import get_db_connection
+import json
 
 def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
     conn = get_db_connection()
@@ -132,7 +133,7 @@ def crear_estudiante_db(payload: dict):
         cur.close()
         conn.close()
 
-def actualizar_datos_estudiante_db(rut: str, req):
+def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): # 🌟 Se agregó id_usuario
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -166,6 +167,30 @@ def actualizar_datos_estudiante_db(rut: str, req):
             cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE run_ipe = %s", 
                         (nuevo_id_apoderado, rut))
         
+
+        # 1. Buscamos la matrícula más reciente del alumno para vincular el evento
+        cur.execute("""
+            SELECT id_matricula FROM matricula 
+            WHERE id_estudiante = (SELECT id_estudiante FROM estudiante WHERE run_ipe = %s)
+            ORDER BY id_matricula DESC LIMIT 1
+        """, (rut,))
+        mat_result = cur.fetchone()
+
+        if mat_result:
+            id_matricula = mat_result[0]
+            
+            # 2. Simulamos los datos JSON para que la función clasificar_evento 
+            # de reporte_service.py lo interprete correctamente como una actualización.
+            datos_ant = json.dumps({"Ficha_Personal": "Datos Anteriores"})
+            datos_nuev = json.dumps({"Ficha_Personal": "Datos Actualizados"})
+            
+            # 3. Insertamos directamente en la bitácora
+            cur.execute("""
+                INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
+                VALUES (%s, 'UPDATE', %s, %s, %s)
+            """, (id_matricula, id_usuario, datos_ant, datos_nuev))
+        # =====================================================================
+
         conn.commit()
         return {"mensaje": "Datos actualizados exitosamente"}
     except Exception as e:

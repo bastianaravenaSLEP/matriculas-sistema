@@ -5,7 +5,8 @@ export const useCuestionarioCambio = () => {
   const { id } = useParams<{ id: string }>();
   
   const [rutEstudiante, setRutEstudiante] = useState('');
-  const [motivo, setMotivo] = useState('');
+  const [motivoPrincipal, setMotivoPrincipal] = useState('');
+  const [motivoDetalle, setMotivoDetalle] = useState('');
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null);
 
@@ -14,15 +15,16 @@ export const useCuestionarioCambio = () => {
     setCargando(true);
     setMensaje(null);
 
+    // 🌟 UNIMOS EL DESPLEGABLE CON EL TEXTO
+    const textoConsolidado = `[Motivo Traslado]: ${motivoPrincipal}\n[Detalles Adicionales]: ${motivoDetalle.trim() || 'Sin comentarios adicionales.'}`;
+
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario-curso`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           rut_estudiante: rutEstudiante,
-          motivo_real: motivo
+          motivo_real: textoConsolidado
         })
       });
 
@@ -34,7 +36,8 @@ export const useCuestionarioCambio = () => {
 
       setMensaje({ texto: 'Formulario enviado con éxito. Puede cerrar esta pestaña.', tipo: 'exito' });
       setRutEstudiante('');
-      setMotivo('');
+      setMotivoPrincipal('');
+      setMotivoDetalle('');
     } catch (error: any) {
       setMensaje({ texto: error.message, tipo: 'error' });
     } finally {
@@ -44,7 +47,8 @@ export const useCuestionarioCambio = () => {
 
   return {
     rutEstudiante, setRutEstudiante,
-    motivo, setMotivo,
+    motivoPrincipal, setMotivoPrincipal,
+    motivoDetalle, setMotivoDetalle,
     cargando,
     mensaje,
     handleSubmit

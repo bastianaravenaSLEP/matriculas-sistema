@@ -17,7 +17,7 @@ documentos
 cambios hechos
 *auditoria cambiarla para que se reflejen los cambios 
 
-*trazabilidad
+*trazabilidad --- ya hecho 
 *cuenta de correo
 *cuestionario de encuesta con desplegables
 *cambio de curso con el mismo desplegables
@@ -25,5 +25,6 @@ cambios hechos
 *hacer tabla con los motivos (tratar de cambiar la BD actual)
 sacra boton sige
 SLEP solo debe tener visualizador 
+* Cambiar boton trazabilidad para que solo aparezca a los admin 
 
 cambiar que diga renovacion matricula y no nueva 
