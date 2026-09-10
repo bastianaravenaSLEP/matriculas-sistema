@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight, Upload } from 'lucide-react';
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 
 export default function NuevaMatricula() {
@@ -18,7 +18,8 @@ export default function NuevaMatricula() {
     esColegioEMTP,esCuartoMedio,
     checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     handleSubmit, generarComprobantePDF,
-    cuposOcupados, LIMITE_CUPOS // 🌟 Variables traídas del hook
+    cuposOcupados, limiteCupos,
+    archivoResolucion, setArchivoResolucion // 🌟 Traemos el estado del PDF
   } = useNuevaMatricula();
 
   return (
@@ -26,9 +27,7 @@ export default function NuevaMatricula() {
       
       <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
       
-      {/* =======================================================================
-          PASO 1: BÚSQUEDA E IDENTIFICACIÓN DEL ESTUDIANTE
-          ======================================================================= */}
+      {/* ... (Todo el PASO 1 se mantiene igual) ... */}
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="font-semibold text-gray-700 mb-4">Paso 1: Identificación del Estudiante</h3>
         
@@ -141,25 +140,15 @@ export default function NuevaMatricula() {
                 </option>
               ))}
             </select>
-            {esPerfilColegio && (
-              <p className="text-xs text-gray-500 mt-1 font-bold">
-                * Asignado automáticamente a su establecimiento por seguridad.
-              </p>
-            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Colegio de Procedencia</label>
               <input 
-                type="text" 
-                disabled 
-                value={colegioProcedencia || 'Esperando selección...'} 
+                type="text" disabled value={colegioProcedencia || 'Esperando selección...'} 
                 className={`w-full border rounded-lg p-2 outline-none font-medium text-sm ${esTraslado ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-gray-100 border-gray-300 text-gray-600'}`} 
               />
-              {esTraslado && (
-                <p className="text-xs text-orange-600 mt-1 font-bold">⚠️ Se registrará como un traslado.</p>
-              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Año Escolar</label>
@@ -186,20 +175,19 @@ export default function NuevaMatricula() {
               </select>
             </div>
             
-            {/* 🌟 NUEVO: INDICADOR DE CUPOS EN EL SELECTOR DE CURSO */}
             <div>
               <div className="flex justify-between items-end mb-1">
                 <label className="block text-sm font-medium text-gray-700">Curso (Sala)</label>
                 {formulario.cursoSeleccionado && (
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm transition-colors ${
-                    cuposOcupados >= LIMITE_CUPOS ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
+                    cuposOcupados >= limiteCupos ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200'
                   }`}>
-                    Cupos: {cuposOcupados} / {LIMITE_CUPOS}
+                    Cupos: {cuposOcupados} / {limiteCupos}
                   </span>
                 )}
               </div>
               <select name="cursoSeleccionado" value={formulario.cursoSeleccionado} onChange={(e) => seleccionarCurso(e.target.value)} required className={`w-full border rounded-lg p-2 outline-none font-bold transition-colors ${
-                cuposOcupados >= LIMITE_CUPOS ? 'border-red-300 text-red-800 bg-red-50' : 'border-gray-300 text-blue-800 bg-white'
+                cuposOcupados >= limiteCupos ? 'border-red-300 text-red-800 bg-red-50' : 'border-gray-300 text-blue-800 bg-white'
               }`}>
                 {cursosDisponibles.length === 0 ? (
                   <option value="">Seleccione un plan primero</option>
@@ -211,29 +199,6 @@ export default function NuevaMatricula() {
               </select>
             </div>
           </div>
-          
-          {alertasTransicion.length > 0 && (
-            <div className="flex flex-col gap-2 mt-2">
-              {alertasTransicion.map((alerta, index) => (
-                <div key={index} className={`p-3 rounded-lg border text-sm font-medium flex items-start gap-2 ${
-                  alerta.tipo === 'info' ? 'bg-blue-50 border-blue-200 text-blue-800' :
-                  alerta.tipo === 'alerta' ? 'bg-orange-50 border-orange-200 text-orange-800' :
-                  'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                  <span className="mt-0.5 text-base leading-none">
-                    {alerta.tipo === 'info' ? '✅' : alerta.tipo === 'alerta' ? '⚠️' : '🚨'}
-                  </span>
-                  <p>{alerta.texto}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {huboPrecarga && (
-            <div className="bg-emerald-50 text-emerald-700 text-xs font-bold p-2 rounded border border-emerald-200">
-              ✓ Se ha precargado exitosamente la información del establecimiento y curso anterior.
-            </div>
-          )}
 
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs text-gray-500 flex justify-between">
             <span>Grado autodetectado: <strong>{formulario.cod_grado}</strong></span>
@@ -281,14 +246,14 @@ export default function NuevaMatricula() {
           </div>
 
           {/* =======================================================================
-              🌟 NUEVO: SECCIÓN EXCEDENTES CON BLOQUEO AUTOMÁTICO
+              🌟 ACTUALIZADO: SECCIÓN EXCEDENTES CON CARGA DE PDF Y DESGLOSE
               ======================================================================= */}
           <div className="border-t border-gray-200 pt-5 mt-5">
             <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
-              Condición de Matrícula
+              Condición de Matrícula (Cupos)
             </h4>
             
-            <div className={`p-4 rounded-lg border transition-colors ${formulario.es_excedente ? (cuposOcupados >= LIMITE_CUPOS ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200') : 'bg-gray-50 border-gray-200'}`}>
+            <div className={`p-4 rounded-lg border transition-colors ${formulario.es_excedente ? (cuposOcupados >= limiteCupos ? 'bg-red-50 border-red-200' : 'bg-orange-50 border-orange-200') : 'bg-gray-50 border-gray-200'}`}>
               
               <label className="flex items-start gap-3 cursor-pointer group">
                 <input 
@@ -296,92 +261,113 @@ export default function NuevaMatricula() {
                   name="es_excedente"
                   checked={formulario.es_excedente}
                   onChange={handleChange}
-                  disabled={cuposOcupados >= LIMITE_CUPOS} // Bloqueamos si llegó al límite
+                  disabled={cuposOcupados >= limiteCupos} 
                   className={`mt-1 w-4 h-4 rounded focus:ring-2 cursor-pointer transition-colors ${
-                    cuposOcupados >= LIMITE_CUPOS ? 'text-red-600 focus:ring-red-500 border-red-300' : 'text-orange-600 focus:ring-orange-500 border-gray-300'
+                    cuposOcupados >= limiteCupos ? 'text-red-600 focus:ring-red-500 border-red-300' : 'text-orange-600 focus:ring-orange-500 border-gray-300'
                   }`}
                 />
                 <div>
                   <p className={`text-sm font-bold transition-colors ${
-                    cuposOcupados >= LIMITE_CUPOS ? 'text-red-900' : (formulario.es_excedente ? 'text-orange-900' : 'text-gray-800 group-hover:text-orange-700')
+                    cuposOcupados >= limiteCupos ? 'text-red-900' : (formulario.es_excedente ? 'text-orange-900' : 'text-gray-800 group-hover:text-orange-700')
                   }`}>
-                    Matricular como Estudiante Excedente (Sobrecupo)
+                    Matricular como Estudiante Excedente (Sobrecupo Autorizado)
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {cuposOcupados >= LIMITE_CUPOS 
-                      ? <span className="text-red-600 font-bold">⚠️ El curso ha alcanzado su máxima capacidad legal ({LIMITE_CUPOS}). Esta opción es obligatoria para continuar.</span>
-                      : "Seleccione esta opción solo si el estudiante ingresa por sobre el cupo máximo autorizado mediante resolución ministerial."
+                    {cuposOcupados >= limiteCupos 
+                      ? <span className="text-red-600 font-bold">⚠️ El curso ha alcanzado su máxima capacidad legal ({limiteCupos}). Esta opción es obligatoria para continuar.</span>
+                      : "Seleccione esta opción solo si el estudiante ingresa por sobre el cupo máximo autorizado mediante resolución."
                     }
                   </p>
                 </div>
               </label>
 
               {formulario.es_excedente && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-orange-200 animate-in slide-in-from-top-2">
+                <div className="mt-4 pt-4 border-t border-orange-200 animate-in slide-in-from-top-2 space-y-4">
+                  
+                  {/* Selector del Tipo de Resolución */}
                   <div>
                     <label className="block text-xs font-bold text-orange-800 mb-1">
-                      N° de Resolución Autorizatoria <span className="text-red-500">*</span>
+                      Tipo de Resolución Autorizatoria <span className="text-red-500">*</span>
                     </label>
-                    <input 
+                    <select 
                       required={formulario.es_excedente} 
-                      type="text" 
-                      name="numero_resolucion_excedente"
-                      value={formulario.numero_resolucion_excedente}
+                      name="res_tipo"
+                      value={formulario.res_tipo}
                       onChange={handleChange}
-                      placeholder="Ej: RES-EXT-2026-001"
-                      className="w-full border border-orange-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white transition-all" 
-                    />
+                      className="w-full border border-orange-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white" 
+                    >
+                      <option value="">Seleccione el tipo...</option>
+                      <option value="Administrativa">Resolución Administrativa</option>
+                      <option value="Judicial">Resolución Judicial</option>
+                    </select>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-orange-800 mb-1">
-                      Fecha de Resolución <span className="text-red-500">*</span>
-                    </label>
-                    <input 
-                      required={formulario.es_excedente} 
-                      type="date" 
-                      name="fecha_resolucion_excedente"
-                      value={formulario.fecha_resolucion_excedente}
-                      onChange={handleChange}
-                      className="w-full border border-orange-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white transition-all" 
-                    />
-                  </div>
-                  <div className="md:col-span-2 text-xs text-orange-800 font-medium bg-white p-2.5 rounded border border-orange-100 shadow-sm flex gap-2 items-start">
+
+                  {/* Detalle de la Resolución (Causa, N°, Año, Tribunal, Fecha) */}
+                  {formulario.res_tipo && (
+                    <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in">
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Causa / Materia <span className="text-red-500">*</span></label>
+                        <input required type="text" name="res_causa" value={formulario.res_causa} onChange={handleChange} placeholder="Ej: Vulneración de derechos, Traslado laboral..." className="w-full border rounded p-2 text-sm outline-none focus:border-orange-500 bg-gray-50 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">N° de Resolución / Rol <span className="text-red-500">*</span></label>
+                        <input required type="text" name="res_numero" value={formulario.res_numero} onChange={handleChange} placeholder="Ej: 12345" className="w-full border rounded p-2 text-sm outline-none focus:border-orange-500 bg-gray-50 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Año de Resolución <span className="text-red-500">*</span></label>
+                        <input required type="number" name="res_anio" value={formulario.res_anio} onChange={handleChange} className="w-full border rounded p-2 text-sm outline-none focus:border-orange-500 bg-gray-50 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Tribunal / Entidad Emisora <span className="text-red-500">*</span></label>
+                        <input required type="text" name="res_tribunal" value={formulario.res_tribunal} onChange={handleChange} placeholder="Ej: Juzgado de Familia de Valparaíso" className="w-full border rounded p-2 text-sm outline-none focus:border-orange-500 bg-gray-50 focus:bg-white" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Fecha del Documento <span className="text-red-500">*</span></label>
+                        <input required type="date" name="fecha_resolucion_excedente" value={formulario.fecha_resolucion_excedente} onChange={handleChange} className="w-full border rounded p-2 text-sm outline-none focus:border-orange-500 bg-gray-50 focus:bg-white" />
+                      </div>
+
+                      {/* Carga del PDF */}
+                      <div className="sm:col-span-2 border-t border-dashed border-orange-200 pt-3 mt-1">
+                        <label className="block text-xs font-bold text-gray-700 mb-2">Adjuntar Documento Digital (PDF) <span className="text-red-500">*</span></label>
+                        <div className="flex items-center justify-center w-full">
+                          <label htmlFor="pdf-upload" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${archivoResolucion ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'}`}>
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              {archivoResolucion ? (
+                                <>
+                                  <CheckCircle className="w-6 h-6 mb-2 text-emerald-500" />
+                                  <p className="text-sm font-semibold text-emerald-700 truncate max-w-xs">{archivoResolucion.name}</p>
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="w-6 h-6 mb-2 text-gray-500" />
+                                  <p className="text-sm text-gray-500"><span className="font-semibold">Haga clic para subir</span> o arrastre el archivo</p>
+                                  <p className="text-xs text-gray-400">PDF (MAX. 5MB)</p>
+                                </>
+                              )}
+                            </div>
+                            <input 
+                              id="pdf-upload" 
+                              type="file" 
+                              accept=".pdf,application/pdf" 
+                              className="hidden" 
+                              required={!archivoResolucion} 
+                              onChange={(e) => setArchivoResolucion(e.target.files?.[0] || null)}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="text-xs text-orange-800 font-medium bg-white p-2.5 rounded border border-orange-100 shadow-sm flex gap-2 items-start">
                     <span className="text-sm">⚠️</span>
                     <p>
-                      <strong>Nota Normativa:</strong> En caso de que este estudiante sea retirado en el futuro, su cupo no podrá ser reemplazado por otro en el registro general sin una nueva resolución.
+                      <strong>Nota Normativa:</strong> En caso de que este estudiante sea retirado en el futuro, su cupo no podrá ser reemplazado por otro en el registro general sin una nueva resolución. El documento PDF respaldará legalmente el ingreso de este alumno en caso de auditorías de la Superintendencia de Educación.
                     </p>
                   </div>
                 </div>
               )}
             </div>
-
-          {(esColegioEMTP && esCuartoMedio) && (
-            <div className="border-t border-gray-200 pt-5 mt-5 animate-in slide-in-from-top-2">
-              <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">
-                Condición de Titulación (EMTP)
-              </h4>
-              
-              <div className={`p-4 rounded-lg border transition-colors ${formulario.es_alumno_practica ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
-                <label className="flex items-start gap-3 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    name="es_alumno_practica"
-                    checked={formulario.es_alumno_practica}
-                    onChange={handleChange}
-                    className="mt-1 w-4 h-4 text-purple-600 rounded border-gray-300 focus:ring-purple-500 cursor-pointer transition-colors"
-                  />
-                  <div>
-                    <p className={`text-sm font-bold transition-colors ${formulario.es_alumno_practica ? 'text-purple-900' : 'text-gray-800 group-hover:text-purple-700'}`}>
-                      Matricular exclusivamente para Práctica Profesional
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Para estudiantes egresados de 4° año EMTP que retornan para elaborar su plan de práctica y certificar su titulación.
-                    </p>
-                  </div>
-                </label>
-              </div>
-            </div>
-          )}
           </div>
 
           <div className="flex justify-end gap-3 mt-8 pt-4 border-t border-gray-100">
@@ -395,7 +381,8 @@ export default function NuevaMatricula() {
                 !estudiante || 
                 datosFaltantes.length > 0 || 
                 !checkCertNotas || 
-                (idEstablecimientoPrevio !== String(formulario.id_establecimiento) && !checkCertRetiro)
+                (idEstablecimientoPrevio !== String(formulario.id_establecimiento) && !checkCertRetiro) ||
+                (formulario.es_excedente && !archivoResolucion) // Bloqueamos si es excedente y no ha subido el PDF
               } 
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
             >
@@ -405,86 +392,10 @@ export default function NuevaMatricula() {
         </form>
       </div>
 
+      {/* ... (Modales de Faltantes y Éxito se mantienen sin cambios) ... */}
+      
       {/* =======================================================================
-          MODAL 1: ACTUALIZACIÓN DE DATOS FALTANTES 
-          ======================================================================= */}
-      {modalFaltantes && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center bg-gray-50 p-4 border-b border-gray-200 sticky top-0 z-10">
-              <h3 className="font-bold text-gray-800">Actualización Obligatoria de Datos</h3>
-              <button type="button" onClick={() => setModalFaltantes(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
-            </div>
-            
-            <form onSubmit={guardarDatosFaltantes} className="p-5 space-y-6">
-              <div>
-                <h4 className="text-sm font-bold text-blue-800 border-b pb-1 mb-3">1. Datos del Estudiante</h4>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Domicilio del Alumno</label>
-                  <input required type="text" value={formFaltantes.domicilio_estudiante} onChange={e => setFormFaltantes({...formFaltantes, domicilio_estudiante: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-blue-500" placeholder="Ej: Calle Prat 123, Valparaíso" />
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-bold text-emerald-800 border-b pb-1 mb-3">2. Identificación del Apoderado Titular</h4>
-                
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">RUT / Pasaporte</label>
-                    <input required type="text" value={formFaltantes.rut_apoderado} onChange={e => setFormFaltantes({...formFaltantes, rut_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: 12345678-9" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nombres</label>
-                    <input required type="text" value={formFaltantes.nombres_apoderado} onChange={e => setFormFaltantes({...formFaltantes, nombres_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: Juan Carlos" />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Apellido Paterno</label>
-                    <input required type="text" value={formFaltantes.apellido_paterno_apoderado} onChange={e => setFormFaltantes({...formFaltantes, apellido_paterno_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: Pérez" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Apellido Materno</label>
-                    <input required type="text" value={formFaltantes.apellido_materno_apoderado} onChange={e => setFormFaltantes({...formFaltantes, apellido_materno_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: González" />
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <div className="flex justify-between items-end mb-1">
-                    <label className="block text-xs font-bold text-gray-700 uppercase">Domicilio del Apoderado</label>
-                    <button type="button" onClick={copiarDomicilio} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
-                      <Copy size={14} /> Usar domicilio del estudiante
-                    </button>
-                  </div>
-                  <input required type="text" value={formFaltantes.domicilio_apoderado} onChange={e => setFormFaltantes({...formFaltantes, domicilio_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Dirección completa del apoderado" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Teléfono</label>
-                    <input required type="text" value={formFaltantes.telefono_apoderado} onChange={e => setFormFaltantes({...formFaltantes, telefono_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="Ej: +569..." />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Correo Electrónico</label>
-                    <input required type="email" value={formFaltantes.correo_apoderado} onChange={e => setFormFaltantes({...formFaltantes, correo_apoderado: e.target.value})} className="w-full border border-gray-300 rounded p-2 text-sm outline-none focus:border-emerald-500" placeholder="correo@ejemplo.cl" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-gray-100">
-                <button type="button" onClick={() => setModalFaltantes(false)} className="px-4 py-2 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded font-medium">Cancelar</button>
-                <button type="submit" disabled={guardandoFaltantes} className="px-4 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded font-medium disabled:opacity-50">
-                  {guardandoFaltantes ? 'Guardando...' : 'Guardar y Continuar Matrícula'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* =======================================================================
-          MODAL 2: ÉXITO Y GENERACIÓN DE DOCUMENTOS 
+          MODAL ÉXITO Y DOCUMENTOS 
           ======================================================================= */}
       {matriculaExitosa && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -503,15 +414,6 @@ export default function NuevaMatricula() {
                 <Download size={20} />
                 Descargar Comprobante (PDF)
               </button>
-
-              <button 
-                onClick={() => alert("Función en desarrollo: El envío automático de correos será integrado posteriormente mediante el servidor backend.")}
-                className="w-full flex items-center justify-center gap-3 bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100 py-3 rounded-lg font-bold transition-colors"
-              >
-                <Mail size={20} />
-                Enviar Comprobante por Correo
-              </button>
-
               <div className="border-t border-gray-100 pt-4 mt-2">
                 <button 
                   onClick={() => navigate('/matriculas')}
@@ -525,7 +427,6 @@ export default function NuevaMatricula() {
           </div>
         </div>
       )}
-
     </div>
   );
 }

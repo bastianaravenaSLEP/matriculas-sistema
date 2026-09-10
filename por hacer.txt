@@ -1,30 +1,29 @@
+
+-----------------Cambios pendientes---------------------------
 * REvisar la exportacion para que se haga por curso y no todos los cursos pertenecientes a un codigo
 
-*SAcar los Jardines del sistema
-
-* agregar para que se guarde los documentos al ingreso de matriculas y ver  a que base de datos se guardaran los
-documentos 
-
-*el comprobante de matricula el boton no funciona de mandar por correo, solo el de la descarga 
-
-*Mo aparece en la trazabilidad cuando se cambia un dato del estudiante 
-
-*Cambiar formulario de retiro a desplegables y que sea obligatorio guardar la informacion estudiante
+*Cambiar formulario de retiro o cambio a desplegables y que sea obligatorio guardar la informacion estudiante
+y que se pueda seleccionar mas de una de esas opciones
 (Revisar correo CArlos)
 
-*ver otras opciones de graficos mas modernas 
+*hacer que funcione el boton de enviar comprobante por correo
 
-cambios hechos
-*auditoria cambiarla para que se reflejen los cambios 
 
-*trazabilidad --- ya hecho 
-*cuenta de correo
-*cuestionario de encuesta con desplegables
-*cambio de curso con el mismo desplegables
-*numero de folio 
+*Hacer que en nuevo estudiante se genere una pregunta de quien va ser el apoderado
+ya sea padres, abuelos, designado por tutor o tutor
+
+*Revisar como es que deje funcionando el numero de folio y su integracion en la BD
+
 *hacer tabla con los motivos (tratar de cambiar la BD actual)
 sacra boton sige
-SLEP solo debe tener visualizador 
+
 * Cambiar boton trazabilidad para que solo aparezca a los admin 
 
-cambiar que diga renovacion matricula y no nueva 
+*cambiar que diga renovacion matricula y no nueva 
+-------------------------Cambios hechos----------------------------
+*creacion de tabla de asistencia_diaria en BD
+    agregar a establecimiento latitud y longitud
+            
+*integrar seccion para guardar documento de resolucion de alumno excedente y
+completar esta informacion (Falta info)
+
