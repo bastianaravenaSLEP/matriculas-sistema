@@ -84,9 +84,10 @@ def crear_nueva_matricula_db(matricula):
                 fecha_matricula, nivel_ensenanza, curso, estado, 
                 cod_tipo_ensenanza, cod_grado, letra_curso, id_usuario_ejecutor,
                 es_excedente, numero_resolucion_excedente, fecha_resolucion_excedente,
-                es_alumno_practica
+                es_alumno_practica,
+                opcion_religion, acepta_compromiso, autoriza_entrevista, autoriza_imagen, metodo_firma, estado_firma
             ) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_matricula;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Pendiente') RETURNING id_matricula;
         """
         valores = (
             nuevo_correlativo, matricula.anio_escolar, matricula.id_estudiante, 
@@ -94,7 +95,9 @@ def crear_nueva_matricula_db(matricula):
             matricula.curso, getattr(matricula, 'estado', 'Activa'), 
             getattr(matricula, 'cod_tipo_ensenanza', None), getattr(matricula, 'cod_grado', None), 
             getattr(matricula, 'letra_curso', None), matricula.id_usuario_ejecutor,
-            es_excedente, num_resolucion, fecha_res,es_practica        
+            es_excedente, num_resolucion, fecha_res,es_practica,matricula.opcion_religion, matricula.acepta_compromiso, 
+            matricula.autoriza_entrevista, matricula.autoriza_imagen, 
+            matricula.metodo_firma       
         )
         cursor.execute(query, valores)
         nuevo_id = cursor.fetchone()[0]

@@ -9,6 +9,10 @@
 *hacer tabla con los motivos (tratar de cambiar la BD actual)
 sacra boton sige
 
+*Sacar boton de trazabilidad de la pagina de inicio
+
+*agregar mas informacion a la pestaña de estudiante pero se debe de completar el estudiante
+en la BD con esta nueva informacion 
 -------------------------Cambios hechos----------------------------
 *creacion de tabla de asistencia_diaria en BD
     agregar a establecimiento latitud y longitud
@@ -32,5 +36,9 @@ ya sea padres, abuelos, designado por tutor o tutor( el documento del tutor se e
 
 *cambiar que diga renovacion matricula y no nueva 
 
+
+------------------------Nuevos cambios para proceso de matricula (idea)---------------------------------
+
+* agregar datos a la BD que vengan con opcion_religion,acepta_compromiso,autoriza_entrevista,autoriza_imagen,metodo_firma,estado_firma, ruta_sobre_digital.
 
 

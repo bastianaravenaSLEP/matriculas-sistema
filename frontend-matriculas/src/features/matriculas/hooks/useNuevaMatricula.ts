@@ -19,6 +19,11 @@ export const useNuevaMatricula = () => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
 
+  // 🌟 CONTROL DEL WIZARD (PASOS)
+  const [pasoActual, setPasoActual] = useState(1);
+  const irSiguientePaso = () => setPasoActual(prev => prev + 1);
+  const irPasoAnterior = () => setPasoActual(prev => prev - 1);
+
   const [rutBusqueda, setRutBusqueda] = useState('');
   const [estudiante, setEstudiante] = useState<any>(null);
   const [estudianteCompleto, setEstudianteCompleto] = useState<any>(null);
@@ -59,7 +64,6 @@ export const useNuevaMatricula = () => {
   const [establecimientosDb, setEstablecimientosDb] = useState<any[]>([]);
   const [todasLasMatriculas, setTodasLasMatriculas] = useState<MatriculaBase[]>([]);
 
-  // 🌟 NUEVO: Campos para desglosar la resolución y capturar el PDF
   const [archivoResolucion, setArchivoResolucion] = useState<File | null>(null);
   
   const [formulario, setFormulario] = useState({
@@ -72,16 +76,20 @@ export const useNuevaMatricula = () => {
     cursoSeleccionado: '',
     cod_grado: 1,
     letra_curso: 'A',
+    
     es_excedente: false,
     es_alumno_practica: false,
-    
-    // Campos temporales para armar el string final
     res_tipo: '',
     res_causa: '',
     res_numero: '',
     res_anio: new Date().getFullYear().toString(),
     res_tribunal: '',
     fecha_resolucion_excedente: '',
+
+    // 🌟 MÉTODO DE ENVÍO/FIRMA (PASO 3)
+    // Religión y autorizaciones ya NO se capturan aquí: las responde el apoderado
+    // en el portal de firma (Digital) o marcándolas a mano en el papel (Manual).
+    metodo_firma: 'Digital'
   });
 
   const [checkCertNotas, setCheckCertNotas] = useState(false);
@@ -455,6 +463,7 @@ export const useNuevaMatricula = () => {
   const generarComprobantePDF = async () => {
     try {
       const token = localStorage.getItem('token');
+      // 🌟 FUTURO: Aquí llamaremos al endpoint que genera el SOBRE DIGITAL COMPLETO
       const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -467,7 +476,7 @@ export const useNuevaMatricula = () => {
       
       const linkDescarga = document.createElement('a');
       linkDescarga.href = url;
-      linkDescarga.download = `Comprobante_Ingreso_${estudiante.run}.pdf`;
+      linkDescarga.download = `Documentos_Matricula_${estudiante.run}.pdf`;
       document.body.appendChild(linkDescarga);
       linkDescarga.click();
       
@@ -475,7 +484,7 @@ export const useNuevaMatricula = () => {
       window.URL.revokeObjectURL(url);
       
     } catch (err: any) {
-      alert("Hubo un error al descargar el comprobante: " + err.message);
+      alert("Hubo un error al descargar los documentos: " + err.message);
       console.error(err);
     }
   };
@@ -487,7 +496,6 @@ export const useNuevaMatricula = () => {
     setCargando(true);
     setError('');
 
-    // 🌟 LÓGICA DE UNIFICACIÓN: Armamos el string estructurado
     let stringResolucion = null;
     if (formulario.es_excedente) {
       stringResolucion = `[${formulario.res_tipo.toUpperCase()}] Causa: ${formulario.res_causa}, N° ${formulario.res_numero}/${formulario.res_anio} - Tribunal: ${formulario.res_tribunal}`;
@@ -501,7 +509,8 @@ export const useNuevaMatricula = () => {
       fecha_matricula: formulario.fecha_matricula,
       nivel_ensenanza: formulario.nivel_ensenanza,
       curso: formulario.cursoSeleccionado,
-      estado: 'Activa',
+      // 🌟 Con firma Digital, la matrícula queda pendiente hasta que el apoderado firme con Clave Única
+      estado: formulario.metodo_firma === 'Digital' ? 'Pendiente Firma' : 'Activa',
       fecha_retiro: null,
       motivo_retiro: null,
       observaciones: 'Matrícula ingresada desde portal transaccional.',
@@ -513,8 +522,10 @@ export const useNuevaMatricula = () => {
       es_excedente: formulario.es_excedente,
       numero_resolucion_excedente: stringResolucion,
       fecha_resolucion_excedente: formulario.fecha_resolucion_excedente || null,
+      es_alumno_practica: formulario.es_alumno_practica,
       
-      es_alumno_practica: formulario.es_alumno_practica
+      // 🌟 Religión y autorizaciones las responde el apoderado (portal de firma o papel), no el funcionario
+      metodo_firma: formulario.metodo_firma
     };
 
     const token = localStorage.getItem('token');
@@ -532,12 +543,7 @@ export const useNuevaMatricula = () => {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al guardar la matrícula.');
       
-      // 🚀 AQUÍ IRÍA LA LÓGICA FUTURA PARA SUBIR EL PDF
-      if (formulario.es_excedente && archivoResolucion) {
-        console.log("Matrícula creada con éxito (ID:", datos.id_matricula, "). Ahora se debe subir el archivo:", archivoResolucion.name);
-        // await fetch(`http://127.0.0.1:8000/matriculas/${datos.id_matricula}/documentos`, { method: 'POST', body: formDataArchivo ... })
-      }
-
+      // Si es excedente, faltaría subir el PDF (como lo tenías pensado)
       setMatriculaExitosa(true);
 
     } catch (err: any) {
@@ -547,7 +553,6 @@ export const useNuevaMatricula = () => {
     }
   };
 
-  // ... (El resto de useEffects de validación de curso siguen igual)
   useEffect(() => {
     if (!estudiante || !cursoPrevio || !formulario.cursoSeleccionado) {
       setAlertasTransicion([]);
@@ -598,7 +603,8 @@ export const useNuevaMatricula = () => {
     formFaltantes, setFormFaltantes, colegioProcedencia, esTraslado, guardandoFaltantes,
     establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
-    archivoResolucion, setArchivoResolucion, // 🌟 Exportamos el archivo para capturarlo en la UI
+    archivoResolucion, setArchivoResolucion, 
+    pasoActual, irSiguientePaso, irPasoAnterior, // 🌟 Exportamos variables del Wizard
     seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio,
     esColegioEMTP, esCuartoMedio, cuposOcupados, limiteCupos
   };
