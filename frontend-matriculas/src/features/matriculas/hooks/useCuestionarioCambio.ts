@@ -5,18 +5,24 @@ export const useCuestionarioCambio = () => {
   const { id } = useParams<{ id: string }>();
   
   const [rutEstudiante, setRutEstudiante] = useState('');
-  const [motivoPrincipal, setMotivoPrincipal] = useState('');
+  const [motivosSeleccionados, setMotivosSeleccionados] = useState<string[]>([]);
   const [motivoDetalle, setMotivoDetalle] = useState('');
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null);
+
+  const alternarMotivo = (motivo: string) => {
+    setMotivosSeleccionados((prev) => 
+      prev.includes(motivo) ? prev.filter((m) => m !== motivo) : [...prev, motivo]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCargando(true);
     setMensaje(null);
 
-    // 🌟 UNIMOS EL DESPLEGABLE CON EL TEXTO
-    const textoConsolidado = `[Motivo Traslado]: ${motivoPrincipal}\n[Detalles Adicionales]: ${motivoDetalle.trim() || 'Sin comentarios adicionales.'}`;
+    const motivosFormateados = motivosSeleccionados.map((m) => `• ${m}`).join('\n');
+    const textoConsolidado = `[Motivos de Traslado]:\n${motivosFormateados}\n\n[Detalles Adicionales]: ${motivoDetalle.trim() || 'Sin comentarios adicionales.'}`;
 
     try {
       const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario-curso`, {
@@ -36,7 +42,7 @@ export const useCuestionarioCambio = () => {
 
       setMensaje({ texto: 'Formulario enviado con éxito. Puede cerrar esta pestaña.', tipo: 'exito' });
       setRutEstudiante('');
-      setMotivoPrincipal('');
+      setMotivosSeleccionados([]);
       setMotivoDetalle('');
     } catch (error: any) {
       setMensaje({ texto: error.message, tipo: 'error' });
@@ -47,7 +53,7 @@ export const useCuestionarioCambio = () => {
 
   return {
     rutEstudiante, setRutEstudiante,
-    motivoPrincipal, setMotivoPrincipal,
+    motivosSeleccionados, alternarMotivo,
     motivoDetalle, setMotivoDetalle,
     cargando,
     mensaje,

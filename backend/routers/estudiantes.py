@@ -27,11 +27,14 @@ class CrearEstudianteRequest(BaseModel):
     domicilio_apoderado: str
     telefono_apoderado: str
     correo_apoderado: str
+    relacion_estudiante: str
+    ruta_documento_tutor: Optional[str] = None
     # Opcionales (Solo llegarán llenos si React detectó un IPE/IPA)
     pais_origen_estudiante: Optional[str] = "Chile"
     doc_extranjero_estudiante: Optional[str] = None
     pais_origen_apoderado: Optional[str] = "Chile"
     doc_extranjero_apoderado: Optional[str] = None
+
 
 class ActualizarEstudianteRequest(BaseModel):
     domicilio_estudiante: str

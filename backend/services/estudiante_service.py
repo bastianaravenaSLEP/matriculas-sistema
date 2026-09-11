@@ -107,12 +107,17 @@ def crear_estudiante_db(payload: dict):
             id_apoderado = apod_db[0]
         else:
             cur.execute("""
-                INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico, pais_origen, documento_extranjero)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
+                INSERT INTO apoderado (
+                    rut_pasaporte, nombres, apellido_paterno, apellido_materno, 
+                    domicilio, telefono, correo_electronico, pais_origen, 
+                    documento_extranjero, relacion_estudiante, ruta_documento_tutor
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
             """, (run_apod, payload.get("nombres_apoderado"), payload.get("apellido_paterno_apoderado"), 
                   payload.get("apellido_materno_apoderado"), payload.get("domicilio_apoderado"), 
                   payload.get("telefono_apoderado"), payload.get("correo_apoderado"),
-                  payload.get("pais_origen_apoderado", "Chile"), payload.get("doc_extranjero_apoderado", None)))
+                  payload.get("pais_origen_apoderado", "Chile"), payload.get("doc_extranjero_apoderado", None),
+                  payload.get("relacion_estudiante", "No Informado"), payload.get("ruta_documento_tutor", None)))
             id_apoderado = cur.fetchone()[0]
 
         cur.execute("""
