@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 
 export interface MatriculaBase {
@@ -46,6 +46,60 @@ export const useNuevaMatricula = () => {
 
   const [matriculaExitosa, setMatriculaExitosa] = useState(false); 
 
+  // 🌟 CONTROL DE SALIDA ACCIDENTAL (ABANDONO DE PROCESO)
+  const [modalSalidaAbierto, setModalSalidaAbierto] = useState(false);
+  const [rutaDestinoPendiente, setRutaDestinoPendiente] = useState<string | null>(null);
+
+  const tieneProgreso = useMemo(() => {
+    return (estudiante !== null || pasoActual > 1) && !matriculaExitosa;
+  }, [estudiante, pasoActual, matriculaExitosa]);
+
+  // Bloqueo de cierre de pestaña / F5
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (tieneProgreso) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [tieneProgreso]);
+
+  // Interceptar clics en enlaces internos de la app
+  useEffect(() => {
+    const interceptarNavegacion = (e: MouseEvent) => {
+      if (!tieneProgreso) return;
+
+      const target = (e.target as HTMLElement).closest('a');
+      if (!target) return;
+
+      const href = target.getAttribute('href');
+      // Ignorar enlaces externos o descargas
+      if (href && !href.startsWith('http') && !href.startsWith('#') && href !== location.pathname && !target.target) {
+        e.preventDefault();
+        e.stopPropagation();
+        setRutaDestinoPendiente(href);
+        setModalSalidaAbierto(true);
+      }
+    };
+
+    document.addEventListener('click', interceptarNavegacion, true);
+    return () => document.removeEventListener('click', interceptarNavegacion, true);
+  }, [tieneProgreso, location.pathname]);
+
+  const confirmarSalida = () => {
+    setModalSalidaAbierto(false);
+    if (rutaDestinoPendiente) {
+      navigate(rutaDestinoPendiente);
+    }
+  };
+
+  const cancelarSalida = () => {
+    setModalSalidaAbierto(false);
+    setRutaDestinoPendiente(null);
+  };
+
   const [formFaltantes, setFormFaltantes] = useState({
     domicilio_estudiante: '',
     rut_apoderado: '',
@@ -85,10 +139,6 @@ export const useNuevaMatricula = () => {
     res_anio: new Date().getFullYear().toString(),
     res_tribunal: '',
     fecha_resolucion_excedente: '',
-
-    // 🌟 MÉTODO DE ENVÍO/FIRMA (PASO 3)
-    // Religión y autorizaciones ya NO se capturan aquí: las responde el apoderado
-    // en el portal de firma (Digital) o marcándolas a mano en el papel (Manual).
     metodo_firma: 'Digital'
   });
 
@@ -124,7 +174,7 @@ export const useNuevaMatricula = () => {
       const token = localStorage.getItem('token');
 
       try {
-        const res = await fetch(`http://127.0.0.1:8000/capacidad-sala?rbd=${colegio.rbd}&anio_escolar=${formulario.anio_escolar}&nivel=${nivelExcel}`, {
+        const res = await fetch(`http://127.0.0.1:8000/establecimientos/capacidad-sala?rbd=${colegio.rbd}&anio_escolar=${formulario.anio_escolar}&nivel=${nivelExcel}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -298,7 +348,7 @@ export const useNuevaMatricula = () => {
     }
   };
 
-  const procesarEstudiante =  async (datos: any, estRun: string) => {
+  const procesarEstudiante = async (datos: any, estRun: string) => {
     setEstudiante(datos.personal);
     setEstudianteCompleto(datos);
 
@@ -463,7 +513,6 @@ export const useNuevaMatricula = () => {
   const generarComprobantePDF = async () => {
     try {
       const token = localStorage.getItem('token');
-      // 🌟 FUTURO: Aquí llamaremos al endpoint que genera el SOBRE DIGITAL COMPLETO
       const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -509,7 +558,6 @@ export const useNuevaMatricula = () => {
       fecha_matricula: formulario.fecha_matricula,
       nivel_ensenanza: formulario.nivel_ensenanza,
       curso: formulario.cursoSeleccionado,
-      // 🌟 Con firma Digital, la matrícula queda pendiente hasta que el apoderado firme con Clave Única
       estado: formulario.metodo_firma === 'Digital' ? 'Pendiente Firma' : 'Activa',
       fecha_retiro: null,
       motivo_retiro: null,
@@ -524,8 +572,11 @@ export const useNuevaMatricula = () => {
       fecha_resolucion_excedente: formulario.fecha_resolucion_excedente || null,
       es_alumno_practica: formulario.es_alumno_practica,
       
-      // 🌟 Religión y autorizaciones las responde el apoderado (portal de firma o papel), no el funcionario
-      metodo_firma: formulario.metodo_firma
+      metodo_firma: formulario.metodo_firma,
+      opcion_religion: 'Pendiente',
+      acepta_compromiso: false,
+      autoriza_entrevista: false,
+      autoriza_imagen: false
     };
 
     const token = localStorage.getItem('token');
@@ -543,7 +594,6 @@ export const useNuevaMatricula = () => {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al guardar la matrícula.');
       
-      // Si es excedente, faltaría subir el PDF (como lo tenías pensado)
       setMatriculaExitosa(true);
 
     } catch (err: any) {
@@ -604,8 +654,10 @@ export const useNuevaMatricula = () => {
     establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
     archivoResolucion, setArchivoResolucion, 
-    pasoActual, irSiguientePaso, irPasoAnterior, // 🌟 Exportamos variables del Wizard
+    pasoActual, irSiguientePaso, irPasoAnterior,
     seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio,
-    esColegioEMTP, esCuartoMedio, cuposOcupados, limiteCupos
+    esColegioEMTP, esCuartoMedio, cuposOcupados, limiteCupos, estudianteCompleto,
+    // 🌟 Exportamos el control del modal de confirmación
+    modalSalidaAbierto, confirmarSalida, cancelarSalida
   };
 };

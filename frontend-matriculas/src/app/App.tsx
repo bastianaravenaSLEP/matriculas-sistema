@@ -11,6 +11,7 @@ import Verificador from '../features/documentos/Verificador';
 import Auditoria from '../features/auditoria/Auditoria';
 import Layout from '../components/Layout';
 import EncuestaCambioCurso from '../features/matriculas/CuestionarioCambio';
+import PortalFirmaApoderado from '../features/matriculas/PortalFirmaAPoderado';
 
 // ============================================================================
 // COMPONENTE GUARDIÁN (Protección de Rutas)
@@ -37,6 +38,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
         <Route path="/encuesta-cambio-curso/:id" element={<EncuestaCambioCurso />} />
+        <Route path="/firma-prueba" element={<PortalFirmaApoderado />} /> 
+        <Route path="/autorizacion/:token" element={<PortalFirmaApoderado />} />
 
         {/* 2. RUTAS PRIVADAS (Protegidas por el Guardián) */}
         <Route 
@@ -56,6 +59,7 @@ export default function App() {
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
           <Route path="estudiantes" element={<Estudiantes />} />
           <Route path="auditoria" element={<Auditoria />} />
+          
         </Route>
 
       </Routes>

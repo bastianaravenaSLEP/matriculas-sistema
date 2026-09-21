@@ -7,8 +7,10 @@ def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Traemos también los datos de la matrícula para poder filtrar en el frontend
         query = """
-            SELECT DISTINCT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno
+            SELECT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno,
+                   m.estado, m.anio_escolar, m.cod_tipo_ensenanza, m.curso
             FROM estudiante e
             LEFT JOIN matricula m ON e.id_estudiante = m.id_estudiante
             WHERE 1=1
@@ -19,12 +21,22 @@ def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
             query += " AND m.id_establecimiento = %s"
             parametros.append(establecimiento_id)
             
-        query += " ORDER BY e.apellido_paterno ASC"
+        # Ordenamos por año descendente para que aparezcan primero los registros más recientes
+        query += " ORDER BY e.apellido_paterno ASC, m.anio_escolar DESC"
 
         cur.execute(query, tuple(parametros))
         filas = cur.fetchall()
         
-        estudiantes = [{"id": f[0], "run": f[1], "nombre_completo": f"{f[2]} {f[3]} {f[4] or ''}".strip()} for f in filas]
+        estudiantes = [{
+            "id": f[0], 
+            "run": f[1], 
+            "nombre_completo": f"{f[2]} {f[3]} {f[4] or ''}".strip(),
+            "estado": f[5] or "Sin Matrícula",
+            "anio_escolar": f[6],
+            "cod_tipo_ensenanza": f[7],
+            "curso": f[8] or "Sin Curso"
+        } for f in filas]
+        
         return estudiantes
 
     except Exception as e:
@@ -38,11 +50,14 @@ def obtener_ficha_estudiante_db(rut: str):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
+        # Agregamos un LEFT JOIN adicional para extraer al apoderado suplente
         cur.execute("""
             SELECT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.fecha_nacimiento, e.domicilio,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico,
+                   asup.rut_pasaporte, asup.nombres, asup.apellido_paterno, asup.apellido_materno, asup.telefono, asup.correo_electronico
             FROM estudiante e
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
+            LEFT JOIN apoderado asup ON e.id_apoderado_suplente = asup.id_apoderado
             WHERE e.run_ipe = %s
         """, (rut,))
         estudiante_db = cur.fetchone()
@@ -75,9 +90,15 @@ def obtener_ficha_estudiante_db(rut: str):
             },
             "apoderado": {
                 "rut": estudiante_db[7] if estudiante_db[7] else "Sin registrar",
-                "nombre": f"{estudiante_db[8]} {estudiante_db[9]} {estudiante_db[10]}" if estudiante_db[8] else "Pendiente",
+                "nombre": f"{estudiante_db[8] or ''} {estudiante_db[9] or ''} {estudiante_db[10] or ''}".strip() if estudiante_db[8] else "Pendiente",
                 "telefono": estudiante_db[11] if estudiante_db[11] else "-",
                 "correo": estudiante_db[12] if estudiante_db[12] else "-"
+            },
+            "suplente": {
+                "rut": estudiante_db[13] if estudiante_db[13] else "Sin registrar",
+                "nombre": f"{estudiante_db[14] or ''} {estudiante_db[15] or ''} {estudiante_db[16] or ''}".strip() if estudiante_db[14] else "No Registrado",
+                "telefono": estudiante_db[17] if estudiante_db[17] else "-",
+                "correo": estudiante_db[18] if estudiante_db[18] else "-"
             },
             "historial": [
                 {
@@ -94,7 +115,6 @@ def obtener_ficha_estudiante_db(rut: str):
         cur.close()
         conn.close()
 
-# 🌟 NUEVA FUNCIÓN: Insertamos con la data para alumnos extranjeros
 def crear_estudiante_db(payload: dict):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -138,7 +158,7 @@ def crear_estudiante_db(payload: dict):
         cur.close()
         conn.close()
 
-def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): # 🌟 Se agregó id_usuario
+def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): 
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -172,8 +192,6 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): # 🌟 Se ag
             cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE run_ipe = %s", 
                         (nuevo_id_apoderado, rut))
         
-
-        # 1. Buscamos la matrícula más reciente del alumno para vincular el evento
         cur.execute("""
             SELECT id_matricula FROM matricula 
             WHERE id_estudiante = (SELECT id_estudiante FROM estudiante WHERE run_ipe = %s)
@@ -183,18 +201,12 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): # 🌟 Se ag
 
         if mat_result:
             id_matricula = mat_result[0]
-            
-            # 2. Simulamos los datos JSON para que la función clasificar_evento 
-            # de reporte_service.py lo interprete correctamente como una actualización.
             datos_ant = json.dumps({"Ficha_Personal": "Datos Anteriores"})
             datos_nuev = json.dumps({"Ficha_Personal": "Datos Actualizados"})
-            
-            # 3. Insertamos directamente en la bitácora
             cur.execute("""
                 INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
                 VALUES (%s, 'UPDATE', %s, %s, %s)
             """, (id_matricula, id_usuario, datos_ant, datos_nuev))
-        # =====================================================================
 
         conn.commit()
         return {"mensaje": "Datos actualizados exitosamente"}

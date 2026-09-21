@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight, Upload, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight, Upload, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 
 export default function NuevaMatricula() {
@@ -17,11 +17,33 @@ export default function NuevaMatricula() {
     setCursoPrevio, setCodigoPrevio, alertasTransicion, setAlertasTransicion,
     esColegioEMTP, esCuartoMedio,
     checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
-    handleSubmit, generarComprobantePDF,
+    handleSubmit, generarComprobantePDF, estudianteCompleto,
     cuposOcupados, limiteCupos,
     archivoResolucion, setArchivoResolucion,
-    pasoActual, irSiguientePaso, irPasoAnterior // 🌟 Traemos las funciones del Wizard
+    pasoActual, irSiguientePaso, irPasoAnterior,
+    modalSalidaAbierto, confirmarSalida, cancelarSalida
   } = useNuevaMatricula();
+
+  const abrirPortalPrueba = () => {
+    const colegioObj = establecimientosDb.find(e => String(e.id_establecimiento) === String(formulario.id_establecimiento));
+    const apoderadoInfo = estudianteCompleto?.apoderado || {};
+    
+    const datosParaFirma = {
+      estudiante: `${estudiante.nombres} ${estudiante.apellidos}`.toUpperCase(),
+      rutEstudiante: estudiante.run,
+      curso: formulario.cursoSeleccionado || 'Sin Asignar',
+      apoderado: (apoderadoInfo.nombre || 'APODERADO NO REGISTRADO').toUpperCase(),
+      rutApoderado: apoderadoInfo.rut || 'SIN RUT',
+      relacion: 'APODERADO/A',
+      domicilio: estudiante.domicilio || 'Sin registro',
+      colegio: colegioObj ? colegioObj.nombre.toUpperCase() : 'ESTABLECIMIENTO EDUCACIONAL',
+      anio: formulario.anio_escolar,
+      fecha: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })
+    };
+    
+    localStorage.setItem('datosPruebaFirma', JSON.stringify(datosParaFirma));
+    window.open('/firma-prueba', '_blank');
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
@@ -189,18 +211,40 @@ export default function NuevaMatricula() {
                 <div className="flex justify-between items-end mb-1">
                   <label className="block text-sm font-medium text-gray-700">Curso (Sala)</label>
                   {formulario.cursoSeleccionado && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm ${cuposOcupados >= limiteCupos ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
-                      Cupos: {cuposOcupados} / {limiteCupos}
+                    <span 
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm ${
+                        limiteCupos - cuposOcupados <= 0 
+                          ? 'bg-red-100 text-red-700' 
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}
+                    >
+                      Disponibles: {Math.max(0, limiteCupos - cuposOcupados)} vacantes (Capacidad: {limiteCupos})
                     </span>
                   )}
                 </div>
-                <select name="cursoSeleccionado" value={formulario.cursoSeleccionado} onChange={(e) => seleccionarCurso(e.target.value)} required className={`w-full border rounded-lg p-2 outline-none font-bold ${cuposOcupados >= limiteCupos ? 'border-red-300 text-red-800 bg-red-50' : 'border-gray-300 text-blue-800 bg-white'}`}>
-                  {cursosDisponibles.length === 0 ? <option value="">Seleccione un plan</option> : cursosDisponibles.map(curso => <option key={curso} value={curso}>{curso}</option>)}
+                <select 
+                  name="cursoSeleccionado" 
+                  value={formulario.cursoSeleccionado} 
+                  onChange={(e) => seleccionarCurso(e.target.value)} 
+                  required 
+                  className={`w-full border rounded-lg p-2 outline-none font-bold ${
+                    cuposOcupados >= limiteCupos 
+                      ? 'border-red-300 text-red-800 bg-red-50' 
+                      : 'border-gray-300 text-blue-800 bg-white'
+                  }`}
+                >
+                  {cursosDisponibles.length === 0 ? (
+                    <option value="">Seleccione un plan</option>
+                  ) : (
+                    cursosDisponibles.map(curso => (
+                      <option key={curso} value={curso}>{curso}</option>
+                    ))
+                  )}
                 </select>
               </div>
             </div>
 
-            {/* Alertas de Transición (Mantenemos la lógica visual) */}
+            {/* Alertas de Transición */}
             {alertasTransicion.length > 0 && (
               <div className="flex flex-col gap-2 mt-2">
                 {alertasTransicion.map((alerta, index) => (
@@ -313,14 +357,13 @@ export default function NuevaMatricula() {
         )}
 
         {/* =======================================================================
-            PASO 3: AUTORIZACIONES Y MÉTODO DE FIRMA (🌟 NUEVO)
+            PASO 3: AUTORIZACIONES Y MÉTODO DE FIRMA
             ======================================================================= */}
         {pasoActual === 3 && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-right-4 space-y-6">
             <h3 className="font-semibold text-gray-700 mb-2 border-b pb-2">Paso 3: Envío y Firma de Documentos</h3>
             <p className="text-sm text-gray-500 mb-6">La religión, el acta de compromiso y las autorizaciones institucionales las decide y marca directamente el apoderado. Usted solo define cómo se le harán llegar los documentos para su firma.</p>
 
-            {/* Aviso: estas preguntas ya no las responde el funcionario */}
             <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg flex items-start gap-3">
               <AlertCircle className="text-blue-600 mt-0.5 shrink-0" size={20} />
               <div>
@@ -333,12 +376,10 @@ export default function NuevaMatricula() {
               </div>
             </div>
 
-            {/* Selector del Método de Firma (El Híbrido) */}
             <div className="mt-6 border-t border-gray-200 pt-6">
               <h4 className="font-bold text-gray-800 mb-3">Método de Firma de Documentos</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 
-                {/* Opción Digital */}
                 <label className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formulario.metodo_firma === 'Digital' ? 'border-blue-600 bg-blue-50/50' : 'border-gray-200 bg-white hover:border-blue-300'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-blue-900 flex items-center gap-2">
@@ -351,7 +392,6 @@ export default function NuevaMatricula() {
                   </p>
                 </label>
 
-                {/* Opción Manual (Papel) */}
                 <label className={`relative flex flex-col p-4 cursor-pointer rounded-xl border-2 transition-all ${formulario.metodo_firma === 'Manual' ? 'border-orange-500 bg-orange-50/50' : 'border-gray-200 bg-white hover:border-orange-300'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-orange-900 flex items-center gap-2">
@@ -371,34 +411,41 @@ export default function NuevaMatricula() {
               <button type="button" onClick={irPasoAnterior} className="flex items-center gap-2 px-6 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-bold transition-colors">
                 <ChevronLeft size={18} /> Volver
               </button>
-              <button 
-                type="submit" 
-                disabled={cargando} 
-                className="flex items-center gap-2 px-8 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-black tracking-wide transition-all shadow-md hover:shadow-lg disabled:opacity-50"
-              >
-                {cargando ? 'Procesando...' : (formulario.metodo_firma === 'Digital' ? 'Enviar Solicitud de Firma' : 'Generar Documentos para Firma')}
-              </button>
+
+              {formulario.metodo_firma === 'Digital' ? (
+                <button 
+                  type="button" 
+                  onClick={abrirPortalPrueba}
+                  className="flex items-center gap-2 px-8 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-black tracking-wide transition-all shadow-md hover:shadow-lg"
+                >
+                  Probar Portal del Apoderado
+                </button>
+              ) : (
+                <button 
+                  type="submit" 
+                  disabled={cargando} 
+                  className="flex items-center gap-2 px-8 py-2.5 bg-blue-700 hover:bg-blue-800 text-white rounded-lg font-black tracking-wide transition-all shadow-md hover:shadow-lg disabled:opacity-50"
+                >
+                  {cargando ? 'Procesando...' : 'Generar Documentos para Firma'}
+                </button>
+              )}
             </div>
           </div>
         )}
 
       </form>
 
-      {/* =======================================================================
-          MODALES EXISTENTES (Faltantes y Éxito)
-          ======================================================================= */}
-      {/* Modal Faltantes se mantiene igual... */}
+      {/* MODAL FALTANTES */}
       {modalFaltantes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-           {/* ... (Tu código actual del modal faltantes queda intacto) ... */}
            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
              <h3 className="font-bold text-gray-800 mb-4">Por favor actualice los datos del estudiante en la pestaña "Directorio de Estudiantes" para continuar.</h3>
-             <button onClick={() => setModalFaltantes(false)} className="px-4 py-2 bg-gray-200 rounded">Cerrar</button>
+             <button onClick={() => setModalFaltantes(false)} className="px-4 py-2 bg-gray-200 rounded font-bold">Cerrar</button>
            </div>
         </div>
       )}
 
-      {/* MODAL DE ÉXITO ADAPTADO AL NUEVO FLUJO HÍBRIDO */}
+      {/* MODAL ÉXITO */}
       {matriculaExitosa && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
@@ -413,8 +460,6 @@ export default function NuevaMatricula() {
             </div>
             
             <div className="p-6 space-y-4">
-              
-              {/* Botón dinámico según el método de firma elegido */}
               {formulario.metodo_firma === 'Digital' ? (
                 <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-center">
                   <Mail className="mx-auto text-blue-600 mb-2" size={24} />
@@ -443,6 +488,42 @@ export default function NuevaMatricula() {
           </div>
         </div>
       )}
+
+      {/* 🌟 MODAL DE ADVERTENCIA AL INTENTAR CAMBIAR DE MÓDULO */}
+      {modalSalidaAbierto && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-amber-200 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="p-2 bg-amber-100 rounded-full">
+                <AlertTriangle size={28} />
+              </div>
+              <h3 className="text-lg font-black text-gray-900">¿Desea salir del registro?</h3>
+            </div>
+            
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Hay un proceso de matrícula en curso. Si cambia de módulo ahora, <strong>deberá realizar todo el proceso de nuevo y su progreso se perderá</strong>.
+            </p>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={cancelarSalida}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-bold transition-colors"
+              >
+                Continuar aquí
+              </button>
+              <button
+                type="button"
+                onClick={confirmarSalida}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-colors shadow-md"
+              >
+                Sí, salir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

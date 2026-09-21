@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, UserPlus, Edit2, Save, X, CheckCircle } from 'lucide-react';
+import { Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, UserPlus, Edit2, Save, X, CheckCircle, HeartPulse, ShieldAlert } from 'lucide-react';
 import { useEstudiantes } from './hooks/useEstudiantes'; 
 
 export default function Estudiantes() {
@@ -16,7 +16,13 @@ export default function Estudiantes() {
     datosEdicion, setDatosEdicion,
     estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular,
     nuevoEstudiante, setNuevoEstudiante, formatearRUT, handleCrearEstudiante,
-    creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion,archivoTutor, setArchivoTutor
+    creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion, archivoTutor, setArchivoTutor,
+    
+    // 🌟 NUEVAS VARIABLES DE FILTRADO (Asegúrate de exportarlas desde useEstudiantes.ts)
+    filtroAnio = '', setFiltroAnio = () => {},
+    filtroCodigo = '', setFiltroCodigo = () => {},
+    filtroCurso = '', setFiltroCurso = () => {},
+    aniosUnicos = [], codigosUnicos = [], cursosUnicos = []
   } = useEstudiantes();
 
   // 🌟 VARIABLES PARA UI: Detectan en tiempo real si los campos son IPE/IPA
@@ -24,7 +30,7 @@ export default function Estudiantes() {
   const esIpaApoderado = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto relative">
+    <div className="space-y-6 max-w-6xl mx-auto relative">
       
       {/* CABECERA */}
       <div className="flex items-center justify-between">
@@ -81,26 +87,53 @@ export default function Estudiantes() {
         )}
       </div>
 
-      {/* VISTA 1: DIRECTORIO */}
+      {/* VISTA 1: DIRECTORIO CON FILTROS */}
       {!datosEstudiante && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 bg-gray-50">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 text-gray-400" size={20} />
-              <input 
-                type="text" placeholder="Buscar por nombre, apellido o RUT..."
-                value={textoBusqueda} onChange={(e) => setTextoBusqueda(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+          
+          {/* 🌟 BARRA DE FILTROS TIPO MATRÍCULAS */}
+          <div className="p-4 border-b border-gray-100 bg-gray-50 grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🔍 Buscar</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                <input 
+                  type="text" placeholder="RUT o Nombre..."
+                  value={textoBusqueda} onChange={(e) => setTextoBusqueda(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📅 1. Año</label>
+              <select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
+                <option value="">Todos los años</option>
+                {aniosUnicos.map((anio: any) => <option key={anio} value={anio}>{anio}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📚 2. Plan de Estudio</label>
+              <select value={filtroCodigo} onChange={(e) => setFiltroCodigo(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
+                <option value="">Todos los planes</option>
+                {codigosUnicos.map((cod: any) => <option key={cod} value={cod}>Cod. {cod}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🏫 3. Curso</label>
+              <select value={filtroCurso} onChange={(e) => setFiltroCurso(e.target.value)} disabled={cursosUnicos.length === 0} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white disabled:bg-gray-100 disabled:text-gray-400">
+                <option value="">Todos los cursos</option>
+                {cursosUnicos.map((curso: any) => <option key={curso} value={curso}>{curso}</option>)}
+              </select>
             </div>
           </div>
+
           <ul className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
             {cargandoLista ? (
               <div className="p-8 text-center text-gray-500">Cargando directorio...</div>
             ) : estudiantesFiltrados.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No hay estudiantes en este colegio.</div>
+              <div className="p-8 text-center text-gray-500">No hay estudiantes que coincidan con los filtros.</div>
             ) : (
-              estudiantesFiltrados.map((est) => (
+              estudiantesFiltrados.map((est: any) => (
                 <li key={est.id}>
                   <button 
                     onClick={() => verFichaEstudiante(est.run)}
@@ -108,7 +141,7 @@ export default function Estudiantes() {
                   >
                     <div>
                       <p className="font-semibold text-gray-800 text-lg">{est.nombre_completo}</p>
-                      <p className="text-sm text-gray-500">RUT: {est.run}</p>
+                      <p className="text-sm text-gray-500">RUT: {est.run} {est.curso ? `| Curso: ${est.curso}` : ''}</p>
                     </div>
                     <div className="text-blue-500"><ChevronRight size={20} /></div>
                   </button>
@@ -121,65 +154,40 @@ export default function Estudiantes() {
 
      {/* VISTA 2: FICHA DEL ESTUDIANTE */}
       {datosEstudiante && (() => {
-        const historialOrdenado = [...datosEstudiante.historial].sort((a, b) => b.id - a.id);
+        const historialOrdenado = [...datosEstudiante.historial].sort((a: any, b: any) => b.id - a.id);
         const ultimaMatricula = historialOrdenado.length > 0 ? historialOrdenado[0] : null;
 
         return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-right-8 duration-300">
-          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 lg:col-span-1 h-fit">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-              <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><User size={24} /></div>
-              <h2 className="text-lg font-bold text-gray-800">Datos Personales</h2>
-            </div>
-            <div className="space-y-4">
-              <div><p className="text-sm text-gray-500">RUN / IPE</p><p className="font-medium">{datosEstudiante.personal.run}</p></div>
-              <div><p className="text-sm text-gray-500">Nombre Completo</p><p className="font-medium">{datosEstudiante.personal.nombres} {datosEstudiante.personal.apellidos}</p></div>
-              <div><p className="text-sm text-gray-500">Fecha Nacimiento</p><p className="font-medium">{datosEstudiante.personal.fecha_nacimiento}</p></div>
-              
-              <div className="pt-2 border-t border-gray-50">
-                <p className="text-sm text-gray-500 mb-1">Última Matrícula Registrada</p>
-                <p className="font-bold text-blue-800">
-                  {ultimaMatricula ? ultimaMatricula.establecimiento : 'Sin registro'}
-                </p>
-                <p className="text-xs text-gray-500 font-mono">
-                  RBD: {ultimaMatricula ? ultimaMatricula.rbd : 'N/A'}
-                </p>
-              </div>
-
-              <div className="pt-2 border-t border-gray-50">
-                <p className="text-sm text-gray-500 mb-1">Domicilio Actual</p>
-                {!modoEdicion ? (
-                  <p className="font-medium">{datosEstudiante.personal.domicilio}</p>
-                ) : (
-                  <input type="text" value={datosEdicion.domicilio} onChange={(e) => setDatosEdicion({...datosEdicion, domicilio: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-6 lg:col-span-2">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+          
+          {/* COLUMNA IZQUIERDA: ESTUDIANTE E HISTORIAL */}
+          <div className="space-y-6 lg:col-span-1">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 h-fit">
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><UserCheck size={24} /></div>
-                <h2 className="text-lg font-bold text-gray-800">Apoderado Titular</h2>
+                <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><User size={24} /></div>
+                <h2 className="text-lg font-bold text-gray-800">Datos Personales</h2>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><p className="text-sm text-gray-500">Nombre</p><p className="font-medium">{datosEstudiante.apoderado.nombre}</p></div>
-                <div><p className="text-sm text-gray-500">RUT</p><p className="font-medium">{datosEstudiante.apoderado.rut}</p></div>
+              <div className="space-y-4">
+                <div><p className="text-sm text-gray-500">RUN / IPE</p><p className="font-medium">{datosEstudiante.personal.run}</p></div>
+                <div><p className="text-sm text-gray-500">Nombre Completo</p><p className="font-medium">{datosEstudiante.personal.nombres} {datosEstudiante.personal.apellidos}</p></div>
+                <div><p className="text-sm text-gray-500">Fecha Nacimiento</p><p className="font-medium">{datosEstudiante.personal.fecha_nacimiento}</p></div>
+                
                 <div className="pt-2 border-t border-gray-50">
-                  <p className="text-sm text-gray-500 mb-1">Teléfono</p>
-                  {!modoEdicion ? (
-                    <p className="font-medium">{datosEstudiante.apoderado.telefono}</p>
-                  ) : (
-                    <input type="text" value={datosEdicion.telefono_apoderado} onChange={(e) => setDatosEdicion({...datosEdicion, telefono_apoderado: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
-                  )}
+                  <p className="text-sm text-gray-500 mb-1">Última Matrícula Registrada</p>
+                  <p className="font-bold text-blue-800">
+                    {ultimaMatricula ? ultimaMatricula.establecimiento : 'Sin registro'}
+                  </p>
+                  <p className="text-xs text-gray-500 font-mono">
+                    RBD: {ultimaMatricula ? ultimaMatricula.rbd : 'N/A'}
+                  </p>
                 </div>
+
                 <div className="pt-2 border-t border-gray-50">
-                  <p className="text-sm text-gray-500 mb-1">Correo Electrónico</p>
+                  <p className="text-sm text-gray-500 mb-1">Domicilio Actual</p>
                   {!modoEdicion ? (
-                    <p className="font-medium">{datosEstudiante.apoderado.correo}</p>
+                    <p className="font-medium">{datosEstudiante.personal.domicilio}</p>
                   ) : (
-                    <input type="text" value={datosEdicion.correo_apoderado} onChange={(e) => setDatosEdicion({...datosEdicion, correo_apoderado: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+                    <input type="text" value={datosEdicion.domicilio} onChange={(e) => setDatosEdicion({...datosEdicion, domicilio: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
                   )}
                 </div>
               </div>
@@ -221,6 +229,105 @@ export default function Estudiantes() {
                   </tbody>
                 </table>
             </div>
+          </div>
+
+          {/* COLUMNA DERECHA: APODERADOS Y SALUD */}
+          <div className="space-y-6 lg:col-span-2">
+            
+            {/* CUADRO APODERADOS */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600"><UserCheck size={24} /></div>
+                <h2 className="text-lg font-bold text-gray-800">Directorio de Apoderados</h2>
+              </div>
+              
+              {/* Apoderado Titular */}
+              <div className="mb-6">
+                <h3 className="text-sm font-black text-emerald-800 uppercase mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Apoderado Titular
+                </h3>
+                <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                  <div><p className="text-sm text-gray-500">Nombre</p><p className="font-medium">{datosEstudiante.apoderado?.nombre || 'Sin registrar'}</p></div>
+                  <div><p className="text-sm text-gray-500">RUT</p><p className="font-medium">{datosEstudiante.apoderado?.rut || 'Sin registrar'}</p></div>
+                  <div className="pt-2 border-t border-gray-200">
+                    <p className="text-sm text-gray-500 mb-1">Teléfono</p>
+                    {!modoEdicion ? (
+                      <p className="font-medium">{datosEstudiante.apoderado?.telefono || '-'}</p>
+                    ) : (
+                      <input type="text" value={datosEdicion.telefono_apoderado} onChange={(e) => setDatosEdicion({...datosEdicion, telefono_apoderado: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+                    )}
+                  </div>
+                  <div className="pt-2 border-t border-gray-200">
+                    <p className="text-sm text-gray-500 mb-1">Correo Electrónico</p>
+                    {!modoEdicion ? (
+                      <p className="font-medium truncate">{datosEstudiante.apoderado?.correo || '-'}</p>
+                    ) : (
+                      <input type="text" value={datosEdicion.correo_apoderado} onChange={(e) => setDatosEdicion({...datosEdicion, correo_apoderado: e.target.value})} className="w-full border border-blue-300 bg-blue-50 rounded p-2 text-sm outline-none focus:ring-1 focus:ring-blue-500 transition-colors" />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Apoderado Suplente (Lectura) */}
+              <div>
+                <h3 className="text-sm font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-gray-400"></span> Apoderado Suplente
+                </h3>
+                {datosEstudiante.apoderado_suplente?.rut ? (
+                  <div className="grid grid-cols-2 gap-4 p-4 rounded-lg border border-gray-100">
+                    <div><p className="text-sm text-gray-500">Nombre</p><p className="font-medium text-sm">{datosEstudiante.apoderado_suplente.nombre}</p></div>
+                    <div><p className="text-sm text-gray-500">RUT</p><p className="font-medium text-sm">{datosEstudiante.apoderado_suplente.rut}</p></div>
+                    <div className="pt-2 border-t border-gray-50">
+                      <p className="text-sm text-gray-500 mb-1">Teléfono</p>
+                      <p className="font-medium text-sm">{datosEstudiante.apoderado_suplente.telefono || '-'}</p>
+                    </div>
+                    <div className="pt-2 border-t border-gray-50">
+                      <p className="text-sm text-gray-500 mb-1">Correo Electrónico</p>
+                      <p className="font-medium text-sm truncate">{datosEstudiante.apoderado_suplente.correo || '-'}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-lg border border-dashed border-gray-300 text-center text-sm text-gray-500 bg-gray-50">
+                    El estudiante no tiene un apoderado suplente registrado en el sistema.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 🌟 NUEVO CUADRO: FICHA MÉDICA Y EMERGENCIAS */}
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+                <div className="p-2 bg-rose-50 rounded-lg text-rose-600"><HeartPulse size={24} /></div>
+                <h2 className="text-lg font-bold text-gray-800">Ficha Médica y Emergencias</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Cobertura de Salud</h4>
+                  <div className="space-y-3">
+                    <div><p className="text-xs text-gray-500">Sistema / Previsión</p><p className="font-medium text-sm">{datosEstudiante.salud?.sistema_salud || 'No Informado'}</p></div>
+                    <div><p className="text-xs text-gray-500">CESFAM Asignado</p><p className="font-medium text-sm">{datosEstudiante.salud?.cesfam || 'No Informado'}</p></div>
+                    <div><p className="text-xs text-gray-500">Centro de Emergencias</p><p className="font-medium text-sm">{datosEstudiante.salud?.centro_emergencia || 'No Informado'}</p></div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Condiciones Relevantes</h4>
+                  <div className="space-y-3">
+                    <div className={`${datosEstudiante.salud?.alergias ? 'text-amber-700' : 'text-gray-800'}`}>
+                      <p className="text-xs text-gray-500 flex items-center gap-1">Alergias Alimentarias / Otras {datosEstudiante.salud?.alergias && <ShieldAlert size={14} className="text-amber-600"/>}</p>
+                      <p className={`text-sm ${datosEstudiante.salud?.alergias ? 'font-bold' : 'font-medium'}`}>{datosEstudiante.salud?.alergias || 'Ninguna registrada'}</p>
+                    </div>
+                    <div className={`${datosEstudiante.salud?.medicamento ? 'text-blue-700' : 'text-gray-800'}`}>
+                      <p className="text-xs text-gray-500">Medicamentos Frecuentes</p>
+                      <p className={`text-sm ${datosEstudiante.salud?.medicamento ? 'font-bold' : 'font-medium'}`}>{datosEstudiante.salud?.medicamento || 'No requiere'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
           </div>
         </div>
         );
@@ -340,7 +447,7 @@ export default function Estudiantes() {
                     </div>
                     {sugerenciasMapa.length > 0 && (
                       <ul className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {sugerenciasMapa.map((lugar, index) => (
+                        {sugerenciasMapa.map((lugar: any, index: number) => (
                           <li key={index} onClick={() => seleccionarDireccion(lugar)} className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors">
                             <p className="text-sm text-gray-800">{lugar.display_name}</p>
                           </li>
@@ -353,7 +460,6 @@ export default function Estudiantes() {
                   </div>
 
                   <h4 className="font-semibold text-emerald-600 border-b pb-1 mt-6">Datos del Apoderado Titular</h4>
-                  {/* 🌟 NUEVO: SELECTOR DE RELACIÓN CON EL ESTUDIANTE */}
                   <div className="mb-4">
                     <label className="block text-xs font-bold text-emerald-800 mb-1">
                       Relación con el Estudiante (Tipo de Apoderado) <span className="text-red-500">*</span>
@@ -375,7 +481,6 @@ export default function Estudiantes() {
                     </select>
                   </div>
 
-                  {/* 🌟 CARGA DE DOCUMENTO CONDICIONAL PARA TUTORES */}
                   {nuevoEstudiante.relacion_estudiante === 'Tutor Legal Designado' && (
                     <div className="mb-4 bg-orange-50 border border-orange-200 p-4 rounded-lg animate-in slide-in-from-top-2">
                       <label className="block text-xs font-bold text-orange-800 mb-2">
@@ -416,7 +521,6 @@ export default function Estudiantes() {
                       <input required type="text" placeholder="Ej: 12345678-9" value={nuevoEstudiante.run_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run_apoderado: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2 focus:ring-emerald-500 outline-none text-sm font-mono" maxLength={12} />
                     </div>
 
-                    {/* 🌟 FORMULARIO CONDICIONAL APODERADO IPA */}
                     {esIpaApoderado && (
                       <div className="col-span-full bg-emerald-50 border border-emerald-200 p-4 rounded-lg mt-2 mb-2 animate-in slide-in-from-top-2">
                         <h4 className="text-sm font-bold text-emerald-900 mb-3 flex items-center gap-2">

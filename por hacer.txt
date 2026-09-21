@@ -9,7 +9,6 @@
 *hacer tabla con los motivos (tratar de cambiar la BD actual)
 sacra boton sige
 
-*Sacar boton de trazabilidad de la pagina de inicio
 
 *agregar mas informacion a la pestaña de estudiante pero se debe de completar el estudiante
 en la BD con esta nueva informacion 
@@ -35,6 +34,9 @@ quizas luego ese documento es mejor guardarlo no en la BD)
 ya sea padres, abuelos, designado por tutor o tutor( el documento del tutor se esta guardando en la BD)
 
 *cambiar que diga renovacion matricula y no nueva 
+
+*Sacar boton de trazabilidad de la pagina de inicio
+
 
 
 ------------------------Nuevos cambios para proceso de matricula (idea)---------------------------------
