@@ -37,6 +37,14 @@ ya sea padres, abuelos, designado por tutor o tutor( el documento del tutor se e
 
 *Sacar boton de trazabilidad de la pagina de inicio
 
+*Se Agrego la tabla de ficha_salud en BD
+Se muestra esta info en la ficha del esudiante
+
+*Se agrego la columna apoderado suplente dentro de estudiante para concetarlo con el apoderado suplente
+
+*Se Cambio el registro del nuevo alumno por uno mas completo 
+
+
 
 
 ------------------------Nuevos cambios para proceso de matricula (idea)---------------------------------

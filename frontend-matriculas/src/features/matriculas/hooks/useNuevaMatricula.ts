@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 
 export interface MatriculaBase {
@@ -19,7 +19,7 @@ export const useNuevaMatricula = () => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
 
-  // 🌟 CONTROL DEL WIZARD (PASOS)
+  // Control del Wizard
   const [pasoActual, setPasoActual] = useState(1);
   const irSiguientePaso = () => setPasoActual(prev => prev + 1);
   const irPasoAnterior = () => setPasoActual(prev => prev - 1);
@@ -46,7 +46,7 @@ export const useNuevaMatricula = () => {
 
   const [matriculaExitosa, setMatriculaExitosa] = useState(false); 
 
-  // 🌟 CONTROL DE SALIDA ACCIDENTAL (ABANDONO DE PROCESO)
+  // Control de salida accidental
   const [modalSalidaAbierto, setModalSalidaAbierto] = useState(false);
   const [rutaDestinoPendiente, setRutaDestinoPendiente] = useState<string | null>(null);
 
@@ -54,7 +54,6 @@ export const useNuevaMatricula = () => {
     return (estudiante !== null || pasoActual > 1) && !matriculaExitosa;
   }, [estudiante, pasoActual, matriculaExitosa]);
 
-  // Bloqueo de cierre de pestaña / F5
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (tieneProgreso) {
@@ -66,7 +65,6 @@ export const useNuevaMatricula = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [tieneProgreso]);
 
-  // Interceptar clics en enlaces internos de la app
   useEffect(() => {
     const interceptarNavegacion = (e: MouseEvent) => {
       if (!tieneProgreso) return;
@@ -75,7 +73,6 @@ export const useNuevaMatricula = () => {
       if (!target) return;
 
       const href = target.getAttribute('href');
-      // Ignorar enlaces externos o descargas
       if (href && !href.startsWith('http') && !href.startsWith('#') && href !== location.pathname && !target.target) {
         e.preventDefault();
         e.stopPropagation();
@@ -130,7 +127,6 @@ export const useNuevaMatricula = () => {
     cursoSeleccionado: '',
     cod_grado: 1,
     letra_curso: 'A',
-    
     es_excedente: false,
     es_alumno_practica: false,
     res_tipo: '',
@@ -149,7 +145,7 @@ export const useNuevaMatricula = () => {
   const [limiteCupos, setLimiteCupos] = useState<number>(45);
 
   const formatearNivelExcel = (cursoStr: string) => {
-    const texto = cursoStr.toUpperCase();
+    const texto = (cursoStr || '').toUpperCase();
     const numero = texto.match(/\d+/)?.[0] || "";
     
     if (texto.includes('MEDIO') || texto.includes('MEDIA')) return `${numero}MEDIO`;
@@ -247,10 +243,10 @@ export const useNuevaMatricula = () => {
     fetch('http://127.0.0.1:8000/estudiante', { headers })
       .then(res => res.json())
       .then(datos => {
-        setEstudiantesDb(datos);
+        setEstudiantesDb(Array.isArray(datos) ? datos : []);
         const rutPre = location.state?.rutPreseleccionado;
-        if (rutPre) {
-          const encontrado = datos.find((est: any) => est.run === rutPre);
+        if (rutPre && Array.isArray(datos)) {
+          const encontrado = datos.find((est: any) => (est.run || est.run_ipe || est.rut) === rutPre);
           if (encontrado) seleccionarEstudiante(encontrado);
         }
       })
@@ -258,7 +254,7 @@ export const useNuevaMatricula = () => {
   }, [location.state]);
 
   const determinarNivelInteligente = (cursoStr: string, codigoPlan: number) => {
-    const texto = cursoStr.toLowerCase();
+    const texto = (cursoStr || '').toLowerCase();
     if (texto.includes('básico') || texto.includes('basico')) return 'Educación Básica';
     if (texto.includes('medio') || texto.includes('media')) return 'Educación Media';
     if (texto.includes('parvularia') || texto.includes('kínder') || texto.includes('kinder') || texto.includes('pre-kínder') || texto.includes('sala cuna')) return 'Educación Parvularia';
@@ -332,45 +328,110 @@ export const useNuevaMatricula = () => {
     }));
   };
 
+  // 🌟 BUSCADOR ROBUSTO: Normaliza tildes, mayúsculas, espacios y formatos de RUT
+  const normalizarTexto = (str: any) => {
+    if (!str) return '';
+    return String(str)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
+  const limpiarRUT = (str: any) => {
+    if (!str) return '';
+    return String(str).replace(/[^0-9kK]/g, '').toLowerCase();
+  };
+
   const handleEscribirBuscador = (texto: string) => {
     setRutBusqueda(texto);
-    if (texto.length > 1) {
-      const textoLimpio = texto.toLowerCase();
-      const filtrados = estudiantesDb.filter(est => 
-        est.run.toLowerCase().includes(textoLimpio) || 
-        est.nombre_completo.toLowerCase().includes(textoLimpio)
-      );
-      setSugerencias(filtrados);
-      setMostrarSugerencias(true);
-    } else {
+
+    if (!texto || texto.trim().length < 2) {
       setSugerencias([]);
       setMostrarSugerencias(false);
+      return;
     }
+
+    const textoNormalizado = normalizarTexto(texto);
+    const textoRut = limpiarRUT(texto);
+
+    // Mapa para evitar duplicados en la lista desplegable
+    const mapaUnicos = new Map();
+
+    for (const est of estudiantesDb) {
+      if (!est) continue;
+
+      const rutOriginal = est.run || est.run_ipe || est.estudiante_rut || est.rut || '';
+      const rutSinFormato = limpiarRUT(rutOriginal);
+
+      const nombreArmado = est.nombre_completo || `${est.nombres || ''} ${est.apellido_paterno || ''} ${est.apellido_materno || ''}`.trim();
+      const nombreNormalizado = normalizarTexto(nombreArmado);
+
+      const coincideNombre = textoNormalizado !== '' && nombreNormalizado.includes(textoNormalizado);
+      const coincideRut = textoRut !== '' && rutSinFormato.includes(textoRut);
+      const coincideRutTexto = textoNormalizado !== '' && normalizarTexto(rutOriginal).includes(textoNormalizado);
+
+      if (coincideNombre || coincideRut || coincideRutTexto) {
+        const idClave = rutOriginal || est.id_estudiante || est.id || nombreArmado;
+        if (!mapaUnicos.has(idClave)) {
+          mapaUnicos.set(idClave, {
+            id: est.id || est.id_estudiante || idClave,
+            run: rutOriginal,
+            nombre_completo: nombreArmado || 'Estudiante Sin Nombre'
+          });
+        }
+      }
+
+      // Detener al encontrar 20 sugerencias para máximo rendimiento
+      if (mapaUnicos.size >= 20) break;
+    }
+
+    const listaFiltrada = Array.from(mapaUnicos.values());
+    setSugerencias(listaFiltrada);
+    setMostrarSugerencias(true);
   };
 
   const procesarEstudiante = async (datos: any, estRun: string) => {
-    setEstudiante(datos.personal);
+    const personal = datos.personal || datos || {};
+    const apoderado = datos.apoderado || {};
+
+    setEstudiante({
+      id: personal.id || personal.id_estudiante,
+      nombres: personal.nombres || '',
+      apellidos: personal.apellidos || `${personal.apellido_paterno || ''} ${personal.apellido_materno || ''}`.trim(),
+      run: personal.run || personal.run_ipe || estRun,
+      domicilio: personal.domicilio || ''
+    });
     setEstudianteCompleto(datos);
 
     const faltan: string[] = [];
-    if (!datos.personal.domicilio || datos.personal.domicilio === "Sin registrar") faltan.push("Domicilio del Estudiante");
-    if (!datos.apoderado.rut || datos.apoderado.rut === "Sin registrar") faltan.push("RUT del Apoderado");
-    if (!datos.apoderado.nombre || datos.apoderado.nombre === "Pendiente") faltan.push("Nombre Completo del Apoderado");
-    if (!datos.apoderado.telefono || datos.apoderado.telefono === "-") faltan.push("Teléfono del Apoderado");
-    if (!datos.apoderado.correo || datos.apoderado.correo === "-") faltan.push("Correo del Apoderado");
+    const domEst = personal.domicilio;
+    if (!domEst || domEst === "Sin registrar" || domEst === "Sin registro") faltan.push("Domicilio del Estudiante");
+    
+    const rutAp = apoderado.rut || apoderado.rut_pasaporte;
+    if (!rutAp || rutAp === "Sin registrar") faltan.push("RUT del Apoderado");
+    
+    const nomAp = apoderado.nombre || apoderado.nombres;
+    if (!nomAp || nomAp === "Pendiente") faltan.push("Nombre Completo del Apoderado");
+    
+    const telAp = apoderado.telefono;
+    if (!telAp || telAp === "-") faltan.push("Teléfono del Apoderado");
+    
+    const corAp = apoderado.correo || apoderado.correo_electronico;
+    if (!corAp || corAp === "-") faltan.push("Correo del Apoderado");
     
     setDatosFaltantes(faltan);
 
     if (faltan.length > 0) {
       setFormFaltantes({
-        domicilio_estudiante: datos.personal.domicilio !== "Sin registrar" ? datos.personal.domicilio : '',
-        rut_apoderado: datos.apoderado.rut !== "Sin registrar" ? datos.apoderado.rut : '',
+        domicilio_estudiante: domEst && domEst !== "Sin registrar" ? domEst : '',
+        rut_apoderado: rutAp && rutAp !== "Sin registrar" ? rutAp : '',
         nombres_apoderado: '',
         apellido_paterno_apoderado: '',
         apellido_materno_apoderado: '',
         domicilio_apoderado: '',
-        telefono_apoderado: datos.apoderado.telefono !== "-" ? datos.apoderado.telefono : '',
-        correo_apoderado: datos.apoderado.correo !== "-" ? datos.apoderado.correo : ''
+        telefono_apoderado: telAp && telAp !== "-" ? telAp : '',
+        correo_apoderado: corAp && corAp !== "-" ? corAp : ''
       });
     }
 
@@ -385,12 +446,7 @@ export const useNuevaMatricula = () => {
           if (procedencia.encontrado) {
               setIdEstablecimientoPrevio(String(procedencia.id_establecimiento_previo)); 
               setColegioProcedencia(`${procedencia.colegio_procedencia} (RBD: ${procedencia.rbd_procedencia})`);
-              
-              if (String(procedencia.id_establecimiento_previo) !== String(formulario.id_establecimiento)) {
-                  setEsTraslado(true);
-              } else {
-                  setEsTraslado(false);
-              }
+              setEsTraslado(String(procedencia.id_establecimiento_previo) !== String(formulario.id_establecimiento));
           } else {
               setIdEstablecimientoPrevio(null); 
               setColegioProcedencia('Estudiante Nuevo (Sin registros previos)');
@@ -404,7 +460,8 @@ export const useNuevaMatricula = () => {
 
   useEffect(() => {
     if (estudiante && todasLasMatriculas.length > 0) {
-      const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === estudiante.run);
+      const rutEst = estudiante.run || estudiante.run_ipe;
+      const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === rutEst);
       
       if (historicas.length > 0) {
         historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
@@ -430,7 +487,8 @@ export const useNuevaMatricula = () => {
   }, [estudiante, todasLasMatriculas, huboPrecarga]);
 
   const seleccionarEstudiante = async (est: any) => {
-    setRutBusqueda(est.run);
+    const rutVal = est.run || est.run_ipe || est.rut;
+    setRutBusqueda(rutVal || '');
     setMostrarSugerencias(false);
     setCargando(true);
     setError('');
@@ -438,13 +496,13 @@ export const useNuevaMatricula = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${est.run}`, {
+      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!respuesta.ok) throw new Error('Estudiante no encontrado en el sistema.');
       
       const datos = await respuesta.json();
-      await procesarEstudiante(datos, est.run);
+      await procesarEstudiante(datos, rutVal);
     } catch (err: any) {
       setError(err.message);
       setEstudiante(null);
@@ -460,8 +518,9 @@ export const useNuevaMatricula = () => {
 
     try {
       const token = localStorage.getItem('token');
+      const rutVal = estudiante.run || estudiante.run_ipe;
       
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}`, {
+      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -473,14 +532,14 @@ export const useNuevaMatricula = () => {
       if (!respuesta.ok) throw new Error('Error al guardar la información');
       
       const timestamp = new Date().getTime();
-      const refreshRes = await fetch(`http://127.0.0.1:8000/estudiante/${estudiante.run}?t=${timestamp}`, {
+      const refreshRes = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}?t=${timestamp}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` },
         cache: 'no-store' 
       });
       
       const datosNuevos = await refreshRes.json();
-      await procesarEstudiante(datosNuevos, estudiante.run); 
+      await procesarEstudiante(datosNuevos, rutVal); 
       setModalFaltantes(false);
       
     } catch (err: any) {
@@ -497,7 +556,7 @@ export const useNuevaMatricula = () => {
   const colegioSeleccionadoObj = establecimientosDb.find(e => String(e.id_establecimiento) === String(formulario.id_establecimiento));
   const esColegioEMTP = colegioSeleccionadoObj && ['1518', '1519', '1525'].includes(String(colegioSeleccionadoObj.rbd));
 
-  const nombreCurso = formulario.cursoSeleccionado.toLowerCase();
+  const nombreCurso = (formulario.cursoSeleccionado || '').toLowerCase();
   const esCuartoMedio = nombreCurso.includes('4') && nombreCurso.includes('medio');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -513,7 +572,8 @@ export const useNuevaMatricula = () => {
   const generarComprobantePDF = async () => {
     try {
       const token = localStorage.getItem('token');
-      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${estudiante.run}`, {
+      const rutVal = estudiante?.run || estudiante?.run_ipe;
+      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${rutVal}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -525,7 +585,7 @@ export const useNuevaMatricula = () => {
       
       const linkDescarga = document.createElement('a');
       linkDescarga.href = url;
-      linkDescarga.download = `Documentos_Matricula_${estudiante.run}.pdf`;
+      linkDescarga.download = `Documentos_Matricula_${rutVal}.pdf`;
       document.body.appendChild(linkDescarga);
       linkDescarga.click();
       
@@ -566,12 +626,10 @@ export const useNuevaMatricula = () => {
       cod_tipo_ensenanza: formulario.cod_tipo_ensenanza ? parseInt(formulario.cod_tipo_ensenanza) : null,
       cod_grado: formulario.cod_grado,
       letra_curso: formulario.letra_curso,
-      
       es_excedente: formulario.es_excedente,
       numero_resolucion_excedente: stringResolucion,
       fecha_resolucion_excedente: formulario.fecha_resolucion_excedente || null,
       es_alumno_practica: formulario.es_alumno_practica,
-      
       metodo_firma: formulario.metodo_firma,
       opcion_religion: 'Pendiente',
       acepta_compromiso: false,
@@ -657,7 +715,6 @@ export const useNuevaMatricula = () => {
     pasoActual, irSiguientePaso, irPasoAnterior,
     seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio,
     esColegioEMTP, esCuartoMedio, cuposOcupados, limiteCupos, estudianteCompleto,
-    // 🌟 Exportamos el control del modal de confirmación
     modalSalidaAbierto, confirmarSalida, cancelarSalida
   };
 };

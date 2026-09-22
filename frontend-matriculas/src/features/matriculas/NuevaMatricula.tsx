@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, UserCheck, AlertCircle, X, Copy, CheckCircle, Download, Mail, ArrowRight, Upload, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, CheckCircle, Download, Mail, ArrowRight, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 
 export default function NuevaMatricula() {
@@ -8,14 +8,12 @@ export default function NuevaMatricula() {
     rutBusqueda, estudiante, setEstudiante,
     sugerencias, mostrarSugerencias, setMostrarSugerencias, 
     handleEscribirBuscador, seleccionarEstudiante,
-    datosFaltantes, setDatosFaltantes, modalFaltantes, setModalFaltantes,
-    formFaltantes, setFormFaltantes, guardandoFaltantes, guardarDatosFaltantes, copiarDomicilio,
+    datosFaltantes, modalFaltantes, setModalFaltantes,
     formulario, handleChange, establecimientosDb, esPerfilColegio,
     codigosDisponibles, cursosDisponibles, seleccionarCurso,
-    colegioProcedencia, esTraslado, huboPrecarga, setHuboPrecarga,
+    colegioProcedencia, esTraslado, setHuboPrecarga,
     idEstablecimientoPrevio, setIdEstablecimientoPrevio,
     setCursoPrevio, setCodigoPrevio, alertasTransicion, setAlertasTransicion,
-    esColegioEMTP, esCuartoMedio,
     checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     handleSubmit, generarComprobantePDF, estudianteCompleto,
     cuposOcupados, limiteCupos,
@@ -29,13 +27,13 @@ export default function NuevaMatricula() {
     const apoderadoInfo = estudianteCompleto?.apoderado || {};
     
     const datosParaFirma = {
-      estudiante: `${estudiante.nombres} ${estudiante.apellidos}`.toUpperCase(),
-      rutEstudiante: estudiante.run,
+      estudiante: `${estudiante?.nombres || ''} ${estudiante?.apellidos || ''}`.trim().toUpperCase(),
+      rutEstudiante: estudiante?.run || estudiante?.run_ipe || 'SIN REGISTRO',
       curso: formulario.cursoSeleccionado || 'Sin Asignar',
-      apoderado: (apoderadoInfo.nombre || 'APODERADO NO REGISTRADO').toUpperCase(),
-      rutApoderado: apoderadoInfo.rut || 'SIN RUT',
+      apoderado: (apoderadoInfo.nombre || apoderadoInfo.nombres || 'APODERADO NO REGISTRADO').toUpperCase(),
+      rutApoderado: apoderadoInfo.rut || apoderadoInfo.rut_pasaporte || 'SIN RUT',
       relacion: 'APODERADO/A',
-      domicilio: estudiante.domicilio || 'Sin registro',
+      domicilio: estudiante?.domicilio || 'Sin registro',
       colegio: colegioObj ? colegioObj.nombre.toUpperCase() : 'ESTABLECIMIENTO EDUCACIONAL',
       anio: formulario.anio_escolar,
       fecha: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -51,7 +49,6 @@ export default function NuevaMatricula() {
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
         
-        {/* Barra de Progreso Visual */}
         <div className="hidden sm:flex items-center gap-2 text-sm font-bold">
           <span className={`px-3 py-1 rounded-full ${pasoActual >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'}`}>1. Identificación</span>
           <div className={`w-8 h-1 ${pasoActual >= 2 ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
@@ -63,9 +60,7 @@ export default function NuevaMatricula() {
       
       <form onSubmit={handleSubmit}>
         
-        {/* =======================================================================
-            PASO 1: BÚSQUEDA E IDENTIFICACIÓN DEL ESTUDIANTE
-            ======================================================================= */}
+        {/* PASO 1: BÚSQUEDA E IDENTIFICACIÓN DEL ESTUDIANTE */}
         {pasoActual === 1 && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-right-4">
             <h3 className="font-semibold text-gray-700 mb-4 border-b pb-2">Paso 1: Identificación del Estudiante</h3>
@@ -80,7 +75,7 @@ export default function NuevaMatricula() {
                     value={rutBusqueda} 
                     onChange={(e) => handleEscribirBuscador(e.target.value)}
                     onFocus={() => { if (sugerencias.length > 0) setMostrarSugerencias(true) }}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 outline-none transition-all"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                     disabled={estudiante !== null} 
                   />
                 </div>
@@ -89,7 +84,7 @@ export default function NuevaMatricula() {
                   <button 
                     type="button" 
                     onClick={() => { 
-                      setEstudiante(null); handleEscribirBuscador(''); setHuboPrecarga(false); setDatosFaltantes([]); 
+                      setEstudiante(null); handleEscribirBuscador(''); setHuboPrecarga(false);
                       setCursoPrevio(''); setCodigoPrevio(null); setAlertasTransicion([]);
                       setCheckCertNotas(false); setCheckCertRetiro(false); setIdEstablecimientoPrevio(null);
                     }} 
@@ -103,16 +98,16 @@ export default function NuevaMatricula() {
               {mostrarSugerencias && !estudiante && (
                 <ul className="absolute z-50 w-full md:w-[calc(100%-140px)] mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                   {sugerencias.length === 0 ? (
-                    <li className="p-3 text-sm text-gray-500 text-center">No se encontraron estudiantes.</li>
+                    <li className="p-3 text-sm text-gray-500 text-center">No se encontraron estudiantes coincidentes.</li>
                   ) : (
-                    sugerencias.map((est) => (
+                    sugerencias.map((est, idx) => (
                       <li 
-                        key={est.id}
+                        key={est.id || est.run || idx}
                         onClick={() => seleccionarEstudiante(est)}
                         className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors flex flex-col"
                       >
                         <span className="font-semibold text-gray-800">{est.nombre_completo}</span>
-                        <span className="text-xs text-gray-500">RUT: {est.run}</span>
+                        <span className="text-xs text-gray-500 font-mono">RUT: {est.run || 'Sin registro'}</span>
                       </li>
                     ))
                   )}
@@ -128,9 +123,9 @@ export default function NuevaMatricula() {
                 <div className="flex-1">
                   <p className="text-sm text-emerald-800 font-semibold uppercase tracking-wider">Estudiante Seleccionado</p>
                   <p className="text-lg font-bold text-gray-900">{estudiante.nombres} {estudiante.apellidos}</p>
-                  <p className="text-sm text-gray-600 mb-1">RUT: {estudiante.run}</p>
+                  <p className="text-sm text-gray-600 mb-1 font-mono">RUT: {estudiante.run}</p>
                   
-                  {datosFaltantes.length > 0 && (
+                  {datosFaltantes && datosFaltantes.length > 0 && (
                     <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
                       <div className="flex items-center gap-2 text-orange-800 font-bold text-sm mb-1">
                         <AlertCircle size={16} /> 
@@ -156,8 +151,8 @@ export default function NuevaMatricula() {
               <button 
                 type="button" 
                 onClick={irSiguientePaso}
-                disabled={!estudiante || datosFaltantes.length > 0} 
-                className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors disabled:opacity-50"
+                disabled={!estudiante || (datosFaltantes && datosFaltantes.length > 0)} 
+                className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors disabled:opacity-50 shadow-sm"
               >
                 Siguiente Paso <ChevronRight size={18} />
               </button>
@@ -165,9 +160,7 @@ export default function NuevaMatricula() {
           </div>
         )}
 
-        {/* =======================================================================
-            PASO 2: DATOS DE MATRÍCULA Y ESTABLECIMIENTO
-            ======================================================================= */}
+        {/* PASO 2: DATOS DE MATRÍCULA Y ESTABLECIMIENTO */}
         {pasoActual === 2 && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-right-4 space-y-5">
             <h3 className="font-semibold text-gray-700 mb-4 border-b pb-2">Paso 2: Datos Académicos y de Establecimiento</h3>
@@ -356,9 +349,7 @@ export default function NuevaMatricula() {
           </div>
         )}
 
-        {/* =======================================================================
-            PASO 3: AUTORIZACIONES Y MÉTODO DE FIRMA
-            ======================================================================= */}
+        {/* PASO 3: AUTORIZACIONES Y MÉTODO DE FIRMA */}
         {pasoActual === 3 && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-right-4 space-y-6">
             <h3 className="font-semibold text-gray-700 mb-2 border-b pb-2">Paso 3: Envío y Firma de Documentos</h3>
@@ -489,7 +480,7 @@ export default function NuevaMatricula() {
         </div>
       )}
 
-      {/* 🌟 MODAL DE ADVERTENCIA AL INTENTAR CAMBIAR DE MÓDULO */}
+      {/* MODAL ADVERTENCIA DE SALIDA */}
       {modalSalidaAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-amber-200 animate-in zoom-in-95 duration-200">
