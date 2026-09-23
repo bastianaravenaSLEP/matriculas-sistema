@@ -1,3 +1,4 @@
+// hooks/useNuevaMatricula.ts
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 
@@ -19,9 +20,21 @@ export const useNuevaMatricula = () => {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
 
+  // Control de barrera de actualización
+  const [fichaConfirmada, setFichaConfirmada] = useState(false);
+  const [estadoActualizacion, setEstadoActualizacion] = useState<'vigente' | 'vencida' | 'incompleta'>('vencida');
+  const [mensajeAntiguedad, setMensajeAntiguedad] = useState('');
+  const [fechaUltimaActualizacion, setFechaUltimaActualizacion] = useState<string | null>(null);
+
   // Control del Wizard
   const [pasoActual, setPasoActual] = useState(1);
-  const irSiguientePaso = () => setPasoActual(prev => prev + 1);
+  const irSiguientePaso = () => {
+    if (pasoActual === 1 && (!estudiante || !fichaConfirmada)) {
+      alert("Es obligatorio actualizar y confirmar los antecedentes del estudiante y su apoderado antes de continuar.");
+      return;
+    }
+    setPasoActual(prev => prev + 1);
+  };
   const irPasoAnterior = () => setPasoActual(prev => prev - 1);
 
   const [rutBusqueda, setRutBusqueda] = useState('');
@@ -107,6 +120,14 @@ export const useNuevaMatricula = () => {
     telefono_apoderado: '',
     correo_apoderado: ''
   });
+
+  const handleFaltantesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormFaltantes(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
 
   const [colegioProcedencia, setColegioProcedencia] = useState('');
   const [esTraslado, setEsTraslado] = useState(false);
@@ -328,7 +349,6 @@ export const useNuevaMatricula = () => {
     }));
   };
 
-  // 🌟 BUSCADOR ROBUSTO: Normaliza tildes, mayúsculas, espacios y formatos de RUT
   const normalizarTexto = (str: any) => {
     if (!str) return '';
     return String(str)
@@ -354,8 +374,6 @@ export const useNuevaMatricula = () => {
 
     const textoNormalizado = normalizarTexto(texto);
     const textoRut = limpiarRUT(texto);
-
-    // Mapa para evitar duplicados en la lista desplegable
     const mapaUnicos = new Map();
 
     for (const est of estudiantesDb) {
@@ -382,7 +400,6 @@ export const useNuevaMatricula = () => {
         }
       }
 
-      // Detener al encontrar 20 sugerencias para máximo rendimiento
       if (mapaUnicos.size >= 20) break;
     }
 
@@ -395,44 +412,90 @@ export const useNuevaMatricula = () => {
     const personal = datos.personal || datos || {};
     const apoderado = datos.apoderado || {};
 
+    const rawFechaAct = personal.fecha_actualizacion || datos.fecha_actualizacion || null;
+    setFechaUltimaActualizacion(rawFechaAct);
+
     setEstudiante({
       id: personal.id || personal.id_estudiante,
       nombres: personal.nombres || '',
       apellidos: personal.apellidos || `${personal.apellido_paterno || ''} ${personal.apellido_materno || ''}`.trim(),
       run: personal.run || personal.run_ipe || estRun,
-      domicilio: personal.domicilio || ''
+      domicilio: personal.domicilio || '',
+      fecha_actualizacion: rawFechaAct
     });
     setEstudianteCompleto(datos);
 
+    // Precargar formFaltantes
+    let nombresApVal = apoderado.nombres || apoderado.nombre || '';
+    let patApVal = apoderado.apellido_paterno || '';
+    let matApVal = apoderado.apellido_materno || '';
+
+    if (nombresApVal && !patApVal && nombresApVal !== 'Pendiente') {
+      const partes = nombresApVal.trim().split(' ');
+      if (partes.length >= 3) {
+        nombresApVal = partes.slice(0, -2).join(' ');
+        patApVal = partes[partes.length - 2];
+        matApVal = partes[partes.length - 1];
+      } else if (partes.length === 2) {
+        nombresApVal = partes[0];
+        patApVal = partes[1];
+      }
+    }
+
+    const domEst = personal.domicilio && personal.domicilio !== 'Sin registrar' && personal.domicilio !== 'Sin registro' ? personal.domicilio : '';
+    const rutAp = apoderado.rut || apoderado.rut_pasaporte || '';
+    const telAp = apoderado.telefono && apoderado.telefono !== '-' ? apoderado.telefono : '';
+    const corAp = apoderado.correo || apoderado.correo_electronico || '';
+    const domAp = apoderado.domicilio && apoderado.domicilio !== 'Sin registrar' && apoderado.domicilio !== 'Sin registro' ? apoderado.domicilio : '';
+
+    setFormFaltantes({
+      domicilio_estudiante: domEst,
+      rut_apoderado: rutAp !== 'Sin registrar' ? rutAp : '',
+      nombres_apoderado: nombresApVal !== 'Pendiente' ? nombresApVal : '',
+      apellido_paterno_apoderado: patApVal,
+      apellido_materno_apoderado: matApVal,
+      domicilio_apoderado: domAp,
+      telefono_apoderado: telAp,
+      correo_apoderado: corAp !== '-' ? corAp : ''
+    });
+
     const faltan: string[] = [];
-    const domEst = personal.domicilio;
-    if (!domEst || domEst === "Sin registrar" || domEst === "Sin registro") faltan.push("Domicilio del Estudiante");
-    
-    const rutAp = apoderado.rut || apoderado.rut_pasaporte;
+    if (!domEst) faltan.push("Domicilio del Estudiante");
     if (!rutAp || rutAp === "Sin registrar") faltan.push("RUT del Apoderado");
-    
-    const nomAp = apoderado.nombre || apoderado.nombres;
-    if (!nomAp || nomAp === "Pendiente") faltan.push("Nombre Completo del Apoderado");
-    
-    const telAp = apoderado.telefono;
-    if (!telAp || telAp === "-") faltan.push("Teléfono del Apoderado");
-    
-    const corAp = apoderado.correo || apoderado.correo_electronico;
+    if (!nombresApVal || nombresApVal === "Pendiente") faltan.push("Nombres del Apoderado");
+    if (!patApVal) faltan.push("Apellido Paterno del Apoderado");
+    if (!telAp) faltan.push("Teléfono del Apoderado");
     if (!corAp || corAp === "-") faltan.push("Correo del Apoderado");
-    
+    if (!domAp) faltan.push("Domicilio del Apoderado");
+
     setDatosFaltantes(faltan);
 
+    // EVALUACIÓN DE ANTIGÜEDAD (1 AÑO)
     if (faltan.length > 0) {
-      setFormFaltantes({
-        domicilio_estudiante: domEst && domEst !== "Sin registrar" ? domEst : '',
-        rut_apoderado: rutAp && rutAp !== "Sin registrar" ? rutAp : '',
-        nombres_apoderado: '',
-        apellido_paterno_apoderado: '',
-        apellido_materno_apoderado: '',
-        domicilio_apoderado: '',
-        telefono_apoderado: telAp && telAp !== "-" ? telAp : '',
-        correo_apoderado: corAp && corAp !== "-" ? corAp : ''
-      });
+      setEstadoActualizacion('incompleta');
+      setFichaConfirmada(false);
+      setMensajeAntiguedad(`Faltan ${faltan.length} dato(s) obligatorio(s) en la ficha.`);
+    } else if (!rawFechaAct) {
+      setEstadoActualizacion('vencida');
+      setFichaConfirmada(false);
+      setMensajeAntiguedad("La información nunca ha sido actualizada desde su registro inicial.");
+    } else {
+      const fechaAct = new Date(rawFechaAct);
+      const hoy = new Date();
+      const diffMs = hoy.getTime() - fechaAct.getTime();
+      const diasTranscurridos = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diasTranscurridos > 365) {
+        // MÁS DE 1 AÑO -> OBLIGATORIO ACTUALIZAR
+        setEstadoActualizacion('vencida');
+        setFichaConfirmada(false);
+        setMensajeAntiguedad(`Información desactualizada (última actualización hace ${diasTranscurridos} días, superando el límite de 1 año).`);
+      } else {
+        // MENOS DE 1 AÑO Y COMPLETA -> VIGENTE (PASA DIRECTO)
+        setEstadoActualizacion('vigente');
+        setFichaConfirmada(true);
+        setMensajeAntiguedad(`Información vigente (actualizada hace ${diasTranscurridos} días).`);
+      }
     }
 
     try {
@@ -442,7 +505,6 @@ export const useNuevaMatricula = () => {
       });
       if (resProcedencia.ok) {
           const procedencia = await resProcedencia.json();
-          
           if (procedencia.encontrado) {
               setIdEstablecimientoPrevio(String(procedencia.id_establecimiento_previo)); 
               setColegioProcedencia(`${procedencia.colegio_procedencia} (RBD: ${procedencia.rbd_procedencia})`);
@@ -493,6 +555,7 @@ export const useNuevaMatricula = () => {
     setCargando(true);
     setError('');
     setHuboPrecarga(false);
+    setFichaConfirmada(false);
     
     try {
       const token = localStorage.getItem('token');
@@ -540,10 +603,13 @@ export const useNuevaMatricula = () => {
       
       const datosNuevos = await refreshRes.json();
       await procesarEstudiante(datosNuevos, rutVal); 
+      setFichaConfirmada(true);
+      setEstadoActualizacion('vigente');
+      setMensajeAntiguedad("Información recién actualizada y confirmada con éxito.");
       setModalFaltantes(false);
       
     } catch (err: any) {
-      alert(err.message);
+      alert("Error al actualizar la ficha: " + err.message);
     } finally {
       setGuardandoFaltantes(false);
     }
@@ -555,9 +621,6 @@ export const useNuevaMatricula = () => {
 
   const colegioSeleccionadoObj = establecimientosDb.find(e => String(e.id_establecimiento) === String(formulario.id_establecimiento));
   const esColegioEMTP = colegioSeleccionadoObj && ['1518', '1519', '1525'].includes(String(colegioSeleccionadoObj.rbd));
-
-  const nombreCurso = (formulario.cursoSeleccionado || '').toLowerCase();
-  const esCuartoMedio = nombreCurso.includes('4') && nombreCurso.includes('medio');
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -600,7 +663,7 @@ export const useNuevaMatricula = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!estudiante || datosFaltantes.length > 0) return;
+    if (!estudiante || !fichaConfirmada) return;
 
     setCargando(true);
     setError('');
@@ -708,13 +771,15 @@ export const useNuevaMatricula = () => {
     sugerencias, mostrarSugerencias, setMostrarSugerencias, huboPrecarga, setHuboPrecarga,
     alertasTransicion, setAlertasTransicion, datosFaltantes, setDatosFaltantes,
     modalFaltantes, setModalFaltantes, esPerfilColegio, matriculaExitosa, setMatriculaExitosa,
-    formFaltantes, setFormFaltantes, colegioProcedencia, esTraslado, guardandoFaltantes,
+    formFaltantes, setFormFaltantes, handleFaltantesChange, colegioProcedencia, esTraslado, guardandoFaltantes,
     establecimientosDb, formulario, checkCertNotas, setCheckCertNotas, checkCertRetiro, setCheckCertRetiro,
     idEstablecimientoPrevio, codigosDisponibles, cursosDisponibles, 
     archivoResolucion, setArchivoResolucion, 
     pasoActual, irSiguientePaso, irPasoAnterior,
     seleccionarCurso, handleEscribirBuscador, seleccionarEstudiante, guardarDatosFaltantes, copiarDomicilio, handleChange, generarComprobantePDF, handleSubmit, setCursoPrevio, setCodigoPrevio, setIdEstablecimientoPrevio,
-    esColegioEMTP, esCuartoMedio, cuposOcupados, limiteCupos, estudianteCompleto,
-    modalSalidaAbierto, confirmarSalida, cancelarSalida
+    esColegioEMTP, cuposOcupados, limiteCupos, estudianteCompleto,
+    modalSalidaAbierto, confirmarSalida, cancelarSalida,
+    // Estados de antigüedad y barrera
+    fichaConfirmada, setFichaConfirmada, estadoActualizacion, mensajeAntiguedad, fechaUltimaActualizacion
   };
 };

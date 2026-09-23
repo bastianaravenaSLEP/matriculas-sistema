@@ -60,14 +60,42 @@ class CrearEstudianteRequest(BaseModel):
 
 
 class ActualizarEstudianteRequest(BaseModel):
-    domicilio_estudiante: str
-    rut_apoderado: str
-    nombres_apoderado: str
-    apellido_paterno_apoderado: str
-    apellido_materno_apoderado: str
-    domicilio_apoderado: str
-    telefono_apoderado: str
-    correo_apoderado: str
+    # 1. Domicilio Estudiante
+    domicilio_estudiante: Optional[str] = None
+    
+    # 2. Apoderado Titular
+    rut_apoderado: Optional[str] = None
+    nombres_apoderado: Optional[str] = None
+    apellido_paterno_apoderado: Optional[str] = None
+    apellido_materno_apoderado: Optional[str] = None
+    domicilio_apoderado: Optional[str] = None
+    telefono_apoderado: Optional[str] = None
+    correo_apoderado: Optional[str] = None
+    relacion_apoderado: Optional[str] = None
+
+    # 3. Apoderado Suplente
+    tiene_suplente: Optional[bool] = False
+    rut_suplente: Optional[str] = None
+    nombres_suplente: Optional[str] = None
+    apellido_paterno_suplente: Optional[str] = None
+    apellido_materno_suplente: Optional[str] = None
+    domicilio_suplente: Optional[str] = None
+    telefono_suplente: Optional[str] = None
+    correo_suplente: Optional[str] = None
+    relacion_suplente: Optional[str] = None
+
+    # 4. Ficha Médica
+    actualizar_salud: Optional[bool] = False
+    sistema_salud: Optional[str] = None
+    letra_fonasa: Optional[str] = None
+    cesfam: Optional[str] = None
+    centro_emergencia: Optional[str] = None
+    alergias: Optional[str] = None
+    diagnostico_medico: Optional[str] = None
+    medico_tratante: Optional[str] = None
+    medicamento: Optional[str] = None
+    nee: Optional[str] = None
+    nee_tipo: Optional[str] = None
 
 @router.get("")
 def obtener_estudiantes(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):

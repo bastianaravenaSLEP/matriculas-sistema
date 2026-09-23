@@ -48,8 +48,8 @@ def obtener_ficha_estudiante_db(rut: str):
     try:
         cur.execute("""
             SELECT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.fecha_nacimiento, e.domicilio,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico,
-                   asup.rut_pasaporte, asup.nombres, asup.apellido_paterno, asup.apellido_materno, asup.telefono, asup.correo_electronico,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico, a.domicilio, a.relacion_estudiante,
+                   asup.rut_pasaporte, asup.nombres, asup.apellido_paterno, asup.apellido_materno, asup.telefono, asup.correo_electronico, asup.domicilio, asup.relacion_estudiante,
                    fs.id_ficha, fs.sistema_salud, fs.letra_fonasa, fs.cesfam, fs.centro_emergencia, 
                    fs.alergias, fs.diagnostico_medico, fs.medico_tratante, fs.medicamento, fs.nee, fs.nee_tipo
             FROM estudiante e
@@ -82,7 +82,7 @@ def obtener_ficha_estudiante_db(rut: str):
                 "id": estudiante_db[0], 
                 "run": estudiante_db[1], 
                 "nombres": estudiante_db[2],
-                "apellidos": f"{estudiante_db[3]} {estudiante_db[4]}",
+                "apellidos": f"{estudiante_db[3]} {estudiante_db[4] or ''}".strip(),
                 "fecha_nacimiento": str(estudiante_db[5]) if estudiante_db[5] else "No registrada",
                 "domicilio": estudiante_db[6] if estudiante_db[6] else "Sin registrar",
                 "rbd_actual": ultimo_rbd,
@@ -90,28 +90,38 @@ def obtener_ficha_estudiante_db(rut: str):
             },
             "apoderado": {
                 "rut": estudiante_db[7] if estudiante_db[7] else "Sin registrar",
+                "nombres": estudiante_db[8] or "",
+                "apellido_paterno": estudiante_db[9] or "",
+                "apellido_materno": estudiante_db[10] or "",
                 "nombre": f"{estudiante_db[8] or ''} {estudiante_db[9] or ''} {estudiante_db[10] or ''}".strip() if estudiante_db[8] else "Pendiente",
                 "telefono": estudiante_db[11] if estudiante_db[11] else "-",
-                "correo": estudiante_db[12] if estudiante_db[12] else "-"
+                "correo": estudiante_db[12] if estudiante_db[12] else "-",
+                "domicilio": estudiante_db[13] if estudiante_db[13] else "",
+                "relacion": estudiante_db[14] or "Titular"
             },
             "apoderado_suplente": {
-                "rut": estudiante_db[13],
-                "nombre": f"{estudiante_db[14] or ''} {estudiante_db[15] or ''} {estudiante_db[16] or ''}".strip(),
-                "telefono": estudiante_db[17] if estudiante_db[17] else "-",
-                "correo": estudiante_db[18] if estudiante_db[18] else "-"
-            } if estudiante_db[13] else None,
+                "rut": estudiante_db[15],
+                "nombres": estudiante_db[16] or "",
+                "apellido_paterno": estudiante_db[17] or "",
+                "apellido_materno": estudiante_db[18] or "",
+                "nombre": f"{estudiante_db[16] or ''} {estudiante_db[17] or ''} {estudiante_db[18] or ''}".strip(),
+                "telefono": estudiante_db[19] if estudiante_db[19] else "-",
+                "correo": estudiante_db[20] if estudiante_db[20] else "-",
+                "domicilio": estudiante_db[21] if estudiante_db[21] else "",
+                "relacion": estudiante_db[22] or "Suplente"
+            } if estudiante_db[15] else None,
             "salud": {
-                "sistema_salud": estudiante_db[20] or "No informado",
-                "letra_fonasa": estudiante_db[21] or "-",
-                "cesfam": estudiante_db[22] or "No informado",
-                "centro_emergencia": estudiante_db[23] or "No informado",
-                "alergias": estudiante_db[24] or "",
-                "diagnostico_medico": estudiante_db[25] or "No",
-                "medico_tratante": estudiante_db[26] or "No informado",
-                "medicamento": estudiante_db[27] or "",
-                "nee": estudiante_db[28] or "No",
-                "nee_tipo": estudiante_db[29] or "No aplica"
-            } if estudiante_db[19] is not None else None,
+                "sistema_salud": estudiante_db[24] or "No informado",
+                "letra_fonasa": estudiante_db[25] or "-",
+                "cesfam": estudiante_db[26] or "No informado",
+                "centro_emergencia": estudiante_db[27] or "No informado",
+                "alergias": estudiante_db[28] or "",
+                "diagnostico_medico": estudiante_db[29] or "No",
+                "medico_tratante": estudiante_db[30] or "No informado",
+                "medicamento": estudiante_db[31] or "",
+                "nee": estudiante_db[32] or "No",
+                "nee_tipo": estudiante_db[33] or "No aplica"
+            } if estudiante_db[23] is not None else None,
             "historial": [
                 {
                     "id": f[0], "anio": f[1], 
@@ -235,51 +245,164 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("UPDATE estudiante SET domicilio = %s WHERE run_ipe = %s RETURNING id_apoderado_principal", 
-                    (req.domicilio_estudiante, rut))
-        resultado = cur.fetchone()
-        if not resultado:
+        # 1. Obtener estudiante existente
+        cur.execute("""
+            SELECT id_estudiante, id_apoderado_principal, id_apoderado_suplente 
+            FROM estudiante WHERE run_ipe = %s
+        """, (rut,))
+        est_db = cur.fetchone()
+        if not est_db:
             raise HTTPException(status_code=404, detail="Estudiante no encontrado")
             
-        id_apoderado = resultado[0]
-        if id_apoderado:
+        id_estudiante, id_apod_princ, id_apod_supl = est_db
+
+        # 2. Actualizar Domicilio y Fecha de Actualización de Estudiante
+        if req.domicilio_estudiante is not None:
             cur.execute("""
-                UPDATE apoderado 
-                SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
-                    domicilio = %s, telefono = %s, correo_electronico = %s 
-                WHERE id_apoderado = %s
-            """, (req.rut_apoderado, req.nombres_apoderado, req.apellido_paterno_apoderado, 
-                  req.apellido_materno_apoderado, req.domicilio_apoderado, req.telefono_apoderado, 
-                  req.correo_apoderado, id_apoderado))
-        else:
+                UPDATE estudiante 
+                SET domicilio = %s
+                WHERE id_estudiante = %s
+            """, (req.domicilio_estudiante, id_estudiante))
+            
+        try:
             cur.execute("""
-                INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico)
-                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
-            """, (req.rut_apoderado, req.nombres_apoderado, req.apellido_paterno_apoderado, 
-                  req.apellido_materno_apoderado, req.domicilio_apoderado, req.telefono_apoderado, 
-                  req.correo_apoderado))
-            nuevo_id_apoderado = cur.fetchone()[0]
-            cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE run_ipe = %s", 
-                        (nuevo_id_apoderado, rut))
-        
+                UPDATE estudiante 
+                SET fecha_actualizacion = CURRENT_TIMESTAMP 
+                WHERE id_estudiante = %s
+            """, (id_estudiante,))
+        except Exception:
+            conn.rollback()
+            if req.domicilio_estudiante is not None:
+                cur.execute("UPDATE estudiante SET domicilio = %s WHERE id_estudiante = %s", (req.domicilio_estudiante, id_estudiante))
+
+        # 3. Procesar Apoderado Principal
+        if req.rut_apoderado:
+            nom_a = req.nombres_apoderado or "Apoderado"
+            pat_a = req.apellido_paterno_apoderado or "Titular"
+            mat_a = req.apellido_materno_apoderado or ""
+            dom_a = req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
+            tel_a = req.telefono_apoderado or ""
+            cor_a = req.correo_apoderado or ""
+            rel_a = getattr(req, "relacion_apoderado", None) or "Titular"
+
+            if id_apod_princ:
+                cur.execute("""
+                    UPDATE apoderado 
+                    SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                        domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
+                    WHERE id_apoderado = %s
+                """, (req.rut_apoderado, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
+            else:
+                cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (req.rut_apoderado,))
+                apod_exist = cur.fetchone()
+                if apod_exist:
+                    id_apod_princ = apod_exist[0]
+                    cur.execute("""
+                        UPDATE apoderado 
+                        SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                            domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
+                        WHERE id_apoderado = %s
+                    """, (nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
+                else:
+                    cur.execute("""
+                        INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico, relacion_estudiante)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
+                    """, (req.rut_apoderado, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a))
+                    id_apod_princ = cur.fetchone()[0]
+                
+                cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE id_estudiante = %s", (id_apod_princ, id_estudiante))
+
+        # 4. Procesar Apoderado Suplente
+        if getattr(req, "tiene_suplente", False) and getattr(req, "rut_suplente", None):
+            nom_s = req.nombres_suplente or "Apoderado"
+            pat_s = req.apellido_paterno_suplente or "Suplente"
+            mat_s = req.apellido_materno_suplente or ""
+            dom_s = req.domicilio_suplente or req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
+            tel_s = req.telefono_suplente or ""
+            cor_s = req.correo_suplente or ""
+            rel_s = req.relacion_suplente or "Suplente"
+
+            if id_apod_supl:
+                cur.execute("""
+                    UPDATE apoderado 
+                    SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                        domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
+                    WHERE id_apoderado = %s
+                """, (req.rut_suplente, nom_s, pat_s, mat_s, dom_s, tel_s, cor_s, rel_s, id_apod_supl))
+            else:
+                cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (req.rut_suplente,))
+                sup_exist = cur.fetchone()
+                if sup_exist:
+                    id_apod_supl = sup_exist[0]
+                    cur.execute("""
+                        UPDATE apoderado 
+                        SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                            domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
+                        WHERE id_apoderado = %s
+                    """, (nom_s, pat_s, mat_s, dom_s, tel_s, cor_s, rel_s, id_apod_supl))
+                else:
+                    cur.execute("""
+                        INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico, relacion_estudiante)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
+                    """, (req.rut_suplente, nom_s, pat_s, mat_s, dom_s, tel_s, cor_s, rel_s))
+                    id_apod_supl = cur.fetchone()[0]
+
+                cur.execute("UPDATE estudiante SET id_apoderado_suplente = %s WHERE id_estudiante = %s", (id_apod_supl, id_estudiante))
+        elif getattr(req, "tiene_suplente", None) is False:
+            cur.execute("UPDATE estudiante SET id_apoderado_suplente = NULL WHERE id_estudiante = %s", (id_estudiante,))
+
+        # 5. Procesar Ficha Médica / Salud
+        if getattr(req, "actualizar_salud", False) or req.sistema_salud:
+            sis_salud = req.sistema_salud or "No informado"
+            let_fon = req.letra_fonasa or "-"
+            cesfam = req.cesfam or "No informado"
+            emergencia = req.centro_emergencia or "No informado"
+            alergias = req.alergias or ""
+            diag_med = req.diagnostico_medico or "No"
+            med_trat = req.medico_tratante or "No informado"
+            meds = req.medicamento or ""
+            nee = req.nee or "No"
+            nee_tipo = req.nee_tipo or "No aplica"
+
+            cur.execute("""
+                INSERT INTO ficha_salud (
+                    id_estudiante, sistema_salud, letra_fonasa, cesfam, centro_emergencia,
+                    alergias, diagnostico_medico, medico_tratante, medicamento, nee, nee_tipo,
+                    fecha_actualizacion
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ON CONFLICT (id_estudiante) DO UPDATE SET
+                    sistema_salud = EXCLUDED.sistema_salud,
+                    letra_fonasa = EXCLUDED.letra_fonasa,
+                    cesfam = EXCLUDED.cesfam,
+                    centro_emergencia = EXCLUDED.centro_emergencia,
+                    alergias = EXCLUDED.alergias,
+                    diagnostico_medico = EXCLUDED.diagnostico_medico,
+                    medico_tratante = EXCLUDED.medico_tratante,
+                    medicamento = EXCLUDED.medicamento,
+                    nee = EXCLUDED.nee,
+                    nee_tipo = EXCLUDED.nee_tipo,
+                    fecha_actualizacion = CURRENT_TIMESTAMP;
+            """, (id_estudiante, sis_salud, let_fon, cesfam, emergencia, alergias, diag_med, med_trat, meds, nee, nee_tipo))
+
+        # 6. Auditoría
         cur.execute("""
             SELECT id_matricula FROM matricula 
-            WHERE id_estudiante = (SELECT id_estudiante FROM estudiante WHERE run_ipe = %s)
+            WHERE id_estudiante = %s
             ORDER BY id_matricula DESC LIMIT 1
-        """, (rut,))
+        """, (id_estudiante,))
         mat_result = cur.fetchone()
 
         if mat_result:
             id_matricula = mat_result[0]
             datos_ant = json.dumps({"Ficha_Personal": "Datos Anteriores"})
-            datos_nuev = json.dumps({"Ficha_Personal": "Datos Actualizados"})
+            datos_nuev = json.dumps({"Ficha_Personal": "Datos Actualizados Completos"})
             cur.execute("""
                 INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
                 VALUES (%s, 'UPDATE', %s, %s, %s)
             """, (id_matricula, id_usuario, datos_ant, datos_nuev))
 
         conn.commit()
-        return {"mensaje": "Datos actualizados exitosamente"}
+        return {"mensaje": "Datos y ficha médica actualizados exitosamente"}
     except Exception as e:
         conn.rollback()
         print(f"Error BD: {e}")

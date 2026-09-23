@@ -336,16 +336,24 @@ def generar_pdf_certificado_db(id_matricula: int, tipo: str):
         conn.close()
 
 async def procesar_carga_masiva_db(archivos, usuario_actual):
+    """
+    Carga masiva adaptada para archivos SIGE (.xls / HTML):
+    - Detecta traslados/cambios de curso y asigna un nuevo correlativo en el curso de destino.
+    - Respeta correlativos de alumnos que continúan en el mismo curso.
+    - Procesa en orden cronológico para asegurar que la matrícula activa quede vigente.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
         total_alumnos_nuevos = 0
         total_alumnos_actualizados = 0
+        total_alumnos_trasladados = 0
         id_ejecutor = usuario_actual.get('id_usuario', 1)
         correlativos_actuales = {}
 
         for archivo in archivos:
             contenido = await archivo.read()
+            tablas = None
             try:
                 tablas = pd.read_html(io.BytesIO(contenido), encoding='latin1')
             except Exception:
@@ -356,6 +364,18 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
             
             if not tablas: continue
             df = tablas[0].where(pd.notnull(tablas[0]), None)
+
+            # Ordenar para que si un alumno tiene 2 filas (retirado de un curso y activo en otro),
+            # se procese primero el retiro y al final su curso activo definitivo.
+            def es_retirado(val):
+                s = str(val).strip()
+                if not s or s == 'None' or s.startswith('1900'):
+                    return 1  # Activo -> procesar al final
+                return 0      # Retirado -> procesar primero
+
+            df['orden_activo'] = df['Fecha Retiro'].apply(es_retirado)
+            df['f_incorp_dt'] = pd.to_datetime(df['Fecha Incorporación Curso'], errors='coerce')
+            df = df.sort_values(by=['orden_activo', 'f_incorp_dt'], ascending=[True, True]).reset_index(drop=True)
             
             for index, row in df.iterrows():
                 rbd_excel = str(row.get('RBD', '')).strip()
@@ -367,7 +387,10 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                     if resultado_colegio:
                         id_colegio = resultado_colegio[0]
                     else:
-                        cur.execute("INSERT INTO establecimiento (rbd, nombre, tipo_local) VALUES (%s, %s, 'Generado por SIGE') RETURNING id_establecimiento;", (rbd_excel, f"Colegio RBD {rbd_excel}"))
+                        cur.execute(
+                            "INSERT INTO establecimiento (rbd, nombre, tipo_local) VALUES (%s, %s, 'Generado por SIGE') RETURNING id_establecimiento;", 
+                            (rbd_excel, f"Colegio RBD {rbd_excel}")
+                        )
                         id_colegio = cur.fetchone()[0]
 
                 rut_alumno = str(row.get('Run', '')).strip()
@@ -375,10 +398,8 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                 if rut_alumno == 'None' or not rut_alumno: continue
                 run_completo = f"{rut_alumno}-{dv_alumno}"
                 
-                nombres = str(row.get('Nombres', '')).strip()
-                if not nombres or nombres == 'None': nombres = "Sin Nombre"
-                ap_paterno = str(row.get('Apellido Paterno', '')).strip()
-                if not ap_paterno or ap_paterno == 'None': ap_paterno = "Sin Apellido"
+                nombres = str(row.get('Nombres', '')).strip() or "Sin Nombre"
+                ap_paterno = str(row.get('Apellido Paterno', '')).strip() or "Sin Apellido"
                 ap_materno = str(row.get('Apellido Materno', '')).strip()
                 if ap_materno == 'None': ap_materno = ''
 
@@ -394,8 +415,7 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                 comuna_excel = str(row.get('Comuna Residencia', '')).strip()
                 dir_limpia = "" if direccion_excel == 'None' else direccion_excel
                 comuna_limpia = "" if comuna_excel == 'None' else comuna_excel
-                domicilio_final = f"{dir_limpia} {comuna_limpia}".strip()
-                if not domicilio_final: domicilio_final = "Sin registro"
+                domicilio_final = f"{dir_limpia} {comuna_limpia}".strip() or "Sin registro"
 
                 try: anio_escolar = int(float(row.get('Año', 2026)))
                 except: anio_escolar = 2026
@@ -427,6 +447,7 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                 if cod_grado is not None:
                     cur.execute("INSERT INTO catalogo_grado (codigo, descripcion) VALUES (%s, %s) ON CONFLICT (codigo) DO NOTHING;", (cod_grado, desc_grado))
 
+                # Registrar o actualizar estudiante
                 cur.execute("""
                     INSERT INTO estudiante (run_ipe, nombres, apellido_paterno, apellido_materno, sexo, fecha_nacimiento, domicilio)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -436,7 +457,8 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                 """, (run_completo, nombres, ap_paterno, ap_materno, sexo_db, fecha_nac_str, domicilio_final))
                 
                 resultado_estudiante = cur.fetchone()
-                if resultado_estudiante: id_estudiante = resultado_estudiante[0]
+                if resultado_estudiante: 
+                    id_estudiante = resultado_estudiante[0]
                 else:
                     cur.execute("SELECT id_estudiante FROM estudiante WHERE run_ipe = %s", (run_completo,))
                     id_estudiante = cur.fetchone()[0]
@@ -444,20 +466,79 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                 curso_texto = f"{desc_grado} {letra_curso}".strip() if desc_grado else "Sin Asignar"
                 nivel_calculado = determinar_nivel_backend(curso_texto, cod_ensenanza)
                 
-                cur.execute("SELECT id_matricula FROM matricula WHERE id_estudiante = %s AND id_establecimiento = %s AND anio_escolar = %s", (id_estudiante, id_colegio, anio_escolar))
+                # Verificar si el alumno ya tiene matrícula previa en este establecimiento y año
+                cur.execute("""
+                    SELECT id_matricula, curso, cod_tipo_ensenanza, numero_correlativo 
+                    FROM matricula 
+                    WHERE id_estudiante = %s AND id_establecimiento = %s AND anio_escolar = %s
+                """, (id_estudiante, id_colegio, anio_escolar))
                 matricula_existente = cur.fetchone()
                 
                 if matricula_existente:
-                    cur.execute("""
-                        UPDATE matricula SET cod_tipo_ensenanza = %s, cod_grado = %s, letra_curso = %s, curso = %s, fecha_retiro = %s, estado = %s WHERE id_matricula = %s
-                    """, (cod_ensenanza, cod_grado, letra_curso, curso_texto, fecha_retiro_db, estado_matricula, matricula_existente[0]))
-                    total_alumnos_actualizados += 1
+                    id_mat_antigua, curso_antiguo, cod_ens_antiguo, folio_antiguo = matricula_existente
+                    
+                    # ¿El alumno cambió de curso o plan de enseñanza?
+                    if curso_antiguo != curso_texto or cod_ens_antiguo != cod_ensenanza:
+                        # TRASLADO: Asignar nuevo correlativo en el curso nuevo
+                        llave_correlativo = (id_colegio, anio_escolar, cod_ensenanza, curso_texto)
+                        if llave_correlativo not in correlativos_actuales:
+                            cur.execute("""
+                                SELECT COALESCE(MAX(numero_correlativo), 0) FROM matricula 
+                                WHERE id_establecimiento = %s AND anio_escolar = %s 
+                                  AND cod_tipo_ensenanza IS NOT DISTINCT FROM %s 
+                                  AND curso IS NOT DISTINCT FROM %s
+                            """, (id_colegio, anio_escolar, cod_ensenanza, curso_texto))
+                            correlativos_actuales[llave_correlativo] = cur.fetchone()[0]
+
+                        correlativos_actuales[llave_correlativo] += 1
+                        nuevo_correlativo = correlativos_actuales[llave_correlativo]
+
+                        obs_traslado = f"Trasladado desde '{curso_antiguo}' (Folio anterior: #{folio_antiguo})"
+                        cur.execute("""
+                            UPDATE matricula SET 
+                                cod_tipo_ensenanza = %s, 
+                                cod_grado = %s, 
+                                letra_curso = %s, 
+                                curso = %s, 
+                                numero_correlativo = %s, 
+                                nivel_ensenanza = %s,
+                                fecha_retiro = %s, 
+                                estado = %s,
+                                motivo_cambio_curso = COALESCE(motivo_cambio_curso, %s),
+                                observaciones = CASE 
+                                    WHEN observaciones IS NULL OR observaciones = '' THEN %s
+                                    WHEN observaciones LIKE %s THEN observaciones
+                                    ELSE CONCAT(observaciones, ' | ', %s)
+                                END
+                            WHERE id_matricula = %s
+                        """, (
+                            cod_ensenanza, cod_grado, letra_curso, curso_texto, 
+                            nuevo_correlativo, nivel_calculado, fecha_retiro_db, 
+                            estado_matricula, obs_traslado, obs_traslado, f"%{obs_traslado}%", obs_traslado, 
+                            id_mat_antigua
+                        ))
+                        total_alumnos_trasladados += 1
+                    else:
+                        # MISMO CURSO: Mantiene su correlativo original
+                        cur.execute("""
+                            UPDATE matricula SET 
+                                cod_grado = %s, 
+                                letra_curso = %s, 
+                                fecha_retiro = %s, 
+                                estado = %s,
+                                nivel_ensenanza = %s
+                            WHERE id_matricula = %s
+                        """, (cod_grado, letra_curso, fecha_retiro_db, estado_matricula, nivel_calculado, id_mat_antigua))
+                        total_alumnos_actualizados += 1
                 else:
+                    # MATRÍCULA NUEVA
                     llave_correlativo = (id_colegio, anio_escolar, cod_ensenanza, curso_texto)
                     if llave_correlativo not in correlativos_actuales:
                         cur.execute("""
                             SELECT COALESCE(MAX(numero_correlativo), 0) FROM matricula 
-                            WHERE id_establecimiento = %s AND anio_escolar = %s AND cod_tipo_ensenanza IS NOT DISTINCT FROM %s AND curso IS NOT DISTINCT FROM %s
+                            WHERE id_establecimiento = %s AND anio_escolar = %s 
+                              AND cod_tipo_ensenanza IS NOT DISTINCT FROM %s 
+                              AND curso IS NOT DISTINCT FROM %s
                         """, (id_colegio, anio_escolar, cod_ensenanza, curso_texto))
                         correlativos_actuales[llave_correlativo] = cur.fetchone()[0]
 
@@ -466,13 +547,21 @@ async def procesar_carga_masiva_db(archivos, usuario_actual):
                     
                     cur.execute("""
                         INSERT INTO matricula (
-                            id_estudiante, id_establecimiento, numero_correlativo, estado, cod_tipo_ensenanza, cod_grado, letra_curso, curso, nivel_ensenanza, anio_escolar, fecha_matricula, id_usuario_ejecutor, fecha_retiro
+                            id_estudiante, id_establecimiento, numero_correlativo, estado, 
+                            cod_tipo_ensenanza, cod_grado, letra_curso, curso, nivel_ensenanza, 
+                            anio_escolar, fecha_matricula, id_usuario_ejecutor, fecha_retiro
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (id_estudiante, id_colegio, nuevo_correlativo, estado_matricula, cod_ensenanza, cod_grado, letra_curso, curso_texto,nivel_calculado, anio_escolar, fecha_matricula_str, id_ejecutor, fecha_retiro_db))
+                    """, (
+                        id_estudiante, id_colegio, nuevo_correlativo, estado_matricula, 
+                        cod_ensenanza, cod_grado, letra_curso, curso_texto, nivel_calculado, 
+                        anio_escolar, fecha_matricula_str, id_ejecutor, fecha_retiro_db
+                    ))
                     total_alumnos_nuevos += 1
             
         conn.commit()
-        return {"mensaje": f"✅ Éxito: {len(archivos)} archivo(s) procesado(s). {total_alumnos_nuevos} alumnos nuevos matriculados y {total_alumnos_actualizados} actualizados."}
+        return {
+            "mensaje": f"✅ Éxito: {total_alumnos_nuevos} alumnos nuevos matriculados, {total_alumnos_trasladados} cambios de curso reasignados con nuevo folio y {total_alumnos_actualizados} actualizados."
+        }
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=f"Error en la carga masiva: {str(e)}")
