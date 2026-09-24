@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { API_BASE_URL } from '../../../config/api';
 
 export const useInicio2 = () => {
   const [estadisticas, setEstadisticas] = useState({
@@ -21,7 +22,7 @@ export const useInicio2 = () => {
     const token = localStorage.getItem('token');
     setCargando(true); 
 
-    let url = `http://127.0.0.1:8000/dashboard/estadisticas?`;
+    let url = `${API_BASE_URL}/dashboard/estadisticas?`;
     const params = new URLSearchParams();
     if (colegioSeleccionado) params.append('establecimiento_id', colegioSeleccionado);
     if (anioSeleccionado) params.append('anio', anioSeleccionado);

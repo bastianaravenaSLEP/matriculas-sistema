@@ -12,6 +12,7 @@ import Auditoria from '../features/auditoria/Auditoria';
 import Layout from '../components/Layout';
 import EncuestaCambioCurso from '../features/matriculas/CuestionarioCambio';
 import PortalFirmaApoderado from '../features/matriculas/PortalFirmaAPoderado';
+import { ToastProvider } from '../components/Toast';
 
 // ============================================================================
 // COMPONENTE GUARDIÁN (Protección de Rutas)
@@ -31,8 +32,9 @@ const RutaProtegida = ({ children }: { children: React.ReactNode }) => {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
+    <ToastProvider>
+      <BrowserRouter>
+        <Routes>
         
         {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
         <Route path="/login" element={<Login />} />
@@ -64,5 +66,6 @@ export default function App() {
 
       </Routes>
     </BrowserRouter>
-  );
+  </ToastProvider>
+);
 }

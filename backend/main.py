@@ -1,15 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from contextlib import asynccontextmanager
+from config import CORS_ORIGINS
+from database import get_db_pool, close_db_pool
+
 # Importamos los enrutadores que acabamos de crear
-from routers import auth, dashboard, estudiantes, matriculas,reportes,documentos
+from routers import auth, dashboard, estudiantes, matriculas, reportes, documentos
 from routers import establecimientos
 
-app = FastAPI(title="API Sistema RGM - SLEP Valparaíso")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Inicializar pool de conexiones
+    get_db_pool()
+    yield
+    # Shutdown: Cerrar conexiones del pool de manera limpia
+    close_db_pool()
+
+app = FastAPI(title="API Sistema RGM - SLEP Valparaíso", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=CORS_ORIGINS, 
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"],

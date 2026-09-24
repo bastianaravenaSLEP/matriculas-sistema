@@ -1,5 +1,5 @@
 # routers/estudiantes.py
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from typing import Optional
 from pydantic import BaseModel
 from security import obtener_usuario_actual, verificar_escritura
@@ -116,3 +116,19 @@ def crear_estudiante(payload: CrearEstudianteRequest, usuario_actual: dict = Dep
 def actualizar_datos_estudiante(rut: str, req: ActualizarEstudianteRequest, usuario_actual: dict = Depends(verificar_escritura)):
     id_usuario = usuario_actual.get("id_usuario")
     return estudiante_service.actualizar_datos_estudiante_db(rut, req, id_usuario)
+
+@router.post("/{rut}/documento-tutor")
+async def subir_documento_tutor(
+    rut: str,
+    archivo: UploadFile = File(...),
+    usuario_actual: dict = Depends(verificar_escritura)
+):
+    """
+    Sube el archivo PDF de la resolución/acreditación de tutor legal al almacenamiento de objetos o local.
+    """
+    contenido = await archivo.read()
+    if not contenido:
+        raise HTTPException(status_code=400, detail="El archivo enviado está vacío.")
+    return estudiante_service.guardar_documento_tutor_db(
+        rut, contenido, archivo.filename, usuario_actual
+    )

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { API_BASE_URL } from '../../../config/api';
 
 export const useCuestionarioRetiro = () => {
   const { id } = useParams(); 
@@ -24,7 +25,7 @@ export const useCuestionarioRetiro = () => {
     const textoConsolidado = `[Motivos de Retiro]:\n${motivosFormateados}\n\n[Detalles Adicionales]: ${motivoDetalle.trim() || 'Sin comentarios adicionales.'}`;
 
     try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${id}/cuestionario`, {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas/${id}/cuestionario`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

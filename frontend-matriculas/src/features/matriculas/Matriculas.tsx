@@ -1,7 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import ModalEmisionDocumento from '../../components/ModalEmisionDocumento';
+import ModalDescargaExcel from './components/ModalDescargaExcel';
 import { useMatriculas } from './hooks/useMatriculas'; 
+import { API_BASE_URL } from '../../config/api';
 
 export default function Matriculas() {
   const {
@@ -23,7 +25,8 @@ export default function Matriculas() {
     modalEmisionAbierto, setModalEmisionAbierto, datosEmision,
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, 
     iniciarCambioCurso, confirmarCambioCurso,
-    mostrarCupos, cuposOcupados, capacidadSala,descargandoExcel, exportarAExcel
+    mostrarCupos, cuposOcupados, capacidadSala, descargandoExcel, exportarAExcel,
+    modalExcelAbierto, setModalExcelAbierto,
   } = useMatriculas();
 
   return (
@@ -33,16 +36,16 @@ export default function Matriculas() {
         <h1 className="text-2xl font-bold text-gray-800">Registro de Matrículas</h1>
         <div className="flex flex-wrap gap-3">
           <button 
-            onClick={exportarAExcel}
-            disabled={descargandoExcel || matriculasProcesadas.length === 0}
+            onClick={() => setModalExcelAbierto(true)}
+            disabled={!colegioSeleccionado && !matriculasProcesadas.length}
             className={`flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors border ${
-            descargandoExcel || matriculasProcesadas.length === 0
-            ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-            : 'bg-white text-[#006BB9] border-[#006BB9] hover:bg-blue-50'
-             }`}
-                 >
-             {descargandoExcel ? 'Generando Excel...' : '📊 Descargar Excel'}
-         </button>
+              !colegioSeleccionado && !matriculasProcesadas.length
+              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
+              : 'bg-white text-[#006BB9] border-[#006BB9] hover:bg-blue-50'
+            }`}
+          >
+            Descargar Excel
+          </button>
           {puedeEditar && (
             <>
               <input 
@@ -57,7 +60,7 @@ export default function Matriculas() {
                   subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
                 }`}
               >
-                {subiendoArchivo ? 'Procesando archivos...' : '📄 Cargar SIGE / CSV'}
+                {subiendoArchivo ? 'Procesando archivos...' : 'Cargar SIGE / CSV'}
               </label>
               <Link to="/matriculas/nueva" className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                 + Renovar Matrícula
@@ -166,7 +169,14 @@ export default function Matriculas() {
                     <td className="p-4 text-gray-900 font-medium">#{mat.numero_correlativo}</td>
                     <td className="p-4 text-center"><span className="px-2 py-1 bg-indigo-100 text-indigo-700 font-bold rounded-md text-xs">{mat.rbd}</span></td>
                     <td className="p-4">
-                        <p className="font-bold text-gray-800">{mat.estudiante_nombre}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold text-gray-800">{mat.estudiante_nombre}</p>
+                          {mat.es_excedente && (
+                            <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded text-[10px] font-bold uppercase tracking-wider border border-orange-200" title={mat.numero_resolucion_excedente || 'Estudiante Excedente'}>
+                              Excedente
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-500">{mat.estudiante_rut}</p>
                     </td>
                     <td className="p-4">
@@ -188,20 +198,37 @@ export default function Matriculas() {
                     </td>
                     
                     <td className="p-4 text-right">
-                      {mat.estado === 'Activa' && (
-                        <div className="flex justify-end gap-3">
-                          <button onClick={() => abrirModalEmision(mat.id_matricula, 'MATRICULA')} className="text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
-                            Emitir Doc.
+                      <div className="flex justify-end items-center gap-3">
+                        {mat.ruta_documento_resolucion && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              const token = localStorage.getItem('token');
+                              window.open(`${API_BASE_URL}/documentos/adjunto?tipo=resolucion&id=${mat.id_matricula}&token=${token}`, '_blank');
+                            }}
+                            className="text-orange-600 hover:text-orange-800 font-semibold text-xs transition-colors underline cursor-pointer"
+                            title="Ver Resolución de Sobrecupo"
+                          >
+                            Resolución PDF
                           </button>
-                          
-                          {puedeEditar && mat.anio_escolar === anioActual && (
-                            <button onClick={() => iniciarCambioCurso(mat.id_matricula, mat.curso, mat.cod_tipo_ensenanza)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>                            )}
-                          {puedeEditar && (
-                            <button onClick={() => iniciarRetiro(mat.id_matricula)} className="text-red-600 hover:text-red-800 font-medium transition-colors">Retirar</button>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {mat.estado === 'Activa' && (
+                          <>
+                            <button onClick={() => abrirModalEmision(mat.id_matricula, 'MATRICULA')} className="text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
+                              Emitir Doc.
+                            </button>
+                            
+                            {puedeEditar && mat.anio_escolar === anioActual && (
+                              <button onClick={() => iniciarCambioCurso(mat.id_matricula, mat.curso, mat.cod_tipo_ensenanza)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>
+                            )}
+                            {puedeEditar && (
+                              <button onClick={() => iniciarRetiro(mat.id_matricula)} className="text-red-600 hover:text-red-800 font-medium transition-colors">Retirar</button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
+
                   </tr>
                 ))
               )}
@@ -349,6 +376,12 @@ export default function Matriculas() {
           tipoDocumento={datosEmision.tipo}
         />
       )}
+
+      <ModalDescargaExcel
+        abierto={modalExcelAbierto}
+        onCerrar={() => setModalExcelAbierto(false)}
+        colegioSeleccionado={colegioSeleccionado || ''}
+      />
     </div>
   );
 }

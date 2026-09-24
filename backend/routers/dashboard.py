@@ -14,5 +14,8 @@ def obtener_estadisticas_dashboard(
     anio: Optional[int] = None, 
     usuario_actual: dict = Depends(obtener_usuario_actual)
 ):
-    # Pasamos los filtros recibidos directamente al servicio
+    rol = usuario_actual.get("rol")
+    if rol in ["Colegio", "Visualizador_Colegio"]:
+        establecimiento_id = usuario_actual.get("id_establecimiento")
+
     return dashboard_service.obtener_estadisticas_dashboard_db(establecimiento_id, anio)

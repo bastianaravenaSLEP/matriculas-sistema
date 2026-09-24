@@ -1,7 +1,10 @@
 # services/estudiante_service.py
+import os
+import uuid
 from fastapi import HTTPException
 from database import get_db_connection
 import json
+from services import storage_service
 
 def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
     conn = get_db_connection()
@@ -27,6 +30,9 @@ def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
         estudiantes = [{
             "id": f[0], 
             "run": f[1], 
+            "nombres": f[2],
+            "apellido_paterno": f[3],
+            "apellido_materno": f[4] or "",
             "nombre_completo": f"{f[2]} {f[3]} {f[4] or ''}".strip(),
             "estado": f[5] or "Sin Matrícula",
             "anio_escolar": f[6],
@@ -48,7 +54,7 @@ def obtener_ficha_estudiante_db(rut: str):
     try:
         cur.execute("""
             SELECT e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.fecha_nacimiento, e.domicilio,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico, a.domicilio, a.relacion_estudiante,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico, a.domicilio, a.relacion_estudiante, a.ruta_documento_tutor,
                    asup.rut_pasaporte, asup.nombres, asup.apellido_paterno, asup.apellido_materno, asup.telefono, asup.correo_electronico, asup.domicilio, asup.relacion_estudiante,
                    fs.id_ficha, fs.sistema_salud, fs.letra_fonasa, fs.cesfam, fs.centro_emergencia, 
                    fs.alergias, fs.diagnostico_medico, fs.medico_tratante, fs.medicamento, fs.nee, fs.nee_tipo
@@ -97,31 +103,32 @@ def obtener_ficha_estudiante_db(rut: str):
                 "telefono": estudiante_db[11] if estudiante_db[11] else "-",
                 "correo": estudiante_db[12] if estudiante_db[12] else "-",
                 "domicilio": estudiante_db[13] if estudiante_db[13] else "",
-                "relacion": estudiante_db[14] or "Titular"
+                "relacion": estudiante_db[14] or "Titular",
+                "ruta_documento_tutor": estudiante_db[15]
             },
             "apoderado_suplente": {
-                "rut": estudiante_db[15],
-                "nombres": estudiante_db[16] or "",
-                "apellido_paterno": estudiante_db[17] or "",
-                "apellido_materno": estudiante_db[18] or "",
-                "nombre": f"{estudiante_db[16] or ''} {estudiante_db[17] or ''} {estudiante_db[18] or ''}".strip(),
-                "telefono": estudiante_db[19] if estudiante_db[19] else "-",
-                "correo": estudiante_db[20] if estudiante_db[20] else "-",
-                "domicilio": estudiante_db[21] if estudiante_db[21] else "",
-                "relacion": estudiante_db[22] or "Suplente"
-            } if estudiante_db[15] else None,
+                "rut": estudiante_db[16],
+                "nombres": estudiante_db[17] or "",
+                "apellido_paterno": estudiante_db[18] or "",
+                "apellido_materno": estudiante_db[19] or "",
+                "nombre": f"{estudiante_db[17] or ''} {estudiante_db[18] or ''} {estudiante_db[19] or ''}".strip(),
+                "telefono": estudiante_db[20] if estudiante_db[20] else "-",
+                "correo": estudiante_db[21] if estudiante_db[21] else "-",
+                "domicilio": estudiante_db[22] if estudiante_db[22] else "",
+                "relacion": estudiante_db[23] or "Suplente"
+            } if estudiante_db[16] else None,
             "salud": {
-                "sistema_salud": estudiante_db[24] or "No informado",
-                "letra_fonasa": estudiante_db[25] or "-",
-                "cesfam": estudiante_db[26] or "No informado",
-                "centro_emergencia": estudiante_db[27] or "No informado",
-                "alergias": estudiante_db[28] or "",
-                "diagnostico_medico": estudiante_db[29] or "No",
-                "medico_tratante": estudiante_db[30] or "No informado",
-                "medicamento": estudiante_db[31] or "",
-                "nee": estudiante_db[32] or "No",
-                "nee_tipo": estudiante_db[33] or "No aplica"
-            } if estudiante_db[23] is not None else None,
+                "sistema_salud": estudiante_db[25] or "No informado",
+                "letra_fonasa": estudiante_db[26] or "-",
+                "cesfam": estudiante_db[27] or "No informado",
+                "centro_emergencia": estudiante_db[28] or "No informado",
+                "alergias": estudiante_db[29] or "",
+                "diagnostico_medico": estudiante_db[30] or "No",
+                "medico_tratante": estudiante_db[31] or "No informado",
+                "medicamento": estudiante_db[32] or "",
+                "nee": estudiante_db[33] or "No",
+                "nee_tipo": estudiante_db[34] or "No aplica"
+            } if estudiante_db[24] is not None else None,
             "historial": [
                 {
                     "id": f[0], "anio": f[1], 
@@ -136,6 +143,63 @@ def obtener_ficha_estudiante_db(rut: str):
     finally:
         cur.close()
         conn.close()
+
+def guardar_documento_tutor_db(rut: str, archivo_bytes: bytes, filename: str, usuario_actual: dict):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id_estudiante, id_apoderado_principal FROM estudiante WHERE run_ipe = %s", (rut,))
+        est = cur.fetchone()
+        if not est:
+            raise HTTPException(status_code=404, detail="Estudiante no encontrado.")
+
+        id_estudiante, id_apoderado = est
+        if not id_apoderado:
+            raise HTTPException(status_code=400, detail="El estudiante no tiene un apoderado registrado para adjuntar la tutoría.")
+
+        ext = os.path.splitext(filename)[1].lower() if filename else ".pdf"
+        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+            ext = ".pdf"
+
+        rut_limpio = rut.replace(".", "").replace("-", "")
+        clave = f"tutores/tutor_{rut_limpio}_{uuid.uuid4().hex[:8]}{ext}"
+        storage_service.guardar_archivo(archivo_bytes, clave, content_type="application/pdf")
+
+        cur.execute("UPDATE apoderado SET ruta_documento_tutor = %s WHERE id_apoderado = %s", (clave, id_apoderado))
+        conn.commit()
+        return {"mensaje": "Documento de tutoría legal guardado exitosamente.", "ruta": clave}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar documento de tutoría: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+def obtener_ruta_documento_tutor_db(rut: str, usuario_actual: dict) -> str:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT a.ruta_documento_tutor 
+            FROM estudiante e 
+            INNER JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado 
+            WHERE e.run_ipe = %s
+        """, (rut,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Estudiante o apoderado no encontrado.")
+
+        if not row[0]:
+            raise HTTPException(status_code=404, detail="Este apoderado no tiene un documento de tutoría legal adjunto.")
+
+        return row[0]
+    finally:
+        cur.close()
+        conn.close()
+
 
 def crear_estudiante_db(payload: dict):
     conn = get_db_connection()
@@ -394,12 +458,16 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
 
         if mat_result:
             id_matricula = mat_result[0]
-            datos_ant = json.dumps({"Ficha_Personal": "Datos Anteriores"})
-            datos_nuev = json.dumps({"Ficha_Personal": "Datos Actualizados Completos"})
+            detalle_cambio = json.dumps({
+                "evento": "Actualización de ficha personal y salud del estudiante",
+                "run": rut,
+                "domicilio": req.domicilio_estudiante,
+                "apoderado": req.rut_apoderado
+            })
             cur.execute("""
                 INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
-                VALUES (%s, 'UPDATE', %s, %s, %s)
-            """, (id_matricula, id_usuario, datos_ant, datos_nuev))
+                VALUES (%s, 'UPDATE', %s, NULL, %s)
+            """, (id_matricula, id_usuario, detalle_cambio))
 
         conn.commit()
         return {"mensaje": "Datos y ficha médica actualizados exitosamente"}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../../../config/api';
 
 export const useVerificador = () => {
   const [rut, setRut] = useState('');
@@ -13,7 +14,7 @@ export const useVerificador = () => {
 
     try {
       // Como es público, no enviamos token de Authorization
-      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/verificar?rut=${rut}&codigo=${codigo}`);
+      const respuesta = await fetch(`${API_BASE_URL}/documentos/verificar?rut=${rut}&codigo=${codigo}`);
       
       if (!respuesta.ok) {
         const data = await respuesta.json();

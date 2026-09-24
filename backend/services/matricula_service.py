@@ -1,5 +1,7 @@
 # services/matricula_service.py
 import io
+import os
+import uuid
 import pandas as pd
 import hashlib
 from datetime import datetime
@@ -11,6 +13,7 @@ from database import get_db_connection
 from services.pdf_service import generar_certificado_pdf
 from services.email_service import enviar_correo_retiro, enviar_correo_cambio_curso
 from services.utils import determinar_nivel_backend
+from services import storage_service
 
 def obtener_todas_matriculas_db(establecimiento_id: int = None):
     conn = get_db_connection()
@@ -19,7 +22,8 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
         query = """
             SELECT m.id_matricula, m.numero_correlativo, m.nivel_ensenanza, m.curso, m.fecha_matricula, m.estado,
                    e.run_ipe, e.nombres, e.apellido_paterno, a.rut_pasaporte, a.nombres, a.apellido_paterno,
-                   m.anio_escolar, cte.descripcion, est.rbd, m.cod_tipo_ensenanza, m.id_establecimiento
+                   m.anio_escolar, cte.descripcion, est.rbd, m.cod_tipo_ensenanza, m.id_establecimiento,
+                   m.es_excedente, m.numero_resolucion_excedente, m.fecha_resolucion_excedente, m.ruta_documento_resolucion
             FROM matricula m
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
@@ -40,17 +44,83 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
             "fecha_matricula": str(f[4]), "estado": f[5], "estudiante_rut": f[6], "estudiante_nombre": f"{f[7]} {f[8]}".strip(),
             "apoderado_rut": f[9] or "Sin registro", "apoderado_nombre": f"{f[10]} {f[11]}".strip() if f[10] else "Pendiente",
             "anio_escolar": f[12], "tipo_ensenanza": f[13] or "Plan General", "rbd": f[14] or "Sin RBD",
-            "cod_tipo_ensenanza": f[15], "id_establecimiento": f[16]
+            "cod_tipo_ensenanza": f[15], "id_establecimiento": f[16],
+            "es_excedente": bool(f[17]),
+            "numero_resolucion_excedente": f[18],
+            "fecha_resolucion_excedente": str(f[19]) if f[19] else None,
+            "ruta_documento_resolucion": f[20]
         } for f in cur.fetchall()]
         return matriculas
     finally:
         cur.close()
         conn.close()
 
+def guardar_documento_resolucion_db(id_matricula: int, archivo_bytes: bytes, filename: str, usuario_actual: dict):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id_establecimiento, es_excedente FROM matricula WHERE id_matricula = %s", (id_matricula,))
+        mat = cur.fetchone()
+        if not mat:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada.")
+        
+        # Validar permisos
+        if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
+            id_est_user = usuario_actual.get("id_establecimiento")
+            if id_est_user and mat[0] != id_est_user:
+                raise HTTPException(status_code=403, detail="No tiene permisos para modificar esta matrícula.")
+
+        ext = os.path.splitext(filename)[1].lower() if filename else ".pdf"
+        if ext not in [".pdf", ".jpg", ".jpeg", ".png"]:
+            ext = ".pdf"
+            
+        clave = f"resoluciones/res_mat_{id_matricula}_{uuid.uuid4().hex[:8]}{ext}"
+        storage_service.guardar_archivo(archivo_bytes, clave, content_type="application/pdf")
+
+        cur.execute("UPDATE matricula SET ruta_documento_resolucion = %s WHERE id_matricula = %s", (clave, id_matricula))
+        conn.commit()
+        return {"mensaje": "Documento de resolución guardado exitosamente.", "ruta": clave}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Error al guardar documento de resolución: {e}")
+    finally:
+        cur.close()
+        conn.close()
+
+def obtener_ruta_documento_resolucion_db(id_matricula: int, usuario_actual: dict) -> str:
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id_establecimiento, ruta_documento_resolucion FROM matricula WHERE id_matricula = %s", (id_matricula,))
+        mat = cur.fetchone()
+        if not mat:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada.")
+
+        if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
+            id_est_user = usuario_actual.get("id_establecimiento")
+            if id_est_user and mat[0] != id_est_user:
+                raise HTTPException(status_code=403, detail="No tiene permisos para consultar esta matrícula.")
+
+        if not mat[1]:
+            raise HTTPException(status_code=404, detail="Esta matrícula no tiene un documento de resolución adjunto.")
+
+        return mat[1]
+    finally:
+        cur.close()
+        conn.close()
+
+
 def crear_nueva_matricula_db(matricula):
     conn = get_db_connection()
-    cursor = conn.cursor()
     try:
+        cursor = conn.cursor()
+        # Bloqueo a nivel de transacción para prevenir carreras concurrentes en el mismo curso/colegio/año
+        clave_bloqueo = f"{matricula.id_establecimiento}-{matricula.anio_escolar}-{matricula.curso}"
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (clave_bloqueo,))
+
         cursor.execute("""
             SELECT COALESCE(MAX(numero_correlativo), 0) 
             FROM matricula 
@@ -111,10 +181,20 @@ def crear_nueva_matricula_db(matricula):
         cursor.close()
         conn.close()
 
-def actualizar_estado_matricula_db(id_matricula: int, matricula):
+def actualizar_estado_matricula_db(id_matricula: int, matricula, usuario_actual: dict = None, background_tasks = None):
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        cursor.execute("SELECT id_establecimiento FROM matricula WHERE id_matricula = %s", (id_matricula,))
+        mat_row = cursor.fetchone()
+        if not mat_row:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+
+        if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
+            id_est_user = usuario_actual.get("id_establecimiento")
+            if id_est_user and mat_row[0] != id_est_user:
+                raise HTTPException(status_code=403, detail="No tiene permisos para modificar matrículas de otro establecimiento.")
+
         mensaje_alerta = ""
         if matricula.estado == "Retirado":
             matricula.observaciones = "Pendiente de respuesta mediante cuestionario autoaplicado."
@@ -164,9 +244,13 @@ def actualizar_estado_matricula_db(id_matricula: int, matricula):
                 codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
                 
                 pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "RETIRO", codigo_verificacion)
-                exito, msg_error = enviar_correo_retiro(correo_apoderado, id_matricula, datos[6], pdf_buffer)
+                pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
                 
-                if not exito: mensaje_alerta = f"⚠️ Retiro guardado, pero falló el envío de Gmail: {msg_error}"
+                if background_tasks:
+                    background_tasks.add_task(enviar_correo_retiro, correo_apoderado, id_matricula, datos[6], pdf_bytes)
+                else:
+                    exito, msg_error = enviar_correo_retiro(correo_apoderado, id_matricula, datos[6], pdf_bytes)
+                    if not exito: mensaje_alerta = f"⚠️ Retiro guardado, pero falló el envío de Gmail: {msg_error}"
             else:
                 mensaje_alerta = "⚠️ Retiro guardado, pero el estudiante NO TIENE apoderado con correo electrónico registrado."
 
@@ -211,7 +295,7 @@ def guardar_respuesta_cuestionario_curso_db(id_matricula: int, payload):
         cur.close()
         conn.close()
 
-def registrar_cambio_curso_db(id_matricula: int, req):
+def registrar_cambio_curso_db(id_matricula: int, req, usuario_actual: dict = None, background_tasks = None):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -235,6 +319,15 @@ def registrar_cambio_curso_db(id_matricula: int, req):
         anio_escolar = datos[0]
         id_establecimiento = datos[21]
         folio_antiguo = datos[6]
+
+        if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
+            id_est_user = usuario_actual.get("id_establecimiento")
+            if id_est_user and id_establecimiento != id_est_user:
+                raise HTTPException(status_code=403, detail="No tiene permisos para cambiar curso a estudiantes de otro establecimiento.")
+
+        # Bloqueo atómico a nivel de curso/colegio/año
+        clave_bloqueo = f"{id_establecimiento}-{anio_escolar}-{req.nuevo_curso}"
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (clave_bloqueo,))
 
         cur.execute("""
             SELECT COALESCE(MAX(numero_correlativo), 0) 
@@ -277,9 +370,13 @@ def registrar_cambio_curso_db(id_matricula: int, req):
             codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
             
             pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "CAMBIO_CURSO", codigo_verificacion)
+            pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
             
-            exito, msg_error = enviar_correo_cambio_curso(correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_buffer)
-            if not exito: mensaje_alerta = f"⚠️ Traslado guardado, pero falló el envío a Gmail: {msg_error}"
+            if background_tasks:
+                background_tasks.add_task(enviar_correo_cambio_curso, correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_bytes)
+            else:
+                exito, msg_error = enviar_correo_cambio_curso(correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_bytes)
+                if not exito: mensaje_alerta = f"⚠️ Traslado guardado, pero falló el envío a Gmail: {msg_error}"
         else:
             mensaje_alerta = "⚠️ Traslado guardado, pero el estudiante NO TIENE apoderado con correo registrado."
 
@@ -292,7 +389,7 @@ def registrar_cambio_curso_db(id_matricula: int, req):
         cur.close()
         conn.close()
 
-def generar_pdf_certificado_db(id_matricula: int, tipo: str):
+def generar_pdf_certificado_db(id_matricula: int, tipo: str, usuario_actual: dict = None):
     conn = get_db_connection()
     cur = conn.cursor()
     try:
@@ -300,7 +397,8 @@ def generar_pdf_certificado_db(id_matricula: int, tipo: str):
             SELECT m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula,
                    e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo,
                    m.estado, m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio,
+                   m.id_establecimiento
             FROM matricula m 
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
             INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
@@ -310,6 +408,11 @@ def generar_pdf_certificado_db(id_matricula: int, tipo: str):
         datos = cur.fetchone()
         
         if not datos: raise HTTPException(status_code=404, detail="Matrícula no encontrada")
+        
+        if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
+            id_est_user = usuario_actual.get("id_establecimiento")
+            if id_est_user and datos[20] != id_est_user:
+                raise HTTPException(status_code=403, detail="No tiene permisos para descargar certificados de otro establecimiento.")
         
         rut_apod = datos[15] if datos[15] else "Sin registro"
         nom_apod = f"{datos[16] or ''} {datos[17] or ''} {datos[18] or ''}".strip()
@@ -595,67 +698,320 @@ def obtener_colegio_procedencia_db(rut_estudiante: str):
         cursor.close()
         conn.close()
         
-def exportar_matriculas_excel_service(id_establecimiento: int, anio: str = None, codigo_plan: str = None):
+def obtener_opciones_filtro_excel(id_establecimiento: int = None):
     """
-    Extrae las matrículas según los filtros aplicados y genera un archivo Excel (.xlsx) en memoria.
+    Devuelve los años escolares, cursos, planes de estudio y el mapa
+    cursos_por_plan (dict: codigo_plan -> [cursos]) disponibles en la BD.
+    Respeta el filtro de establecimiento si se provee.
+    Usado para poblar los selects del modal de descarga Excel.
     """
     conn = get_db_connection()
     cur = conn.cursor()
-    
     try:
-        # 1. Construir la consulta SQL dinámicamente según los filtros
-        query = """
-            SELECT m.numero_correlativo, m.anio_escolar, m.estado, m.fecha_matricula,
-                   m.nivel_ensenanza, m.curso, m.letra_curso, m.cod_tipo_ensenanza,
-                   e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo, e.domicilio,
-                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico
+        filtro_est = "WHERE id_establecimiento = %s" if id_establecimiento else ""
+        params = (id_establecimiento,) if id_establecimiento else ()
+
+        # Años disponibles
+        cur.execute(
+            f"SELECT DISTINCT anio_escolar FROM matricula {filtro_est} ORDER BY anio_escolar DESC",
+            params
+        )
+        anios = [r[0] for r in cur.fetchall() if r[0]]
+
+        # Todos los cursos (para cuando no hay plan seleccionado)
+        cur.execute(
+            f"SELECT DISTINCT curso FROM matricula {filtro_est} ORDER BY curso ASC",
+            params
+        )
+        cursos = [r[0] for r in cur.fetchall() if r[0]]
+
+        # Planes de estudio
+        cur.execute(f"""
+            SELECT DISTINCT m.cod_tipo_ensenanza, COALESCE(c.descripcion, 'Sin descripción')
             FROM matricula m
-            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
-            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
-            WHERE m.id_establecimiento = %s
+            LEFT JOIN catalogo_tipo_ensenanza c ON m.cod_tipo_ensenanza = c.codigo
+            {"WHERE m.id_establecimiento = %s" if id_establecimiento else ""}
+            ORDER BY m.cod_tipo_ensenanza ASC
+        """, params)
+        planes = [{"codigo": r[0], "descripcion": r[1]} for r in cur.fetchall() if r[0]]
+
+        # Mapa plan -> cursos: una sola query adicional que relaciona ambos
+        cur.execute(f"""
+            SELECT DISTINCT cod_tipo_ensenanza, curso
+            FROM matricula
+            {filtro_est}
+            ORDER BY cod_tipo_ensenanza ASC, curso ASC
+        """, params)
+        cursos_por_plan: dict = {}
+        for cod_plan, curso in cur.fetchall():
+            if cod_plan is None or not curso:
+                continue
+            key = str(cod_plan)
+            cursos_por_plan.setdefault(key, []).append(curso)
+
+        return {
+            "anios": anios,
+            "cursos": cursos,
+            "planes": planes,
+            "cursos_por_plan": cursos_por_plan
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Error al obtener opciones de filtro: " + str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+
+def exportar_matriculas_excel_service(id_establecimiento: int = None, anio: str = None, codigo_plan: str = None, curso: str = None):
+    """
+    Extrae las matrículas con TODA la información disponible del alumno, apoderados
+    y ficha de salud, y genera un libro Excel (.xlsx) con 4 pestañas organizadas.
+    Si id_establecimiento es None, exporta todos los establecimientos (uso SLEP global).
+    """
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        # ---------------------------------------------------------------
+        # 1. Consulta principal: matrícula + estudiante completo + est.
+        # ---------------------------------------------------------------
+        query = """
+            SELECT
+                -- Matrícula
+                m.id_matricula,
+                est.nombre              AS establecimiento,
+                m.numero_correlativo,
+                m.anio_escolar,
+                m.estado,
+                m.fecha_matricula,
+                m.fecha_retiro,
+                m.motivo_retiro,
+                m.nivel_ensenanza,
+                m.curso,
+                m.letra_curso,
+                m.cod_tipo_ensenanza,
+                m.es_excedente,
+                m.numero_resolucion_excedente,
+                m.es_alumno_practica,
+                m.opcion_religion,
+                -- Estudiante
+                e.run_ipe,
+                e.nombres,
+                e.apellido_paterno,
+                e.apellido_materno,
+                e.sexo,
+                e.fecha_nacimiento,
+                e.domicilio,
+                -- Apoderado Principal
+                ap.rut_pasaporte        AS ap_rut,
+                ap.nombres              AS ap_nombres,
+                ap.apellido_paterno     AS ap_ap_pat,
+                ap.apellido_materno     AS ap_ap_mat,
+                ap.telefono             AS ap_telefono,
+                ap.correo_electronico   AS ap_correo,
+                ap.domicilio            AS ap_domicilio,
+                ap.relacion_estudiante  AS ap_relacion,
+                -- Apoderado Suplente
+                asup.rut_pasaporte      AS as_rut,
+                asup.nombres            AS as_nombres,
+                asup.apellido_paterno   AS as_ap_pat,
+                asup.apellido_materno   AS as_ap_mat,
+                asup.telefono           AS as_telefono,
+                asup.correo_electronico AS as_correo,
+                asup.domicilio          AS as_domicilio,
+                asup.relacion_estudiante AS as_relacion,
+                -- Ficha de Salud
+                fs.sistema_salud,
+                fs.letra_fonasa,
+                fs.cesfam,
+                fs.centro_emergencia,
+                fs.alergias,
+                fs.diagnostico_medico,
+                fs.medico_tratante,
+                fs.medicamento,
+                fs.nee,
+                fs.nee_tipo
+            FROM matricula m
+            INNER JOIN estudiante e        ON m.id_estudiante      = e.id_estudiante
+            LEFT JOIN apoderado ap         ON e.id_apoderado_principal = ap.id_apoderado
+            LEFT JOIN apoderado asup       ON e.id_apoderado_suplente  = asup.id_apoderado
+            LEFT JOIN ficha_salud fs       ON e.id_estudiante      = fs.id_estudiante
+            LEFT JOIN establecimiento est  ON m.id_establecimiento  = est.id_establecimiento
+            WHERE 1=1
         """
-        params = [id_establecimiento]
-        
-        # Inyectar filtros de forma segura si el usuario los seleccionó
+        params = []
+
+        if id_establecimiento:
+            query += " AND m.id_establecimiento = %s"
+            params.append(id_establecimiento)
         if anio:
             query += " AND m.anio_escolar = %s"
             params.append(int(anio))
         if codigo_plan:
             query += " AND m.cod_tipo_ensenanza = %s"
             params.append(int(codigo_plan))
-            
-        query += " ORDER BY m.anio_escolar DESC, m.curso ASC, e.apellido_paterno ASC"
-        
+        if curso and curso.strip():
+            query += " AND m.curso = %s"
+            params.append(curso.strip())
+
+        query += " ORDER BY est.nombre ASC, m.anio_escolar DESC, m.curso ASC, e.apellido_paterno ASC"
+
         cur.execute(query, tuple(params))
         filas = cur.fetchall()
 
-        # 2. Crear el archivo Excel en memoria
+        # ---------------------------------------------------------------
+        # 2. Crear libro Excel con estilo de cabeceras
+        # ---------------------------------------------------------------
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
         wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Registro de Matrículas"
 
-        # 3. Definir los encabezados (Toda la información cruzada)
-        encabezados = [
-            "N° Correlativo", "Año Escolar", "Estado", "Fecha Matrícula", "Nivel", "Curso", "Letra", "Cód. Enseñanza",
-            "RUT/IPE Estudiante", "Nombres Estudiante", "Ap. Paterno Est.", "Ap. Materno Est.", "Sexo", "Domicilio Est.",
-            "RUT/IPA Apoderado", "Nombres Apoderado", "Ap. Paterno Apod.", "Ap. Materno Apod.", "Teléfono", "Correo"
+        COLOR_MATRICULA  = "1F3864"   # azul oscuro
+        COLOR_ESTUDIANTE = "1F6464"   # verde azulado
+        COLOR_APOD_PRINC = "6A4C93"   # violeta
+        COLOR_APOD_SUPL  = "C25B00"   # naranja oscuro
+        COLOR_SALUD      = "8B0000"   # rojo oscuro
+
+        def estilizar_hoja(ws, encabezados, color_hex):
+            """Aplica formato a la fila de encabezados."""
+            fill = PatternFill("solid", fgColor=color_hex)
+            font = Font(bold=True, color="FFFFFF", size=10)
+            border_side = Side(style="thin", color="CCCCCC")
+            borde = Border(left=border_side, right=border_side,
+                           top=border_side, bottom=border_side)
+            ws.append(encabezados)
+            for col_idx, _ in enumerate(encabezados, start=1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = fill
+                cell.font = font
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = borde
+                ws.column_dimensions[get_column_letter(col_idx)].width = max(14, len(str(encabezados[col_idx - 1])) + 4)
+            ws.row_dimensions[1].height = 32
+            ws.freeze_panes = "A2"
+
+        # ---------------------------------------------------------------
+        # HOJA 1 — Matrícula (datos académicos + identificación estudiante)
+        # ---------------------------------------------------------------
+        ws1 = wb.active
+        ws1.title = "Matrícula"
+        enc1 = [
+            "ID Matrícula", "Establecimiento", "N° Correlativo", "Año Escolar",
+            "Estado", "Fecha Matrícula", "Fecha Retiro", "Motivo Retiro",
+            "Nivel", "Curso", "Letra Curso", "Cód. Enseñanza",
+            "Excedente", "N° Resolución Excedente", "Alumno Práctica", "Opción Religión",
+            # Estudiante — identificación
+            "RUT/IPE Estudiante", "Nombres", "Ap. Paterno", "Ap. Materno",
+            "Sexo", "Fecha Nacimiento", "Domicilio Estudiante",
         ]
-        ws.append(encabezados)
+        estilizar_hoja(ws1, enc1, COLOR_MATRICULA)
+        for f in filas:
+            fila_ws1 = (
+                f[0],   # id_matricula
+                f[1],   # establecimiento
+                f[2],   # correlativo
+                f[3],   # anio
+                f[4],   # estado
+                str(f[5]) if f[5] else "",   # fecha_matricula
+                str(f[6]) if f[6] else "",   # fecha_retiro
+                f[7] or "",                  # motivo_retiro
+                f[8],   # nivel
+                f[9],   # curso
+                f[10],  # letra_curso
+                f[11],  # cod_tipo_ensenanza
+                "Sí" if f[12] else "No",    # es_excedente
+                f[13] or "",                 # num_resolucion
+                "Sí" if f[14] else "No",    # es_alumno_practica
+                f[15] or "",                 # opcion_religion
+                f[16],  # run_ipe
+                f[17],  # nombres
+                f[18],  # ap_paterno
+                f[19],  # ap_materno
+                f[20],  # sexo
+                str(f[21]) if f[21] else "",  # fecha_nacimiento
+                f[22] or "",                  # domicilio
+            )
+            ws1.append(fila_ws1)
 
-        # 4. Llenar los datos extraídos de la BD
-        for fila in filas:
-            ws.append(fila)
+        # ---------------------------------------------------------------
+        # HOJA 2 — Apoderado Principal
+        # ---------------------------------------------------------------
+        ws2 = wb.create_sheet("Apoderado Principal")
+        enc2 = [
+            "ID Matrícula", "RUT/IPE Estudiante", "Nombres Estudiante", "Ap. Paterno", "Ap. Materno",
+            "RUT Apoderado", "Nombres Apoderado", "Ap. Paterno Apod.", "Ap. Materno Apod.",
+            "Teléfono", "Correo Electrónico", "Domicilio Apoderado", "Relación con Estudiante",
+        ]
+        estilizar_hoja(ws2, enc2, COLOR_APOD_PRINC)
+        for f in filas:
+            ws2.append((
+                f[0], f[16], f[17], f[18], f[19],
+                f[23] or "", f[24] or "", f[25] or "", f[26] or "",
+                f[27] or "", f[28] or "", f[29] or "", f[30] or "",
+            ))
 
-        # 5. Guardar en un buffer de memoria para no crear archivos temporales en el disco
+        # ---------------------------------------------------------------
+        # HOJA 3 — Apoderado Suplente
+        # ---------------------------------------------------------------
+        ws3 = wb.create_sheet("Apoderado Suplente")
+        enc3 = [
+            "ID Matrícula", "RUT/IPE Estudiante", "Nombres Estudiante", "Ap. Paterno", "Ap. Materno",
+            "RUT Apoderado Suplente", "Nombres", "Ap. Paterno Supl.", "Ap. Materno Supl.",
+            "Teléfono", "Correo Electrónico", "Domicilio", "Relación con Estudiante",
+        ]
+        estilizar_hoja(ws3, enc3, COLOR_APOD_SUPL)
+        for f in filas:
+            # Solo agregar fila si el suplente tiene RUT registrado
+            tiene_suplente = bool(f[31])
+            ws3.append((
+                f[0], f[16], f[17], f[18], f[19],
+                f[31] or "Sin suplente registrado",
+                f[32] or "", f[33] or "", f[34] or "",
+                f[35] or "", f[36] or "", f[37] or "", f[38] or "",
+            ) if tiene_suplente else (
+                f[0], f[16], f[17], f[18], f[19],
+                "Sin apoderado suplente", "", "", "", "", "", "", "",
+            ))
+
+        # ---------------------------------------------------------------
+        # HOJA 4 — Ficha de Salud
+        # ---------------------------------------------------------------
+        ws4 = wb.create_sheet("Ficha de Salud")
+        enc4 = [
+            "ID Matrícula", "RUT/IPE Estudiante", "Nombres Estudiante", "Ap. Paterno", "Ap. Materno",
+            "Sistema de Salud", "Letra FONASA", "CESFAM", "Centro de Emergencia",
+            "Alergias", "Diagnóstico Médico", "Médico Tratante", "Medicamentos",
+            "Necesidad Ed. Especial (NEE)", "Tipo NEE",
+        ]
+        estilizar_hoja(ws4, enc4, COLOR_SALUD)
+        for f in filas:
+            ws4.append((
+                f[0], f[16], f[17], f[18], f[19],
+                f[39] or "No informado",
+                f[40] or "",
+                f[41] or "No informado",
+                f[42] or "No informado",
+                f[43] or "",
+                f[44] or "No",
+                f[45] or "No informado",
+                f[46] or "",
+                f[47] or "No",
+                f[48] or "No aplica",
+            ))
+
+        # ---------------------------------------------------------------
+        # 3. Guardar en buffer de memoria
+        # ---------------------------------------------------------------
         buffer = io.BytesIO()
         wb.save(buffer)
         buffer.seek(0)
-        
         return buffer
 
     except Exception as e:
         print(f"Error generando Excel: {e}")
-        raise HTTPException(status_code=500, detail="Error interno al generar el archivo Excel.")
+        raise HTTPException(status_code=500, detail="Error interno al generar el archivo Excel: " + str(e))
     finally:
         cur.close()
         conn.close()
+

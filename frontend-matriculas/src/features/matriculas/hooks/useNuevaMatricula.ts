@@ -1,6 +1,8 @@
 // hooks/useNuevaMatricula.ts
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
+import { API_BASE_URL } from '../../../config/api';
+import { coincideBusqueda } from '../../../utils/search';
 
 export interface MatriculaBase {
   id_establecimiento: number;
@@ -191,7 +193,7 @@ export const useNuevaMatricula = () => {
       const token = localStorage.getItem('token');
 
       try {
-        const res = await fetch(`http://127.0.0.1:8000/establecimientos/capacidad-sala?rbd=${colegio.rbd}&anio_escolar=${formulario.anio_escolar}&nivel=${nivelExcel}`, {
+        const res = await fetch(`${API_BASE_URL}/establecimientos/capacidad-sala?rbd=${colegio.rbd}&anio_escolar=${formulario.anio_escolar}&nivel=${nivelExcel}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         
@@ -241,7 +243,7 @@ export const useNuevaMatricula = () => {
     const token = localStorage.getItem('token');
     const headers = { 'Authorization': `Bearer ${token}` };
 
-    fetch('http://127.0.0.1:8000/establecimientos', { headers })
+    fetch(`${API_BASE_URL}/establecimientos`, { headers })
       .then(res => res.json())
       .then(data => {
         setEstablecimientosDb(data);
@@ -256,12 +258,12 @@ export const useNuevaMatricula = () => {
       })
       .catch(err => console.error("Error establecimientos:", err));
 
-    fetch('http://127.0.0.1:8000/matriculas', { headers })
+    fetch(`${API_BASE_URL}/matriculas`, { headers })
       .then(res => res.json())
       .then(data => setTodasLasMatriculas(data))
       .catch(err => console.error("Error matrículas:", err));
 
-    fetch('http://127.0.0.1:8000/estudiante', { headers })
+    fetch(`${API_BASE_URL}/estudiante`, { headers })
       .then(res => res.json())
       .then(datos => {
         setEstudiantesDb(Array.isArray(datos) ? datos : []);
@@ -383,13 +385,13 @@ export const useNuevaMatricula = () => {
       const rutSinFormato = limpiarRUT(rutOriginal);
 
       const nombreArmado = est.nombre_completo || `${est.nombres || ''} ${est.apellido_paterno || ''} ${est.apellido_materno || ''}`.trim();
-      const nombreNormalizado = normalizarTexto(nombreArmado);
+      const coincide = coincideBusqueda(
+        texto,
+        [nombreArmado, est.nombres, est.apellido_paterno, est.apellido_materno],
+        [rutOriginal]
+      );
 
-      const coincideNombre = textoNormalizado !== '' && nombreNormalizado.includes(textoNormalizado);
-      const coincideRut = textoRut !== '' && rutSinFormato.includes(textoRut);
-      const coincideRutTexto = textoNormalizado !== '' && normalizarTexto(rutOriginal).includes(textoNormalizado);
-
-      if (coincideNombre || coincideRut || coincideRutTexto) {
+      if (coincide) {
         const idClave = rutOriginal || est.id_estudiante || est.id || nombreArmado;
         if (!mapaUnicos.has(idClave)) {
           mapaUnicos.set(idClave, {
@@ -399,6 +401,7 @@ export const useNuevaMatricula = () => {
           });
         }
       }
+
 
       if (mapaUnicos.size >= 20) break;
     }
@@ -500,7 +503,7 @@ export const useNuevaMatricula = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const resProcedencia = await fetch(`http://127.0.0.1:8000/matriculas/procedencia/${estRun}`, {
+      const resProcedencia = await fetch(`${API_BASE_URL}/matriculas/procedencia/${estRun}`, {
           headers: { 'Authorization': `Bearer ${token}` }
       });
       if (resProcedencia.ok) {
@@ -559,7 +562,7 @@ export const useNuevaMatricula = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${rutVal}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!respuesta.ok) throw new Error('Estudiante no encontrado en el sistema.');
@@ -583,7 +586,7 @@ export const useNuevaMatricula = () => {
       const token = localStorage.getItem('token');
       const rutVal = estudiante.run || estudiante.run_ipe;
       
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${rutVal}`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
@@ -595,7 +598,7 @@ export const useNuevaMatricula = () => {
       if (!respuesta.ok) throw new Error('Error al guardar la información');
       
       const timestamp = new Date().getTime();
-      const refreshRes = await fetch(`http://127.0.0.1:8000/estudiante/${rutVal}?t=${timestamp}`, {
+      const refreshRes = await fetch(`${API_BASE_URL}/estudiante/${rutVal}?t=${timestamp}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` },
         cache: 'no-store' 
@@ -636,7 +639,7 @@ export const useNuevaMatricula = () => {
     try {
       const token = localStorage.getItem('token');
       const rutVal = estudiante?.run || estudiante?.run_ipe;
-      const respuesta = await fetch(`http://127.0.0.1:8000/documentos/comprobante/${rutVal}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/documentos/comprobante/${rutVal}`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -703,7 +706,7 @@ export const useNuevaMatricula = () => {
     const token = localStorage.getItem('token');
 
     try {
-      const respuesta = await fetch('http://127.0.0.1:8000/matriculas', {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -715,6 +718,21 @@ export const useNuevaMatricula = () => {
       const datos = await respuesta.json();
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al guardar la matrícula.');
       
+      // Si es estudiante excedente y adjuntó archivo de resolución, subirlo al almacenamiento
+      if (formulario.es_excedente && archivoResolucion && datos.id_matricula) {
+        try {
+          const formArchivo = new FormData();
+          formArchivo.append('archivo', archivoResolucion);
+          await fetch(`${API_BASE_URL}/matriculas/${datos.id_matricula}/documento-resolucion`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formArchivo
+          });
+        } catch (uploadErr) {
+          console.warn("Advertencia al subir archivo de resolución:", uploadErr);
+        }
+      }
+
       setMatriculaExitosa(true);
 
     } catch (err: any) {

@@ -1,6 +1,8 @@
 // hooks/useEstudiantes.ts
 import React, { useState, useEffect, useMemo } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../../config/api';
+import { coincideBusqueda } from '../../../utils/search';
 
 export interface NuevoEstudianteForm {
   run: string;
@@ -125,7 +127,6 @@ export const useEstudiantes = () => {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [datosEdicion, setDatosEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
-  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
   
   const [buscandoMapa, setBuscandoMapa] = useState(false);
   const [sugerenciasMapa, setSugerenciasMapa] = useState<any[]>([]);
@@ -135,8 +136,8 @@ export const useEstudiantes = () => {
     const token = localStorage.getItem('token'); 
 
     const url = colegioSeleccionado 
-      ? `http://127.0.0.1:8000/estudiante?establecimiento_id=${colegioSeleccionado}`
-      : `http://127.0.0.1:8000/estudiante`;
+      ? `${API_BASE_URL}/estudiante?establecimiento_id=${colegioSeleccionado}`
+      : `${API_BASE_URL}/estudiante`;
 
     fetch(url, {
       method: 'GET',
@@ -203,11 +204,11 @@ export const useEstudiantes = () => {
     const cursos = [...new Set(cursosParaSelect.map(e => e.curso).filter(c => c && c !== 'undefined'))].sort();
 
     const filtrados = estudiantesUnicos.filter(est => {
-      const textoBusquedaLower = (textoBusqueda || '').toLowerCase();
-      const nombre = (est.nombre_completo || est.nombres || '').toLowerCase();
-      const rutEst = (est.run || est.estudiante_rut || '').toLowerCase();
-
-      const matchTexto = textoBusquedaLower === '' || nombre.includes(textoBusquedaLower) || rutEst.includes(textoBusquedaLower);
+      const matchTexto = coincideBusqueda(
+        textoBusqueda,
+        [est.nombre_completo, est.nombres, est.apellido_paterno, est.apellido_materno],
+        [est.run, est.estudiante_rut]
+      );
       const matchAnio = filtroAnio === '' || String(est.anio_escolar || est.anio) === filtroAnio;
       const matchCodigo = filtroCodigo === '' || String(est.cod_tipo_ensenanza) === filtroCodigo;
       const matchCurso = filtroCurso === '' || est.curso === filtroCurso;
@@ -216,34 +217,9 @@ export const useEstudiantes = () => {
       return matchTexto && matchAnio && matchCodigo && matchCurso && matchEstado;
     });
 
+
     return { estudiantesFiltrados: filtrados, aniosUnicos: anios, codigosUnicos: codigos, cursosUnicos: cursos, estadosUnicos: estados };
   }, [listaEstudiantes, textoBusqueda, filtroAnio, filtroCodigo, filtroCurso, filtroEstado]);
-
-  const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    if (!archivo) return;
-    setSubiendoArchivo(true);
-    const formData = new FormData();
-    formData.append("archivo", archivo);
-    const token = localStorage.getItem('token');
-
-    try {
-      const respuesta = await fetch("http://127.0.0.1:8000/estudiante/carga-masiva", {
-        method: "POST",
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-      const datos = await respuesta.json();
-      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir el archivo");
-      alert(datos.mensaje); 
-      cargarDirectorio();
-    } catch (error: any) {
-      alert("Error: " + error.message);
-    } finally {
-      setSubiendoArchivo(false);
-      e.target.value = ''; 
-    }
-  };
 
   const verFichaEstudiante = async (rut: string) => {
     setCargandoFicha(true);
@@ -252,7 +228,7 @@ export const useEstudiantes = () => {
     const token = localStorage.getItem('token');
     
     try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${rut}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${rut}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!respuesta.ok) throw new Error('Error al cargar la ficha');
@@ -389,7 +365,7 @@ export const useEstudiantes = () => {
         nee_tipo: datosEdicion.nee_tipo || "No aplica"
       };
 
-      const respuesta = await fetch(`http://127.0.0.1:8000/estudiante/${datosEstudiante.personal.run}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${datosEstudiante.personal.run}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payloadEnvio),
@@ -505,7 +481,7 @@ export const useEstudiantes = () => {
     const token = localStorage.getItem('token');
 
     try {
-      const respuesta = await fetch('http://127.0.0.1:8000/estudiante', {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -517,6 +493,21 @@ export const useEstudiantes = () => {
       if (!respuesta.ok) {
         const errorData = await respuesta.json();
         throw new Error(errorData.detail || 'Error al guardar el estudiante.');
+      }
+
+      // Si el apoderado es tutor legal designado y se adjuntó archivo, subirlo
+      if (nuevoEstudiante.relacion_estudiante === 'Tutor Legal Designado' && archivoTutor) {
+        try {
+          const formArchivo = new FormData();
+          formArchivo.append('archivo', archivoTutor);
+          await fetch(`${API_BASE_URL}/estudiante/${nuevoEstudiante.run}/documento-tutor`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formArchivo
+          });
+        } catch (uploadErr) {
+          console.warn("Advertencia al subir archivo de tutoría:", uploadErr);
+        }
       }
       
       setRutRecienCreado(nuevoEstudiante.run);
@@ -556,7 +547,6 @@ export const useEstudiantes = () => {
     puedeEditar,
     datosEstudiante, setDatosEstudiante,
     modoEdicion, setModoEdicion,
-    manejarSubidaCSV, subiendoArchivo,
     guardandoEdicion, handleGuardarEdicion,
     textoBusqueda, setTextoBusqueda,
     filtroAnio, setFiltroAnio,

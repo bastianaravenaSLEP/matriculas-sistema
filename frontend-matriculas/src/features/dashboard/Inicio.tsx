@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, UserMinus, GraduationCap, ChevronDown, ChevronUp, BarChart3, ChevronRight } from 'lucide-react';
+import { Users, UserMinus, GraduationCap, ChevronDown, ChevronUp, BarChart3, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useInicio2 } from './hooks/useInicio2';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -170,7 +170,7 @@ export default function Inicio() {
     tituloGrafico = "Estudiantes Activos (General)";
     colorCabecera = "bg-blue-950";
   } else if (graficoActivo === 'retiros') {
-    tituloGrafico = "Retiros Oficiales (General)";
+    tituloGrafico = "Retiros Netos (General)";
     colorCabecera = "bg-red-700";
   } else if (esVistaCategoria) {
     tituloGrafico = `Análisis ${vistaPrincipal === 'retiros' ? 'Retiros' : 'Ocupación'}: ${graficoActivo}`;
@@ -191,7 +191,12 @@ export default function Inicio() {
         <div>
           <h2 className="text-2xl font-extrabold text-blue-950">Panel de Control General</h2>
           <p className="text-sm text-gray-500 font-medium">Indicadores y estadísticas de matrícula oficial</p>
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-xs font-medium text-amber-900 shadow-sm">
+            <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+            <span>Los datos de momento son referenciales y aún no son oficiales al 100% para hacer uso de ellos.</span>
+          </div>
         </div>
+
         
         <div className="bg-white px-4 py-2 rounded-md border border-gray-300 shadow-sm flex items-center gap-3">
           <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
@@ -259,9 +264,11 @@ export default function Inicio() {
                 <UserMinus size={24} />
               </div>
               <div>
-                <p className={`text-[11px] font-bold uppercase tracking-wider ${vistaPrincipal === 'retiros' ? 'text-red-700' : 'text-gray-500'}`}>Retiros Oficiales</p>
+                <p className={`text-[11px] font-bold uppercase tracking-wider ${vistaPrincipal === 'retiros' ? 'text-red-700' : 'text-gray-500'}`}>Retiros Netos</p>
                 <p className="text-3xl font-black text-gray-800">{estadisticas?.total_inactivos || 0}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Excluye cambios de curso y anulaciones</p>
               </div>
+
               <div className="ml-auto text-red-300">
                  <BarChart3 size={24} className={vistaPrincipal === 'retiros' ? 'text-red-600' : 'opacity-50'} />
               </div>

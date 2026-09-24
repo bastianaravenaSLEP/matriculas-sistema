@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { API_BASE_URL } from '../../../config/api';
+import { coincideBusqueda } from '../../../utils/search';
 
 export interface Matricula {
   id_matricula: number;
@@ -16,6 +18,10 @@ export interface Matricula {
   tipo_ensenanza: string;
   rbd: string;
   cod_tipo_ensenanza: number | null; 
+  es_excedente?: boolean;
+  numero_resolucion_excedente?: string | null;
+  fecha_resolucion_excedente?: string | null;
+  ruta_documento_resolucion?: string | null;
 }
 
 export const useMatriculas = () => {
@@ -89,7 +95,7 @@ export const useMatriculas = () => {
     const token = localStorage.getItem('token'); 
 
     try {
-      const respuesta = await fetch("http://127.0.0.1:8000/matriculas/carga-masiva", {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas/carga-masiva`, {
         method: "POST",
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -117,7 +123,7 @@ export const useMatriculas = () => {
 
     setCargando(true);
     const token = localStorage.getItem('token');
-    const url = `http://127.0.0.1:8000/matriculas?establecimiento_id=${colegioSeleccionado}`;
+    const url = `${API_BASE_URL}/matriculas?establecimiento_id=${colegioSeleccionado}`;
 
     fetch(url, {
       method: 'GET',
@@ -186,18 +192,19 @@ export const useMatriculas = () => {
 
   const matriculasProcesadas = useMemo(() => {
     let resultado = matriculas.filter(mat => {
-      const textoBuscado = busqueda.toLowerCase();
-      const coincideBusqueda = 
-        mat.estudiante_rut.toLowerCase().includes(textoBuscado) ||
-        mat.numero_correlativo.toString().includes(textoBuscado) ||
-        mat.estudiante_nombre.toLowerCase().includes(textoBuscado);
+      const matchBusqueda = coincideBusqueda(
+        busqueda,
+        [mat.estudiante_nombre, mat.numero_correlativo, mat.apoderado_nombre],
+        [mat.estudiante_rut, mat.apoderado_rut]
+      );
       
       const coincideAnio = filtroAnio === '' || mat.anio_escolar?.toString() === filtroAnio;
       const coincideCodigo = filtroCodigo === '' || mat.cod_tipo_ensenanza?.toString() === filtroCodigo;
       const coincideCurso = filtroCurso === '' || mat.curso === filtroCurso;
 
-      return coincideBusqueda && coincideAnio && coincideCodigo && coincideCurso;
+      return matchBusqueda && coincideAnio && coincideCodigo && coincideCurso;
     });
+
 
     resultado.sort((a, b) => {
       if (ordenFolio) {
@@ -255,7 +262,7 @@ useEffect(() => {
 
       try {
         // IMPORTANTE: Revisa si tu ruta en el backend es /establecimientos/capacidad-sala o solo /capacidad-sala
-        const url = `http://127.0.0.1:8000/establecimientos/capacidad-sala?rbd=${rbdReal}&anio_escolar=${filtroAnio}&nivel=${nivelExcel}`;
+        const url = `${API_BASE_URL}/establecimientos/capacidad-sala?rbd=${rbdReal}&anio_escolar=${filtroAnio}&nivel=${nivelExcel}`;
         
         const res = await fetch(url, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -319,7 +326,7 @@ useEffect(() => {
     const token = localStorage.getItem('token'); 
 
     try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas/${idSeleccionado}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
@@ -335,7 +342,7 @@ useEffect(() => {
       if (!respuesta.ok) throw new Error('Error al procesar la baja en el sistema');
 
       if (descargarLocalRetiro) {
-        window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=RETIRO`, '_blank');
+        window.open(`${API_BASE_URL}/matriculas/${idSeleccionado}/certificado?tipo=RETIRO&token=${token || ''}`, '_blank');
       }
 
       setModalAbierto(false);
@@ -382,7 +389,7 @@ useEffect(() => {
     const token = localStorage.getItem('token'); 
 
     try {
-      const respuesta = await fetch(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/curso`, {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas/${idSeleccionado}/curso`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ 
@@ -397,7 +404,7 @@ useEffect(() => {
       if (!respuesta.ok) throw new Error(datos.detail || 'Error al cambiar de curso');
 
       if (descargarLocalCurso) {
-        window.open(`http://127.0.0.1:8000/matriculas/${idSeleccionado}/certificado?tipo=CAMBIO_CURSO`, '_blank');
+        window.open(`${API_BASE_URL}/matriculas/${idSeleccionado}/certificado?tipo=CAMBIO_CURSO&token=${token || ''}`, '_blank');
       }
 
       setModalCursoAbierto(false);
@@ -419,8 +426,10 @@ useEffect(() => {
       const token = localStorage.getItem('token');
       
       // Armar la URL con los parámetros de filtro actuales
-      let url = `http://127.0.0.1:8000/matriculas/exportar-excel?establecimiento_id=${colegioSeleccionado}`;      if (filtroAnio) url += `&anio=${filtroAnio}`;
+      let url = `${API_BASE_URL}/matriculas/exportar-excel?establecimiento_id=${colegioSeleccionado}`;
+      if (filtroAnio) url += `&anio=${filtroAnio}`;
       if (filtroCodigo) url += `&codigo_plan=${filtroCodigo}`;
+      if (filtroCurso) url += `&curso=${encodeURIComponent(filtroCurso)}`;
 
       const respuesta = await fetch(url, {
         method: 'GET',
@@ -493,9 +502,12 @@ useEffect(() => {
     }
   }, [cursoDestino, cursoActual, planDestino, codigoActual]);
 
+
+  const [modalExcelAbierto, setModalExcelAbierto] = useState(false);
+
   return {
     colegioSeleccionado, puedeEditar, anioActual,
-    cargando, error, 
+    cargando, error, subiendoArchivo,
     busqueda, setBusqueda,
     filtroAnio, setFiltroAnio,
     filtroCodigo, setFiltroCodigo,
@@ -508,7 +520,6 @@ useEffect(() => {
     modalAbierto, setModalAbierto,
     fechaRetiro, setFechaRetiro,
     procesandoRetiro,
-    subiendoArchivo,
     enviarApoderadoRetiro, setEnviarApoderadoRetiro,
     correoApoderadoRetiro, setCorreoApoderadoRetiro,
     descargarLocalRetiro, setDescargarLocalRetiro,
@@ -520,6 +531,7 @@ useEffect(() => {
     datosEmision,
     aniosUnicos, codigosUnicos, cursosUnicos, estructuraColegio, matriculasProcesadas,
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso,
-    mostrarCupos, cuposOcupados, descargandoExcel, exportarAExcel, capacidadSala
+    mostrarCupos, cuposOcupados, descargandoExcel, exportarAExcel, capacidadSala,
+    modalExcelAbierto, setModalExcelAbierto,
   };
 };

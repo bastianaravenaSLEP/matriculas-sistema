@@ -30,57 +30,152 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
         anios_disponibles = [row[0] for row in cur.fetchall()]
 
         # --- DATA DEL AÑO SELECCIONADO ---
-        cur.execute(f"SELECT COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql}", tuple(parametros))
+
+        # ACTIVOS: COUNT(DISTINCT) para blindar ante duplicados históricos
+        cur.execute(f"SELECT COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado = 'Activa' {filtros_sql}", tuple(parametros))
         total_activos = cur.fetchone()[0]
 
-        cur.execute(f"SELECT COUNT(*) FROM matricula WHERE estado != 'Activa' {filtros_sql}", tuple(parametros))
+        # RETIROS NETOS: Alumnos con estado Retirado/Inactiva que NO tienen
+        # ninguna matrícula Activa en el mismo establecimiento y año.
+        # Se excluye 'Anulada' porque representa errores administrativos, no deserciones reales.
+        if establecimiento_id is not None and anio is not None:
+            cur.execute("""
+                SELECT COUNT(DISTINCT m.id_estudiante)
+                FROM matricula m
+                WHERE m.estado IN ('Retirado', 'Inactiva')
+                  AND m.id_establecimiento = %s
+                  AND m.anio_escolar = %s
+                  AND m.id_estudiante NOT IN (
+                      SELECT m2.id_estudiante
+                      FROM matricula m2
+                      WHERE m2.id_establecimiento = %s
+                        AND m2.anio_escolar = %s
+                        AND m2.estado = 'Activa'
+                  )
+            """, (establecimiento_id, anio, establecimiento_id, anio))
+        elif establecimiento_id is not None:
+            # Sin filtro de año: compara por establecimiento y el mismo año de cada fila
+            cur.execute("""
+                SELECT COUNT(DISTINCT m.id_estudiante)
+                FROM matricula m
+                WHERE m.estado IN ('Retirado', 'Inactiva')
+                  AND m.id_establecimiento = %s
+                  AND m.id_estudiante NOT IN (
+                      SELECT m2.id_estudiante
+                      FROM matricula m2
+                      WHERE m2.id_establecimiento = m.id_establecimiento
+                        AND m2.anio_escolar = m.anio_escolar
+                        AND m2.estado = 'Activa'
+                  )
+            """, (establecimiento_id,))
+        elif anio is not None:
+            # Sin filtro de establecimiento: compara globalmente en el mismo año
+            cur.execute("""
+                SELECT COUNT(DISTINCT m.id_estudiante)
+                FROM matricula m
+                WHERE m.estado IN ('Retirado', 'Inactiva')
+                  AND m.anio_escolar = %s
+                  AND m.id_estudiante NOT IN (
+                      SELECT m2.id_estudiante
+                      FROM matricula m2
+                      WHERE m2.anio_escolar = %s
+                        AND m2.estado = 'Activa'
+                  )
+            """, (anio, anio))
+        else:
+            # Sin filtros: comparación global por establecimiento+año
+            cur.execute("""
+                SELECT COUNT(DISTINCT m.id_estudiante)
+                FROM matricula m
+                WHERE m.estado IN ('Retirado', 'Inactiva')
+                  AND m.id_estudiante NOT IN (
+                      SELECT m2.id_estudiante
+                      FROM matricula m2
+                      WHERE m2.id_establecimiento = m.id_establecimiento
+                        AND m2.anio_escolar = m.anio_escolar
+                        AND m2.estado = 'Activa'
+                  )
+            """)
         total_inactivos = cur.fetchone()[0]
 
-        cur.execute(f"SELECT nivel_ensenanza, COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY nivel_ensenanza ORDER BY nivel_ensenanza", tuple(parametros))
+        cur.execute(f"SELECT nivel_ensenanza, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY nivel_ensenanza ORDER BY nivel_ensenanza", tuple(parametros))
         por_nivel = [{"nombre": row[0] or "Sin Nivel", "cantidad": row[1]} for row in cur.fetchall()]
 
         # Desglose de cursos para ACTIVOS
-        cur.execute(f"SELECT curso, COUNT(*) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
+        cur.execute(f"SELECT curso, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado = 'Activa' {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
         por_curso = [{"nombre": row[0] or "Sin Curso", "cantidad": row[1]} for row in cur.fetchall()]
 
-        # 🌟 NUEVO: Desglose de cursos para INACTIVOS (Retiros)
-        cur.execute(f"SELECT curso, COUNT(*) FROM matricula WHERE estado != 'Activa' {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
+        # Desglose de cursos para RETIROS NETOS
+        # Solo cuenta alumnos Retirado/Inactiva que NO tienen otra matricula Activa en el mismo colegio/año
+        cur.execute(f"""
+            SELECT m.curso, COUNT(DISTINCT m.id_estudiante)
+            FROM matricula m
+            WHERE m.estado IN ('Retirado', 'Inactiva')
+              {filtros_sql}
+              AND m.id_estudiante NOT IN (
+                  SELECT m2.id_estudiante
+                  FROM matricula m2
+                  WHERE m2.id_establecimiento = m.id_establecimiento
+                    AND m2.anio_escolar = m.anio_escolar
+                    AND m2.estado = 'Activa'
+              )
+            GROUP BY m.curso
+            ORDER BY m.curso
+        """, tuple(parametros))
         por_curso_retiros = [{"nombre": row[0] or "Sin Curso", "cantidad": row[1]} for row in cur.fetchall()]
 
-        # --- CONSTRUCCIÓN DEL HISTÓRICO REAL DESDE 2022 ---
+        # --- CONSTRUCCION DEL HISTORICO REAL DESDE 2022 ---
+        # Traemos id_estudiante para poder calcular retiros netos en Python
         cur.execute(f"""
-            SELECT anio_escolar, estado, curso
+            SELECT anio_escolar, id_estudiante, estado, curso, id_establecimiento
             FROM matricula
             WHERE anio_escolar >= 2022 {filtro_global}
         """, tuple(param_global))
         
         filas_historial = cur.fetchall()
-        historico_dict = {}
 
-        for anio_h, estado, curso in filas_historial:
+        # Construimos un indice auxiliar: alumnos activos por (establecimiento, anio)
+        # para descartar falsos positivos en el loop del historico
+        activos_por_colegio_anio: dict = {}
+        for anio_h, id_est_h, estado_h, curso_h, id_est_2 in filas_historial:
+            if estado_h == 'Activa':
+                key = (id_est_2, anio_h)
+                activos_por_colegio_anio.setdefault(key, set()).add(id_est_h)
+
+        historico_dict: dict = {}
+        # Conjuntos para evitar doble conteo de retiros unicos por anio
+        retiros_contados: dict = {}  # anio -> set(id_estudiante)
+
+        for anio_h, id_est_h, estado_h, curso_h, id_est_2 in filas_historial:
             if anio_h not in historico_dict:
-                # 🌟 NUEVO: Agregamos el diccionario 'cursos_retiros' para el gráfico
                 historico_dict[anio_h] = {"anio": anio_h, "activos": 0, "retiros": 0, "cursos": {}, "cursos_retiros": {}}
+            if anio_h not in retiros_contados:
+                retiros_contados[anio_h] = set()
 
-            # Limpiamos y agrupamos el nombre del curso (Ej: "1° básico A" -> "1° Básico")
-            curso_str = str(curso).strip() if curso else ""
+            # Limpiamos y agrupamos el nombre del curso (Ej: "1 basico A" -> "1 Basico")
+            curso_str = str(curso_h).strip() if curso_h else ""
             if curso_str:
                 match = re.match(r"^(.*?)\s+[A-Za-z]$", curso_str)
                 nombre_base = match.group(1).strip().capitalize() if match else curso_str.capitalize()
             else:
                 nombre_base = "Sin Curso"
 
-            if estado == 'Activa':
+            if estado_h == 'Activa':
                 historico_dict[anio_h]["activos"] += 1
                 if curso_str:
                     historico_dict[anio_h]["cursos"][nombre_base] = historico_dict[anio_h]["cursos"].get(nombre_base, 0) + 1
-            else:
-                historico_dict[anio_h]["retiros"] += 1
-                if curso_str:
-                    # 🌟 NUEVO: Sumamos al historial de cursos retirados
-                    historico_dict[anio_h]["cursos_retiros"][nombre_base] = historico_dict[anio_h]["cursos_retiros"].get(nombre_base, 0) + 1
+            elif estado_h in ('Retirado', 'Inactiva'):
+                # Solo cuenta como retiro neto si el alumno NO esta activo en este colegio/anio
+                key_activos = (id_est_2, anio_h)
+                alumno_activo_en_este_anio = id_est_h in activos_por_colegio_anio.get(key_activos, set())
+                
+                if not alumno_activo_en_este_anio and id_est_h not in retiros_contados[anio_h]:
+                    retiros_contados[anio_h].add(id_est_h)
+                    historico_dict[anio_h]["retiros"] += 1
+                    if curso_str:
+                        historico_dict[anio_h]["cursos_retiros"][nombre_base] = historico_dict[anio_h]["cursos_retiros"].get(nombre_base, 0) + 1
 
-        # Ordenar el historial de menor a mayor año para el gráfico
+        # Ordenar el historial de menor a mayor anio para el grafico
         historico_real = sorted(list(historico_dict.values()), key=lambda x: x["anio"])
 
         return {
@@ -89,11 +184,11 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
             "total_inactivos": total_inactivos,
             "por_nivel": por_nivel,
             "por_curso": por_curso,
-            "por_curso_retiros": por_curso_retiros, # 🌟 NUEVO: Lo enviamos al Frontend
+            "por_curso_retiros": por_curso_retiros,
             "historico": historico_real
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Error al generar estadísticas: " + str(e))
+        raise HTTPException(status_code=500, detail="Error al generar estadisticas: " + str(e))
     finally:
         cur.close()
         conn.close()

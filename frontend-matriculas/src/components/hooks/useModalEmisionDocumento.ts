@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../../config/api';
 
 export const useModalEmisionDocumento = (
   idMatricula: number,
@@ -46,7 +47,7 @@ export const useModalEmisionDocumento = (
     const token = localStorage.getItem('token');
     
     try {
-      const res = await fetch('http://127.0.0.1:8000/documentos/emitir', {
+      const res = await fetch(`${API_BASE_URL}/documentos/emitir`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +78,8 @@ export const useModalEmisionDocumento = (
   };
 
   const handleDescargarLocal = () => {
-    window.open(`http://127.0.0.1:8000/matriculas/${idMatricula}/certificado?tipo=${tipoDocumento}`, '_blank');  
+    const token = localStorage.getItem('token') || '';
+    window.open(`${API_BASE_URL}/matriculas/${idMatricula}/certificado?tipo=${tipoDocumento}&token=${token}`, '_blank');  
   };
 
   return {

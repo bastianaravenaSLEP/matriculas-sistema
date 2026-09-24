@@ -1,0 +1,41 @@
+# Entornos virtuales y Python
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Variables de entorno y secretos
+.env
+*.env
+backend/.env
+frontend-matriculas/.env
+
+# Node.js
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Datos sensibles y temporales
+*.xlsx
+*.xls
+carga_apoderado/*.xlsx
+carga_apoderado/*.xls
+csv pruebas/*.xlsx
+csv pruebas/*.xls
+
+# IDEs y editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Archivos subidos / Uploads locales
+uploads/
+backend/uploads/

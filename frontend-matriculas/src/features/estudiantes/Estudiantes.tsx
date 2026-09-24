@@ -3,16 +3,16 @@ import React from 'react';
 import { 
   Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, ChevronLeft, 
   UserPlus, Edit2, Save, X, CheckCircle, HeartPulse, ShieldAlert, Activity, 
-  Stethoscope, Check 
+  Stethoscope, Check, FileText 
 } from 'lucide-react';
 import { useEstudiantes } from './hooks/useEstudiantes'; 
+import { API_BASE_URL } from '../../config/api';
 
 export default function Estudiantes() {
   const {
     puedeEditar,
     datosEstudiante, setDatosEstudiante,
     modoEdicion, setModoEdicion,
-    manejarSubidaCSV, subiendoArchivo,
     guardandoEdicion, handleGuardarEdicion,
     textoBusqueda, setTextoBusqueda,
     cargandoLista, estudiantesFiltrados,
@@ -32,6 +32,9 @@ export default function Estudiantes() {
   } = useEstudiantes();
 
   const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
+
+  // Estado para el historial RGM colapsable
+  const [historialExpandido, setHistorialExpandido] = React.useState(false);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto relative pb-10">
@@ -73,26 +76,12 @@ export default function Estudiantes() {
         ) : !datosEstudiante ? (
           <div className="flex gap-3">
             {puedeEditar && (
-              <>
-                <input 
-                  type="file" accept=".csv, .xls, .xlsx" id="csv-upload" className="hidden" 
-                  onChange={manejarSubidaCSV} disabled={subiendoArchivo}
-                />
-                <label 
-                  htmlFor="csv-upload" 
-                  className={`flex items-center gap-2 cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
-                    subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
-                  }`}
-                >
-                  {subiendoArchivo ? 'Cargando...' : '📄 Cargar SIGE / CSV'}
-                </label>
-                <button 
-                  onClick={iniciarCrearEstudiante} 
-                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-sm"
-                >
-                  <UserPlus size={20} /> Nuevo Estudiante
-                </button>
-              </>
+              <button 
+                onClick={iniciarCrearEstudiante} 
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold transition-colors shadow-sm"
+              >
+                <UserPlus size={20} /> Nuevo Estudiante
+              </button>
             )}
           </div>
         ) : (
@@ -656,42 +645,98 @@ export default function Estudiantes() {
               </div>
 
               {/* Historial RGM */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
-                  <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Clock size={24} /></div>
-                  <h2 className="text-lg font-bold text-gray-800">Historial RGM</h2>
-                </div>
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="text-gray-500 border-b border-gray-100">
-                      <th className="pb-2">Año</th>
-                      <th className="pb-2">Establecimiento</th>
-                      <th className="pb-2">Curso</th>
-                      <th className="pb-2 text-center">Estado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historialOrdenado.length === 0 && (
-                      <tr><td colSpan={4} className="py-4 text-center text-gray-500">Sin historial de matrículas</td></tr>
+              {(() => {
+                const anioActual = new Date().getFullYear();
+                const LIMITE_VISIBLE = 4;
+                const registrosVisibles = historialExpandido
+                  ? historialOrdenado
+                  : historialOrdenado.slice(0, LIMITE_VISIBLE);
+                const hayMas = historialOrdenado.length > LIMITE_VISIBLE;
+
+                const coloresEstado: Record<string, string> = {
+                  Activa:   'bg-green-100 text-green-700 border border-green-200',
+                  Retirado: 'bg-red-50 text-red-600 border border-red-100',
+                  Inactiva: 'bg-orange-50 text-orange-600 border border-orange-100',
+                  Anulada:  'bg-gray-100 text-gray-400 border border-gray-200',
+                };
+
+                return (
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-purple-50 rounded-lg text-purple-600"><Clock size={24} /></div>
+                        <div>
+                          <h2 className="text-lg font-bold text-gray-800">Historial RGM</h2>
+                          <p className="text-xs text-gray-400">
+                            {historialOrdenado.length} registro{historialOrdenado.length !== 1 ? 's' : ''} en total
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {historialOrdenado.length === 0 && (
+                        <p className="text-sm text-center text-gray-400 py-4">Sin historial de matrículas</p>
+                      )}
+
+                      {registrosVisibles.map((reg: any) => {
+                        const esVigente = reg.estado === 'Activa' && reg.anio === anioActual;
+                        const esActivoAnterior = reg.estado === 'Activa' && !esVigente;
+                        const badgeCls = esActivoAnterior
+                          ? 'bg-gray-100 text-gray-500 border border-gray-200'
+                          : (coloresEstado[reg.estado] ?? 'bg-gray-100 text-gray-500 border border-gray-200');
+                        const badgeLabel = esActivoAnterior ? 'Promovido' : reg.estado;
+
+                        return (
+                          <div
+                            key={reg.id}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors ${
+                              esVigente
+                                ? 'bg-green-50 border-green-200'
+                                : 'bg-gray-50 border-gray-100 hover:bg-gray-100'
+                            }`}
+                          >
+                            {/* Pill de año */}
+                            <div className={`shrink-0 w-12 text-center text-[13px] font-black rounded-lg py-1 ${
+                              esVigente ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-600'
+                            }`}>
+                              {reg.anio}
+                            </div>
+
+                            {/* Establecimiento + RBD + Curso */}
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-bold truncate ${esVigente ? 'text-green-900' : 'text-gray-800'}`}>
+                                {reg.establecimiento}
+                              </p>
+                              <p className="text-[11px] text-gray-400 font-mono">
+                                RBD: {reg.rbd}&nbsp;·&nbsp;{reg.curso || 'Sin curso'}
+                              </p>
+                            </div>
+
+                            {/* Badge estado */}
+                            <span className={`shrink-0 px-2 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${badgeCls}`}>
+                              {badgeLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Toggle expandir / colapsar */}
+                    {hayMas && (
+                      <button
+                        onClick={() => setHistorialExpandido(prev => !prev)}
+                        className="mt-3 w-full text-xs font-semibold text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg py-2 transition-colors border border-purple-100"
+                      >
+                        {historialExpandido
+                          ? '▲ Mostrar menos'
+                          : `▼ Ver historial completo (${historialOrdenado.length - LIMITE_VISIBLE} más)`}
+                      </button>
                     )}
-                    {historialOrdenado.map((reg: any) => (
-                      <tr key={reg.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                        <td className="py-3 font-semibold">{reg.anio}</td>
-                        <td className="py-3">
-                          <p className="font-bold text-gray-800">{reg.establecimiento}</p>
-                          <p className="text-xs text-gray-500 font-mono">RBD: {reg.rbd}</p>
-                        </td>
-                        <td className="py-3 font-medium text-gray-700">{reg.curso}</td>
-                        <td className="py-3 text-center">
-                          <span className={`px-2 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${reg.estado === 'Activa' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-100'}`}>
-                            {reg.estado}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                );
+              })()}
+
             </div>
 
             {/* Columna Derecha: Directorio de Apoderados y Ficha de Salud */}
@@ -721,7 +766,26 @@ export default function Estudiantes() {
                       <div><p className="text-xs font-bold text-gray-500 uppercase">Teléfono Móvil</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.telefono || '-'}</p></div>
                       <div className="sm:col-span-2"><p className="text-xs font-bold text-gray-500 uppercase">Correo Electrónico</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.correo || '-'}</p></div>
                       <div className="sm:col-span-2"><p className="text-xs font-bold text-gray-500 uppercase">Domicilio</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.domicilio || 'Sin registrar'}</p></div>
+                      {datosEstudiante.apoderado?.ruta_documento_tutor && (
+                        <div className="sm:col-span-2 pt-3 border-t border-gray-200 flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-emerald-800 uppercase">Documento de Tutoría Legal</p>
+                            <p className="text-xs text-gray-500">Acreditación / Resolución judicial adjunta</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const token = localStorage.getItem('token');
+                              window.open(`${API_BASE_URL}/documentos/adjunto?tipo=tutor&id=${encodeURIComponent(datosEstudiante.personal.run)}&token=${token}`, '_blank');
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm cursor-pointer"
+                          >
+                            <FileText size={15} /> Ver Documento PDF
+                          </button>
+                        </div>
+                      )}
                     </div>
+
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-emerald-50/40 p-4 rounded-xl border border-emerald-200">
                       <div>

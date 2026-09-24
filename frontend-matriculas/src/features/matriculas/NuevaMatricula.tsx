@@ -2,6 +2,9 @@
 import React from 'react';
 import { Search, UserCheck, AlertCircle, CheckCircle, Download, Mail, ArrowRight, ChevronRight, ChevronLeft, AlertTriangle, Calendar, Edit3 } from 'lucide-react';
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
+import { ModalFaltantes } from './components/ModalFaltantes';
+import { ModalExito } from './components/ModalExito';
+import { ModalSalida } from './components/ModalSalida';
 
 export default function NuevaMatricula() {
   const {
@@ -493,273 +496,31 @@ export default function NuevaMatricula() {
       </form>
 
       {/* MODAL DE ACTUALIZACIÓN DE DATOS */}
-      {modalFaltantes && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200 animate-in zoom-in-95 duration-200">
-            
-            <div className="bg-[#25306B] p-5 text-white flex items-center justify-between sticky top-0 z-10 shadow-sm">
-              <div>
-                <h3 className="font-bold text-lg">Actualización de Antecedentes (Período 2026)</h3>
-                <p className="text-xs text-blue-200 mt-0.5">
-                  Estudiante: {estudiante?.nombres} {estudiante?.apellidos} (RUT: {estudiante?.run})
-                </p>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setModalFaltantes(false)}
-                className="text-gray-300 hover:text-white text-xl font-bold px-2 py-1 rounded"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={guardarDatosFaltantes} className="p-6 space-y-6">
-              
-              {/* Sección Domicilio Estudiante */}
-              <div>
-                <h4 className="text-xs font-black text-gray-700 uppercase tracking-wider mb-3 pb-1 border-b border-gray-200">
-                  1. Domicilio Actual del Estudiante
-                </h4>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
-                    Dirección Completa (Calle, Número, Sector, Comuna) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="domicilio_estudiante"
-                    value={formFaltantes.domicilio_estudiante}
-                    onChange={handleFaltantesChange}
-                    required
-                    placeholder="Ej: Av. Argentina 1234, Cerro Barón, Valparaíso"
-                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Sección Apoderado Titular */}
-              <div>
-                <div className="flex items-center justify-between mb-3 pb-1 border-b border-gray-200">
-                  <h4 className="text-xs font-black text-gray-700 uppercase tracking-wider">
-                    2. Datos del Apoderado Titular
-                  </h4>
-                  <button
-                    type="button"
-                    onClick={copiarDomicilio}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
-                  >
-                    Copiar Domicilio del Estudiante
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      RUT / Pasaporte Apoderado <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="rut_apoderado"
-                      value={formFaltantes.rut_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="12345678-9"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Nombres <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="nombres_apoderado"
-                      value={formFaltantes.nombres_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="Nombres del apoderado"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Apellido Paterno <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="apellido_paterno_apoderado"
-                      value={formFaltantes.apellido_paterno_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="Primer apellido"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Apellido Materno
-                    </label>
-                    <input
-                      type="text"
-                      name="apellido_materno_apoderado"
-                      value={formFaltantes.apellido_materno_apoderado}
-                      onChange={handleFaltantesChange}
-                      placeholder="Segundo apellido (opcional)"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Teléfono de Contacto <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="telefono_apoderado"
-                      value={formFaltantes.telefono_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="+56 9 1234 5678"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Correo Electrónico <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      name="correo_apoderado"
-                      value={formFaltantes.correo_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="correo@ejemplo.com"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
-                      Domicilio del Apoderado <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      name="domicilio_apoderado"
-                      value={formFaltantes.domicilio_apoderado}
-                      onChange={handleFaltantesChange}
-                      required
-                      placeholder="Dirección del apoderado"
-                      className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Botones de pie */}
-              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setModalFaltantes(false)}
-                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-bold transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={guardandoFaltantes}
-                  className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-colors shadow-md disabled:opacity-50"
-                >
-                  {guardandoFaltantes ? 'Guardando...' : 'Guardar y Validar Ficha'}
-                </button>
-              </div>
-
-            </form>
-
-          </div>
-        </div>
-      )}
+      <ModalFaltantes
+        isOpen={modalFaltantes}
+        onClose={() => setModalFaltantes(false)}
+        estudiante={estudiante}
+        formFaltantes={formFaltantes}
+        handleFaltantesChange={handleFaltantesChange}
+        guardarDatosFaltantes={guardarDatosFaltantes}
+        guardandoFaltantes={guardandoFaltantes}
+        copiarDomicilio={copiarDomicilio}
+      />
 
       {/* MODAL ÉXITO */}
-      {matriculaExitosa && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-300">
-            <div className="bg-[#25306B] p-6 text-center">
-              <CheckCircle className="mx-auto text-emerald-400 mb-3" size={48} />
-              <h3 className="text-xl font-bold text-white">{formulario.metodo_firma === 'Digital' ? '¡Solicitud de Firma Enviada!' : '¡Matrícula Registrada!'}</h3>
-              <p className="text-blue-200 text-sm mt-1">
-                {formulario.metodo_firma === 'Digital' 
-                  ? 'El estudiante fue ingresado y queda a la espera de la firma del apoderado.' 
-                  : 'El estudiante ha sido ingresado exitosamente.'}
-              </p>
-            </div>
-            
-            <div className="p-6 space-y-4">
-              {formulario.metodo_firma === 'Digital' ? (
-                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-center">
-                  <Mail className="mx-auto text-blue-600 mb-2" size={24} />
-                  <p className="text-sm font-bold text-blue-900">Solicitud de Firma Enviada</p>
-                  <p className="text-xs text-blue-700 mt-1">La matrícula queda en estado <span className="font-bold">Pendiente de Firma</span> hasta que el apoderado lea, responda religión/autorizaciones y firme con su Clave Única.</p>
-                </div>
-              ) : (
-                <button 
-                  onClick={generarComprobantePDF}
-                  className="w-full flex flex-col items-center justify-center gap-1 bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 py-4 rounded-lg font-bold transition-colors"
-                >
-                  <span className="flex items-center gap-2"><Download size={20} /> Descargar Set de Documentos (PDF)</span>
-                  <span className="text-[10px] font-normal text-orange-600">Imprima este archivo para la firma presencial del apoderado.</span>
-                </button>
-              )}
-
-              <div className="border-t border-gray-100 pt-4 mt-2">
-                <button 
-                  onClick={() => navigate('/matriculas')}
-                  className="w-full flex items-center justify-center gap-2 bg-[#006BB9] hover:bg-[#25306B] text-white py-3 rounded-lg font-bold transition-colors shadow-md"
-                >
-                  Volver al inicio <ArrowRight size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalExito
+        isOpen={matriculaExitosa}
+        metodoFirma={formulario.metodo_firma}
+        generarComprobantePDF={generarComprobantePDF}
+        onVolver={() => navigate('/matriculas')}
+      />
 
       {/* MODAL ADVERTENCIA DE SALIDA */}
-      {modalSalidaAbierto && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-amber-200 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3 text-amber-600">
-              <div className="p-2 bg-amber-100 rounded-full">
-                <AlertTriangle size={28} />
-              </div>
-              <h3 className="text-lg font-black text-gray-900">¿Desea salir del registro?</h3>
-            </div>
-            
-            <p className="text-sm text-gray-600 leading-relaxed">
-              Hay un proceso de matrícula en curso. Si cambia de módulo ahora, <strong>deberá realizar todo el proceso de nuevo y su progreso se perderá</strong>.
-            </p>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={cancelarSalida}
-                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-bold transition-colors"
-              >
-                Continuar aquí
-              </button>
-              <button
-                type="button"
-                onClick={confirmarSalida}
-                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-bold transition-colors shadow-md"
-              >
-                Sí, salir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ModalSalida
+        isOpen={modalSalidaAbierto}
+        onCancelar={cancelarSalida}
+        onConfirmar={confirmarSalida}
+      />
 
     </div>
   );

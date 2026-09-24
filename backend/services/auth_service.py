@@ -7,8 +7,7 @@ from google.auth.transport import requests as google_requests
 from database import get_db_connection
 from security import verificar_password, crear_token_acceso, ACCESS_TOKEN_EXPIRE_MINUTES
 
-# ⚠️ AQUÍ PEGARÁS EL CLIENT ID CUANDO TE LO ENTREGUEN
-GOOGLE_CLIENT_ID = "AQUI_IRA_TU_CLIENT_ID_DE_GOOGLE.apps.googleusercontent.com"
+from config import GOOGLE_CLIENT_ID
 
 def login_tradicional_service(credenciales):
     conn = get_db_connection()
