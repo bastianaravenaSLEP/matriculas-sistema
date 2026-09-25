@@ -11,9 +11,48 @@ from database import get_db_connection
 
 # Importamos las herramientas desacopladas
 from services.pdf_service import generar_certificado_pdf
-from services.email_service import enviar_correo_retiro, enviar_correo_cambio_curso
+from services.email_service import (
+    enviar_correo_retiro, 
+    enviar_correo_cambio_curso,
+    enviar_correo_solicitud_retiro,
+    enviar_correo_confirmacion_retiro,
+    enviar_correo_solicitud_cambio_curso,
+    enviar_correo_confirmacion_cambio_curso
+)
 from services.utils import determinar_nivel_backend
 from services import storage_service
+from services.establecimientos_service import obtener_capacidad_curso
+import re
+
+def formatear_nivel_curso(curso_str: str) -> str:
+    texto = (curso_str or "").upper()
+    match = re.search(r'\d+', texto)
+    numero = match.group(0) if match else ""
+    if "MEDIO" in texto or "MEDIA" in texto:
+        return f"{numero}MEDIO"
+    if "BÁSICO" in texto or "BASICO" in texto:
+        return f"{numero}BASICO"
+    if "KINDER" in texto or "KÍNDER" in texto:
+        return "PREKINDER" if "PRE" in texto else "KINDER"
+    return re.sub(r'[^A-Z0-9]', '', texto)
+
+def formatear_nombre_apoderado_resumido(nombres: str, apellido_paterno: str) -> str:
+    if not nombres and not apellido_paterno:
+        return "Pendiente"
+    
+    nombres_str = (nombres or "").replace(",", "").strip()
+    apellido_str = (apellido_paterno or "").replace(",", "").strip()
+    
+    if not nombres_str and not apellido_str:
+        return "Pendiente"
+    if nombres_str.lower() == "apoderado" and apellido_str.lower() == "pendiente":
+        return "Pendiente"
+        
+    primer_nombre = nombres_str.split()[0] if nombres_str else ""
+    primer_apellido = apellido_str.split()[0] if apellido_str else ""
+    
+    resultado = f"{primer_nombre} {primer_apellido}".strip()
+    return resultado if resultado else "Pendiente"
 
 def obtener_todas_matriculas_db(establecimiento_id: int = None):
     conn = get_db_connection()
@@ -23,7 +62,8 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
             SELECT m.id_matricula, m.numero_correlativo, m.nivel_ensenanza, m.curso, m.fecha_matricula, m.estado,
                    e.run_ipe, e.nombres, e.apellido_paterno, a.rut_pasaporte, a.nombres, a.apellido_paterno,
                    m.anio_escolar, cte.descripcion, est.rbd, m.cod_tipo_ensenanza, m.id_establecimiento,
-                   m.es_excedente, m.numero_resolucion_excedente, m.fecha_resolucion_excedente, m.ruta_documento_resolucion
+                   m.es_excedente, m.numero_resolucion_excedente, m.fecha_resolucion_excedente, m.ruta_documento_resolucion,
+                   m.motivo_cambio_curso
             FROM matricula m
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
@@ -42,13 +82,14 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
         matriculas = [{
             "id_matricula": f[0], "numero_correlativo": f[1], "nivel_ensenanza": f[2], "curso": f[3],
             "fecha_matricula": str(f[4]), "estado": f[5], "estudiante_rut": f[6], "estudiante_nombre": f"{f[7]} {f[8]}".strip(),
-            "apoderado_rut": f[9] or "Sin registro", "apoderado_nombre": f"{f[10]} {f[11]}".strip() if f[10] else "Pendiente",
+            "apoderado_rut": f[9] or "Sin registro", "apoderado_nombre": formatear_nombre_apoderado_resumido(f[10], f[11]),
             "anio_escolar": f[12], "tipo_ensenanza": f[13] or "Plan General", "rbd": f[14] or "Sin RBD",
             "cod_tipo_ensenanza": f[15], "id_establecimiento": f[16],
             "es_excedente": bool(f[17]),
             "numero_resolucion_excedente": f[18],
             "fecha_resolucion_excedente": str(f[19]) if f[19] else None,
-            "ruta_documento_resolucion": f[20]
+            "ruta_documento_resolucion": f[20],
+            "motivo_cambio_curso": f[21]
         } for f in cur.fetchall()]
         return matriculas
     finally:
@@ -196,13 +237,18 @@ def actualizar_estado_matricula_db(id_matricula: int, matricula, usuario_actual:
                 raise HTTPException(status_code=403, detail="No tiene permisos para modificar matrículas de otro establecimiento.")
 
         mensaje_alerta = ""
+        estado_a_guardar = matricula.estado
+
+        # Si se solicita retiro, NO se oficializa de inmediato: queda en 'Pendiente Retiro'
+        # hasta que el apoderado complete obligatoriamente la encuesta.
         if matricula.estado == "Retirado":
-            matricula.observaciones = "Pendiente de respuesta mediante cuestionario autoaplicado."
-            matricula.motivo_retiro = "Pendiente"
+            estado_a_guardar = "Pendiente Retiro"
+            matricula.observaciones = f"Solicitud de retiro iniciada ({matricula.fecha_retiro or datetime.now().strftime('%Y-%m-%d')}). En espera de formalización mediante encuesta obligatoria del apoderado."
+            matricula.motivo_retiro = "Pendiente de respuesta mediante cuestionario autoaplicado."
 
         cursor.execute("""
             UPDATE matricula SET estado = %s, fecha_retiro = %s, motivo_retiro = %s, observaciones = %s, id_usuario_ejecutor = %s WHERE id_matricula = %s RETURNING id_matricula;
-        """, (matricula.estado, matricula.fecha_retiro, matricula.motivo_retiro, matricula.observaciones, matricula.id_usuario_ejecutor, id_matricula))
+        """, (estado_a_guardar, matricula.fecha_retiro, matricula.motivo_retiro, matricula.observaciones, matricula.id_usuario_ejecutor, id_matricula))
         
         if not cursor.fetchone(): 
             raise HTTPException(status_code=404, detail="Matrícula no encontrada")
@@ -225,37 +271,18 @@ def actualizar_estado_matricula_db(id_matricula: int, matricula, usuario_actual:
             correo_apoderado = correo_ingresado if correo_ingresado else (datos[20] if datos else None)
             
             if datos and correo_apoderado:
-                rut_apod = datos[15] if datos[15] else "Sin registro"
-                nom_apod = f"{datos[16] or ''} {datos[17] or ''} {datos[18] or ''}".strip()
-                if not nom_apod: nom_apod = "Sin registro"
-                domicilio = datos[19] if datos[19] else "los registros del establecimiento"
-
-                datos_alumno = {
-                    "folio": datos[0], "anio": datos[1], "nivel": datos[2], "curso": datos[3],
-                    "fecha_matricula": datos[4], "rut": str(datos[5]).strip(),
-                    "nombre_completo": f"{datos[6]} {datos[7]} {datos[8]}".strip(),
-                    "sexo": datos[9], "estado": datos[10], "fecha_retiro": datos[11],
-                    "motivo_cambio": datos[12], "nombre_colegio": datos[13], "rbd_colegio": datos[14],
-                    "rut_apoderado": rut_apod, "nombre_apoderado": nom_apod, "domicilio": domicilio
-                }
-                
-                hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
-                hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
-                codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
-                
-                pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "RETIRO", codigo_verificacion)
-                pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
-                
+                f_ret = str(matricula.fecha_retiro) if matricula.fecha_retiro else ""
                 if background_tasks:
-                    background_tasks.add_task(enviar_correo_retiro, correo_apoderado, id_matricula, datos[6], pdf_bytes)
+                    background_tasks.add_task(enviar_correo_solicitud_retiro, correo_apoderado, id_matricula, datos[6], f_ret)
                 else:
-                    exito, msg_error = enviar_correo_retiro(correo_apoderado, id_matricula, datos[6], pdf_bytes)
-                    if not exito: mensaje_alerta = f"⚠️ Retiro guardado, pero falló el envío de Gmail: {msg_error}"
+                    exito, msg_error = enviar_correo_solicitud_retiro(correo_apoderado, id_matricula, datos[6], f_ret)
+                    if not exito: mensaje_alerta = f"⚠️ Solicitud registrada, pero falló el envío de Gmail: {msg_error}"
             else:
-                mensaje_alerta = "⚠️ Retiro guardado, pero el estudiante NO TIENE apoderado con correo electrónico registrado."
+                mensaje_alerta = "⚠️ Solicitud registrada, pero el estudiante NO TIENE apoderado con correo electrónico registrado."
 
         conn.commit()
-        return {"mensaje": mensaje_alerta if mensaje_alerta else "Matrícula actualizada y correo enviado exitosamente."}
+        msg_exito = "Solicitud de retiro registrada exitosamente. Se ha enviado el cuestionario obligatorio al apoderado. El retiro se oficializará de forma automática cuando el apoderado complete y envíe la encuesta."
+        return {"mensaje": mensaje_alerta if mensaje_alerta else msg_exito}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -264,33 +291,196 @@ def actualizar_estado_matricula_db(id_matricula: int, matricula, usuario_actual:
         conn.close()
 
 def guardar_respuesta_cuestionario_db(id_matricula: int, payload):
+    """
+    Recibe la encuesta de retiro completada por el apoderado:
+    1. Valida el RUT del estudiante.
+    2. Oficializa el estado a 'Retirado' en la base de datos.
+    3. Genera el Certificado Oficial de Retiro.
+    4. Envía el Certificado Oficial al correo del apoderado.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT e.run_ipe FROM matricula m INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante WHERE m.id_matricula = %s", (id_matricula,))
-        resultado = cur.fetchone()
-        if not resultado or resultado[0] != payload.rut_estudiante:
-            raise HTTPException(status_code=401, detail="El RUT ingresado no coincide.")
-            
-        cur.execute("UPDATE matricula SET observaciones = %s, motivo_retiro = 'Respuesta Apoderado (Confidencial)' WHERE id_matricula = %s", (payload.motivo_real, id_matricula))
+        cur.execute("""
+            SELECT e.run_ipe, m.numero_correlativo, m.anio_escolar, m.nivel_ensenanza, m.curso, m.fecha_matricula,
+                   e.nombres, e.apellido_paterno, e.apellido_materno, e.sexo,
+                   m.fecha_retiro, m.motivo_cambio_curso, est.nombre, est.rbd,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio,
+                   a.correo_electronico
+            FROM matricula m 
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
+            WHERE m.id_matricula = %s
+        """, (id_matricula,))
+        datos = cur.fetchone()
+        if not datos:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada.")
+
+        run_bd = str(datos[0]).strip().replace(".", "").upper()
+        run_ingresado = str(payload.rut_estudiante).strip().replace(".", "").upper()
+        if run_bd != run_ingresado:
+            raise HTTPException(status_code=401, detail="El RUT ingresado no coincide con el estudiante registrado.")
+
+        # Formalizar el retiro en la base de datos
+        cur.execute("""
+            UPDATE matricula 
+            SET estado = 'Retirado', 
+                motivo_retiro = 'Respuesta Apoderado (Confidencial)', 
+                observaciones = %s,
+                fecha_retiro = COALESCE(fecha_retiro, CURRENT_DATE)
+            WHERE id_matricula = %s
+        """, (payload.motivo_real, id_matricula))
+
+        # Generar Certificado Oficial de Retiro
+        nom_apod = f"{datos[15] or ''} {datos[16] or ''} {datos[17] or ''}".strip() or "Sin registro"
+        domicilio = datos[18] if datos[18] else "los registros del establecimiento"
+        f_retiro = datos[10] if datos[10] else datetime.now().strftime('%Y-%m-%d')
+        
+        datos_alumno = {
+            "folio": datos[1], "anio": datos[2], "nivel": datos[3], "curso": datos[4],
+            "fecha_matricula": datos[5], "rut": str(datos[0]).strip(),
+            "nombre_completo": f"{datos[6]} {datos[7]} {datos[8]}".strip(),
+            "sexo": datos[9], "estado": "Retirado", "fecha_retiro": f_retiro,
+            "motivo_cambio": datos[11], "nombre_colegio": datos[12], "rbd_colegio": datos[13],
+            "rut_apoderado": datos[14] if datos[14] else "Sin registro", 
+            "nombre_apoderado": nom_apod, "domicilio": domicilio
+        }
+
+        hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
+        hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
+        codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
+
+        pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "RETIRO", codigo_verificacion)
+        pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
+
+        correo_apoderado = datos[19]
+        if correo_apoderado:
+            enviar_correo_confirmacion_retiro(correo_apoderado, id_matricula, datos_alumno['nombre_completo'], pdf_bytes)
+
         conn.commit()
-        return {"mensaje": "Cuestionario guardado con éxito."}
+        return {"mensaje": "Cuestionario procesado exitosamente. El retiro del estudiante ha sido formalizado y se ha emitido el Certificado Oficial."}
     finally:
         cur.close()
         conn.close()
 
 def guardar_respuesta_cuestionario_curso_db(id_matricula: int, payload):
+    """
+    Recibe la justificación de cambio de curso completada por el apoderado:
+    1. Valida el RUT del estudiante.
+    2. Lee la solicitud pendiente (PENDIENTE_TRASLADO|cod_plan|nuevo_curso).
+    3. Asigna atómicamente el nuevo correlativo en la sala de destino y cambia el curso.
+    4. Genera el Comprobante Oficial de Traslado.
+    5. Envía el comprobante al correo del apoderado.
+    """
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT e.run_ipe FROM matricula m INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante WHERE m.id_matricula = %s", (id_matricula,))
-        resultado = cur.fetchone()
-        if not resultado or resultado[0] != payload.rut_estudiante:
-            raise HTTPException(status_code=401, detail="El RUT ingresado no coincide.")
-            
-        cur.execute("UPDATE matricula SET motivo_cambio_curso = %s WHERE id_matricula = %s", (payload.motivo_real, id_matricula))
+        cur.execute("""
+            SELECT e.run_ipe, m.curso, m.id_establecimiento, m.anio_escolar, m.numero_correlativo,
+                   m.motivo_cambio_curso, m.observaciones, e.nombres, e.apellido_paterno, e.apellido_materno,
+                   e.sexo, m.estado, m.fecha_matricula, m.fecha_retiro, est.nombre, est.rbd,
+                   a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, e.domicilio,
+                   a.correo_electronico, m.nivel_ensenanza
+            FROM matricula m 
+            INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante 
+            INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+            LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
+            WHERE m.id_matricula = %s
+        """, (id_matricula,))
+        datos = cur.fetchone()
+        if not datos:
+            raise HTTPException(status_code=404, detail="Matrícula no encontrada.")
+
+        run_bd = str(datos[0]).strip().replace(".", "").upper()
+        run_ingresado = str(payload.rut_estudiante).strip().replace(".", "").upper()
+        if run_bd != run_ingresado:
+            raise HTTPException(status_code=401, detail="El RUT ingresado no coincide con el estudiante registrado.")
+
+        curso_anterior = datos[1]
+        id_establecimiento = datos[2]
+        anio_escolar = datos[3]
+        folio_antiguo = datos[4]
+        motivo_actual = datos[5] or ""
+        obs_actual = datos[6] or ""
+
+        # Verificar si hay una solicitud pendiente con formato PENDIENTE_TRASLADO|cod_plan|nuevo_curso
+        if motivo_actual.startswith("PENDIENTE_TRASLADO|"):
+            partes = motivo_actual.split("|")
+            nuevo_cod = int(partes[1])
+            nuevo_curso = partes[2]
+        else:
+            # Si ya fue trasladado previamente o formato legacy, solo guardar motivo
+            cur.execute("UPDATE matricula SET motivo_cambio_curso = %s WHERE id_matricula = %s", (payload.motivo_real, id_matricula))
+            conn.commit()
+            return {"mensaje": "Motivo de traslado guardado con éxito."}
+
+        # Bloqueo atómico a nivel de curso/colegio/año
+        clave_bloqueo = f"{id_establecimiento}-{anio_escolar}-{nuevo_curso}"
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (clave_bloqueo,))
+
+        # Validar capacidad de sala antes de aplicar el traslado definitivo
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM matricula 
+            WHERE id_establecimiento = %s AND anio_escolar = %s AND curso = %s AND estado = 'Activa'
+        """, (id_establecimiento, anio_escolar, nuevo_curso))
+        matriculados_activos = cur.fetchone()[0]
+
+        rbd_colegio = datos[15]
+        nivel_str = formatear_nivel_curso(nuevo_curso)
+        capacidad_maxima = obtener_capacidad_curso(rbd_colegio, anio_escolar, nivel_str)
+
+        if matriculados_activos >= capacidad_maxima:
+            raise HTTPException(
+                status_code=400,
+                detail=f"El curso '{nuevo_curso}' ha alcanzado su capacidad máxima permitida ({matriculados_activos}/{capacidad_maxima} cupos). No es posible concretar el traslado."
+            )
+
+        cur.execute("""
+            SELECT COALESCE(MAX(numero_correlativo), 0) 
+            FROM matricula 
+            WHERE id_establecimiento = %s AND anio_escolar = %s AND curso = %s
+        """, (id_establecimiento, anio_escolar, nuevo_curso))
+        nuevo_correlativo = cur.fetchone()[0] + 1
+
+        obs_actualizada = f"{obs_actual}\n[{datetime.now().strftime('%Y-%m-%d')}] Traslado formalizado tras justificación del apoderado. De '{curso_anterior}' (Folio #{folio_antiguo}) a '{nuevo_curso}' (Folio #{nuevo_correlativo})."
+
+        # Aplicar el cambio de curso oficial
+        cur.execute("""
+            UPDATE matricula 
+            SET cod_tipo_ensenanza = %s, curso = %s, numero_correlativo = %s, motivo_cambio_curso = %s, observaciones = %s 
+            WHERE id_matricula = %s
+        """, (nuevo_cod, nuevo_curso, nuevo_correlativo, payload.motivo_real, obs_actualizada.strip(), id_matricula))
+
+        # Generar comprobante oficial de traslado
+        nombre_completo = f"{datos[7]} {datos[8]} {datos[9]}".strip()
+        nom_apod = f"{datos[17] or ''} {datos[18] or ''} {datos[19] or ''}".strip() or "Sin registro"
+        domicilio = datos[20] if datos[20] else "los registros del establecimiento"
+
+        datos_alumno = {
+            "folio": nuevo_correlativo, "anio": anio_escolar, "nivel": datos[22], "curso": nuevo_curso,
+            "fecha_matricula": datos[12], "rut": str(datos[0]).strip(),
+            "nombre_completo": nombre_completo,
+            "sexo": datos[10], "estado": datos[11], "fecha_retiro": datos[13],
+            "motivo_cambio": payload.motivo_real, "nombre_colegio": datos[14], "rbd_colegio": datos[15],
+            "rut_apoderado": datos[16] if datos[16] else "Sin registro", 
+            "nombre_apoderado": nom_apod, "domicilio": domicilio
+        }
+
+        hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
+        hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
+        codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
+
+        pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "CAMBIO_CURSO", codigo_verificacion)
+        pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
+
+        correo_apoderado = datos[21]
+        if correo_apoderado:
+            enviar_correo_confirmacion_cambio_curso(correo_apoderado, id_matricula, nombre_completo, nuevo_curso, pdf_bytes)
+
         conn.commit()
-        return {"mensaje": "Motivo de traslado guardado con éxito."}
+        return {"mensaje": "Justificación recibida exitosamente. El cambio de curso ha sido aplicado y la constancia oficial fue emitida."}
     finally:
         cur.close()
         conn.close()
@@ -316,34 +506,44 @@ def registrar_cambio_curso_db(id_matricula: int, req, usuario_actual: dict = Non
         if datos[0] != datetime.now().year: raise HTTPException(status_code=400, detail="Solo se puede cambiar curso en año vigente.")
         if datos[1] != 'Activa': raise HTTPException(status_code=400, detail="El alumno debe estar activo.")
             
-        anio_escolar = datos[0]
         id_establecimiento = datos[21]
-        folio_antiguo = datos[6]
 
         if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
             id_est_user = usuario_actual.get("id_establecimiento")
             if id_est_user and id_establecimiento != id_est_user:
                 raise HTTPException(status_code=403, detail="No tiene permisos para cambiar curso a estudiantes de otro establecimiento.")
 
-        # Bloqueo atómico a nivel de curso/colegio/año
-        clave_bloqueo = f"{id_establecimiento}-{anio_escolar}-{req.nuevo_curso}"
-        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (clave_bloqueo,))
-
+        # VALIDAR CAPACIDAD DE SALA ANTES DE REGISTRAR SOLICITUD
         cur.execute("""
-            SELECT COALESCE(MAX(numero_correlativo), 0) 
+            SELECT COUNT(*) 
             FROM matricula 
-            WHERE id_establecimiento = %s AND anio_escolar = %s AND curso = %s
-        """, (id_establecimiento, anio_escolar, req.nuevo_curso))
-        nuevo_correlativo = cur.fetchone()[0] + 1
+            WHERE id_establecimiento = %s 
+              AND anio_escolar = %s 
+              AND curso = %s 
+              AND estado = 'Activa'
+        """, (id_establecimiento, datos[0], req.nuevo_curso))
+        matriculados_activos = cur.fetchone()[0]
 
-        nueva_observacion = f"{datos[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Trasladado de '{datos[2]}' a '{req.nuevo_curso}'. Folio anterior: {folio_antiguo}. Motivo pendiente."
-        motivo_provisional = "Pendiente de respuesta mediante cuestionario autoaplicado."
+        rbd_colegio = datos[15]
+        nivel_str = formatear_nivel_curso(req.nuevo_curso)
+        capacidad_maxima = obtener_capacidad_curso(rbd_colegio, datos[0], nivel_str)
+
+        if matriculados_activos >= capacidad_maxima:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"El curso '{req.nuevo_curso}' ha alcanzado su capacidad máxima ({matriculados_activos}/{capacidad_maxima} cupos). No es posible solicitar el traslado hacia un curso lleno."
+            )
+
+        # Guardamos la solicitud de traslado como PENDIENTE sin mover aún al estudiante de curso.
+        # El cambio se efectúa cuando el apoderado complete la justificación obligatoria.
+        nueva_observacion = f"{datos[3] or ''}\n[{datetime.now().strftime('%Y-%m-%d')}] Solicitud de traslado hacia '{req.nuevo_curso}'. En espera de justificación obligatoria del apoderado."
+        motivo_provisional = f"PENDIENTE_TRASLADO|{req.cod_tipo_ensenanza}|{req.nuevo_curso}"
 
         cur.execute("""
             UPDATE matricula 
-            SET cod_tipo_ensenanza = %s, curso = %s, observaciones = %s, motivo_cambio_curso = %s, numero_correlativo = %s 
+            SET observaciones = %s, motivo_cambio_curso = %s 
             WHERE id_matricula = %s
-        """, (req.cod_tipo_ensenanza, req.nuevo_curso, nueva_observacion.strip(), motivo_provisional, nuevo_correlativo, id_matricula))
+        """, (nueva_observacion.strip(), motivo_provisional, id_matricula))
         
         mensaje_alerta = ""
         correo_ingresado = getattr(req, 'correo_destino', None)      
@@ -351,43 +551,24 @@ def registrar_cambio_curso_db(id_matricula: int, req, usuario_actual: dict = Non
         nombre_alumno = datos[4]
         
         if correo_apoderado:
-            rut_apod = datos[16] if datos[16] else "Sin registro"
-            nom_apod = f"{datos[17] or ''} {datos[18] or ''} {datos[19] or ''}".strip()
-            if not nom_apod: nom_apod = "Sin registro"
-            domicilio = datos[20] if datos[20] else "los registros del establecimiento"
-
-            datos_alumno = {
-                "folio": nuevo_correlativo, "anio": datos[0], "nivel": datos[7], "curso": req.nuevo_curso,
-                "fecha_matricula": datos[8], "rut": str(datos[9]).strip(),
-                "nombre_completo": f"{datos[4]} {datos[10]} {datos[11]}".strip(),
-                "sexo": datos[12], "estado": datos[1], "fecha_retiro": datos[13],
-                "motivo_cambio": motivo_provisional, "nombre_colegio": datos[14], "rbd_colegio": datos[15],
-                "rut_apoderado": rut_apod, "nombre_apoderado": nom_apod, "domicilio": domicilio
-            }
-            
-            hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
-            hash_corto = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
-            codigo_verificacion = f"VLP-{id_matricula}-{hash_corto}"
-            
-            pdf_buffer, _ = generar_certificado_pdf(datos_alumno, "CAMBIO_CURSO", codigo_verificacion)
-            pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
-            
             if background_tasks:
-                background_tasks.add_task(enviar_correo_cambio_curso, correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_bytes)
+                background_tasks.add_task(enviar_correo_solicitud_cambio_curso, correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso)
             else:
-                exito, msg_error = enviar_correo_cambio_curso(correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso, pdf_bytes)
-                if not exito: mensaje_alerta = f"⚠️ Traslado guardado, pero falló el envío a Gmail: {msg_error}"
+                exito, msg_error = enviar_correo_solicitud_cambio_curso(correo_apoderado, id_matricula, nombre_alumno, req.nuevo_curso)
+                if not exito: mensaje_alerta = f"⚠️ Solicitud registrada, pero falló el envío a Gmail: {msg_error}"
         else:
-            mensaje_alerta = "⚠️ Traslado guardado, pero el estudiante NO TIENE apoderado con correo registrado."
+            mensaje_alerta = "⚠️ Solicitud registrada, pero el estudiante NO TIENE apoderado con correo registrado."
 
         conn.commit()
-        return {"status": "success", "mensaje": mensaje_alerta if mensaje_alerta else "Traslado registrado y correo enviado al apoderado."}
+        msg_exito = f"Solicitud de traslado hacia '{req.nuevo_curso}' registrada exitosamente. Se envió el formulario de justificación al apoderado. El cambio de curso se aplicará automáticamente en cuanto el apoderado complete la encuesta."
+        return {"status": "success", "mensaje": mensaje_alerta if mensaje_alerta else msg_exito}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
         conn.close()
+
 
 def generar_pdf_certificado_db(id_matricula: int, tipo: str, usuario_actual: dict = None):
     conn = get_db_connection()
@@ -681,10 +862,11 @@ def obtener_colegio_procedencia_db(rut_estudiante: str):
             FROM matricula m
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
             INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
-            WHERE e.run_ipe = %s
+            WHERE REPLACE(REPLACE(REPLACE(UPPER(e.run_ipe), '.', ''), '-', ''), ' ', '') = REPLACE(REPLACE(REPLACE(UPPER(%s), '.', ''), '-', ''), ' ', '')
+               OR e.run_ipe = %s
             ORDER BY m.anio_escolar DESC, m.fecha_matricula DESC, m.id_matricula DESC
             LIMIT 1
-        """, (rut_estudiante.strip(),))
+        """, (rut_estudiante.strip(), rut_estudiante.strip()))
         
         resultado = cursor.fetchone()
         if not resultado:

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { AlertOctagon, CheckCircle2 } from 'lucide-react';
 import ModalEmisionDocumento from '../../components/ModalEmisionDocumento';
 import ModalDescargaExcel from './components/ModalDescargaExcel';
 import { useMatriculas } from './hooks/useMatriculas'; 
@@ -7,7 +8,7 @@ import { API_BASE_URL } from '../../config/api';
 
 export default function Matriculas() {
   const {
-    colegioSeleccionado, puedeEditar, anioActual,
+    colegioSeleccionado, puedeEditar, puedeCargarSIGE, anioActual,
     cargando, error, subiendoArchivo,
     busqueda, setBusqueda,
     filtroAnio, setFiltroAnio,
@@ -26,8 +27,18 @@ export default function Matriculas() {
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, 
     iniciarCambioCurso, confirmarCambioCurso,
     mostrarCupos, cuposOcupados, capacidadSala, descargandoExcel, exportarAExcel,
+    capacidadCursoDestino, cargandoCapacidadDestino, matriculadosCursoDestino, cursoDestinoLleno, cuposPorCurso,
     modalExcelAbierto, setModalExcelAbierto,
   } = useMatriculas();
+
+  const formatearNombreCorto = (nombre?: string) => {
+    if (!nombre || nombre === 'Pendiente' || nombre === 'Sin registro') {
+      return nombre || 'Pendiente';
+    }
+    const palabras = nombre.trim().split(/\s+/);
+    if (palabras.length <= 2) return nombre;
+    return `${palabras[0]} ${palabras[1]}`;
+  };
 
   return (
     <div className="space-y-6 relative">
@@ -48,20 +59,24 @@ export default function Matriculas() {
           </button>
           {puedeEditar && (
             <>
-              <input 
-                type="file" accept=".csv, .xls, .xlsx" 
-                id="csv-upload-matriculas" className="hidden" 
-                onChange={manejarSubidaCSV} disabled={subiendoArchivo}
-                multiple 
-              />
-              <label 
-                htmlFor="csv-upload-matriculas" 
-                className={`flex items-center justify-center cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
-                  subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
-                }`}
-              >
-                {subiendoArchivo ? 'Procesando archivos...' : 'Cargar SIGE / CSV'}
-              </label>
+              {puedeCargarSIGE && (
+                <>
+                  <input 
+                    type="file" accept=".csv, .xls, .xlsx" 
+                    id="csv-upload-matriculas" className="hidden" 
+                    onChange={manejarSubidaCSV} disabled={subiendoArchivo}
+                    multiple 
+                  />
+                  <label 
+                    htmlFor="csv-upload-matriculas" 
+                    className={`flex items-center justify-center cursor-pointer px-4 py-2 rounded-lg font-medium transition-colors border ${
+                      subiendoArchivo ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50'
+                    }`}
+                  >
+                    {subiendoArchivo ? 'Procesando archivos...' : 'Cargar SIGE / CSV'}
+                  </label>
+                </>
+              )}
               <Link to="/matriculas/nueva" className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors">
                 + Renovar Matrícula
               </Link>
@@ -180,11 +195,18 @@ export default function Matriculas() {
                         <p className="text-xs text-gray-500">{mat.estudiante_rut}</p>
                     </td>
                     <td className="p-4">
-                        <p className="font-medium text-emerald-700">{mat.apoderado_nombre}</p>
+                        <p className="font-medium text-emerald-700">{formatearNombreCorto(mat.apoderado_nombre)}</p>
                         <p className="text-xs text-gray-500">{mat.apoderado_rut}</p>
                     </td>
                     <td className="p-4">
-                        <p className="font-bold text-blue-800">{mat.curso}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-bold text-blue-800">{mat.curso}</p>
+                          {mat.motivo_cambio_curso?.startsWith('PENDIENTE_TRASLADO') && (
+                            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded text-[10px] font-bold border border-purple-200" title={`Traslado solicitado hacia ${mat.motivo_cambio_curso.split('|')[2]}. En espera de justificación del apoderado.`}>
+                              ⏳ Solicitud Traslado
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-600 truncate max-w-[250px]" title={mat.tipo_ensenanza}>
                           {mat.cod_tipo_ensenanza && <span className="font-semibold text-gray-700 mr-1">(Cod. {mat.cod_tipo_ensenanza})</span>}
                           {mat.tipo_ensenanza}
@@ -192,8 +214,14 @@ export default function Matriculas() {
                     </td>
                     <td className="p-4 text-center font-semibold text-gray-700">{mat.anio_escolar}</td>
                     <td className="p-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${mat.estado === 'Activa' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-                        {mat.estado}
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                        mat.estado === 'Activa' 
+                          ? 'bg-green-50 text-green-700 border-green-200' 
+                          : mat.estado === 'Pendiente Retiro'
+                          ? 'bg-amber-50 text-amber-800 border-amber-300'
+                          : 'bg-red-50 text-red-700 border-red-200'
+                      }`}>
+                        {mat.estado === 'Pendiente Retiro' ? '⏳ Pendiente Retiro' : mat.estado}
                       </span>
                     </td>
                     
@@ -212,13 +240,35 @@ export default function Matriculas() {
                             Resolución PDF
                           </button>
                         )}
+                        {mat.estado === 'Pendiente Retiro' && (
+                          <a 
+                            href={`/encuesta-retiro/${mat.id_matricula}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-amber-700 hover:text-amber-900 font-bold text-xs underline cursor-pointer"
+                            title="Abrir el cuestionario confidencial de retiro"
+                          >
+                            Completar Encuesta
+                          </a>
+                        )}
+                        {mat.motivo_cambio_curso?.startsWith('PENDIENTE_TRASLADO') && mat.estado === 'Activa' && (
+                          <a 
+                            href={`/encuesta-cambio-curso/${mat.id_matricula}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-purple-700 hover:text-purple-900 font-bold text-xs underline cursor-pointer"
+                            title="Abrir la justificación de cambio de curso"
+                          >
+                            Justificar Traslado
+                          </a>
+                        )}
                         {mat.estado === 'Activa' && (
                           <>
                             <button onClick={() => abrirModalEmision(mat.id_matricula, 'MATRICULA')} className="text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
                               Emitir Doc.
                             </button>
                             
-                            {puedeEditar && mat.anio_escolar === anioActual && (
+                            {puedeEditar && mat.anio_escolar === anioActual && !mat.motivo_cambio_curso?.startsWith('PENDIENTE_TRASLADO') && (
                               <button onClick={() => iniciarCambioCurso(mat.id_matricula, mat.curso, mat.cod_tipo_ensenanza)} className="text-blue-600 hover:text-blue-800 font-medium transition-colors">Mover</button>
                             )}
                             {puedeEditar && (
@@ -243,10 +293,10 @@ export default function Matriculas() {
       {modalCursoAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-800 mb-2">Cambio de Curso y Emisión de Constancia</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Solicitar Traslado de Curso</h3>
             
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-xs text-blue-800">
-              <p><strong>Normativa SLEP:</strong> El traslado exige el envío obligatorio del certificado digital al director o apoderado.</p>
+              <p><strong>Normativa SLEP:</strong> El traslado requiere la justificación obligatoria del apoderado mediante encuesta. Al confirmar, se enviará el formulario al apoderado y el cambio de sala se aplicará automáticamente en el sistema en cuanto el apoderado responda la justificación.</p>
             </div>
 
             <form onSubmit={confirmarCambioCurso} className="space-y-4">
@@ -268,16 +318,53 @@ export default function Matriculas() {
                 <label className="block text-xs font-bold text-gray-700 uppercase mb-1">2. Curso Específico</label>
                 <select 
                   value={cursoDestino} onChange={(e) => setCursoDestino(e.target.value)} 
-                  className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white disabled:bg-gray-100"
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white disabled:bg-gray-100 outline-none"
                   disabled={!planDestino} required
                 >
                   <option value="">Seleccione la sala...</option>
-                  {planDestino && Array.from(estructuraColegio[planDestino].cursos).sort().map(curso => (
-                    <option key={curso} value={curso}>{curso}</option>
-                  ))}
+                  {planDestino && Array.from(estructuraColegio[planDestino].cursos).sort().map(curso => {
+                    const cant = cuposPorCurso[curso] || 0;
+                    return (
+                      <option key={curso} value={curso}>
+                        {curso} ({cant} matriculados)
+                      </option>
+                    );
+                  })}
                 </select>
+
+                {/* AVISO DE CAPACIDAD DE SALA / CURSO LLENO */}
+                {cursoDestino && (
+                  <div>
+                    {cargandoCapacidadDestino ? (
+                      <p className="text-xs text-gray-500 italic mt-1.5 animate-pulse">
+                        Consultando disponibilidad de vacantes en el curso...
+                      </p>
+                    ) : cursoDestinoLleno ? (
+                      <div className="mt-2.5 p-3.5 bg-red-50 border-2 border-red-300 text-red-900 rounded-xl flex gap-3 items-start animate-in fade-in shadow-sm">
+                        <AlertOctagon className="text-red-600 shrink-0 mt-0.5" size={20} />
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wide text-red-800">
+                            Curso Lleno - Capacidad Máxima Alcanzada
+                          </p>
+                          <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                            El curso <strong>{cursoDestino}</strong> ya cuenta con sus <strong>{matriculadosCursoDestino} de {capacidadCursoDestino} cupos ocupados</strong>. No es posible solicitar el traslado hacia un curso que ya cuenta con sus vacantes completas.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-lg flex items-center justify-between text-xs animate-in fade-in">
+                        <span className="font-semibold flex items-center gap-1.5">
+                          <CheckCircle2 size={16} className="text-emerald-600" /> Disponibilidad en {cursoDestino}:
+                        </span>
+                        <span className="font-bold bg-white px-2 py-0.5 rounded border border-emerald-300 text-emerald-900">
+                          {matriculadosCursoDestino} / {capacidadCursoDestino} cupos ({capacidadCursoDestino - matriculadosCursoDestino} vacantes)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
-                  {advertenciaNivel && (
+                {advertenciaNivel && (
                   <div className="mt-2 p-2.5 bg-orange-50 border border-orange-200 text-orange-800 text-xs font-bold rounded-lg flex gap-2 items-start shadow-sm animate-pulse">
                     <span className="text-sm">⚠️</span>
                     <p className="whitespace-pre-line">ATENCIÓN:<br/>{advertenciaNivel}</p>
@@ -286,12 +373,12 @@ export default function Matriculas() {
               </div>
 
               <div className="border-t pt-3 space-y-3">
-                <p className="text-xs font-bold text-gray-700 uppercase">4. Envío Obligatorio de Comprobante</p>
+                <p className="text-xs font-bold text-gray-700 uppercase">3. Envío de Encuesta Obligatoria al Apoderado</p>
                 
                 <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
                     <input type="checkbox" checked={enviarApoderadoCurso} onChange={(e) => setEnviarApoderadoCurso(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
-                    Enviar correo
+                    Enviar encuesta a correo del apoderado
                   </label>
                   {enviarApoderadoCurso && (
                     <input type="email" placeholder="correo.apoderado@gmail.com" value={correoApoderadoCurso} onChange={(e) => setCorreoApoderadoCurso(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />
@@ -299,17 +386,22 @@ export default function Matriculas() {
                 </div>
               </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700">
-                  <input type="checkbox" checked={descargarLocalCurso} onChange={(e) => setDescargarLocalCurso(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
-                  Descargar también una copia local en mi equipo (Opcional)
-                </label>
-              </div>
-
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
                 <button type="button" onClick={() => setModalCursoAbierto(false)} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancelar</button>
-                <button type="submit" disabled={procesandoCurso || !cursoDestino} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-                  {procesandoCurso ? 'Procesando...' : 'Confirmar Traslado y Enviar'}
+                <button 
+                  type="submit" 
+                  disabled={procesandoCurso || !cursoDestino || cursoDestinoLleno || cargandoCapacidadDestino} 
+                  className={`px-4 py-2 text-white rounded-lg text-sm font-bold transition-all shadow-sm ${
+                    cursoDestinoLleno
+                      ? 'bg-red-400 cursor-not-allowed opacity-80'
+                      : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50'
+                  }`}
+                >
+                  {procesandoCurso 
+                    ? 'Procesando...' 
+                    : cursoDestinoLleno 
+                      ? 'Curso sin cupos disponibles (Lleno)' 
+                      : 'Enviar Solicitud y Encuesta al Apoderado'}
                 </button>
               </div>
             </form>
@@ -318,27 +410,27 @@ export default function Matriculas() {
       )}
 
       {/* =======================================================================
-          MODAL B: RETIRO DE ESTUDIANTE (BAJA OFICIAL)
+          MODAL B: RETIRO DE ESTUDIANTE (SOLICITUD Y ENCUESTA)
           ======================================================================= */}
       {modalAbierto && (
         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-800 mb-2">Registrar Retiro y Constancia</h3>
-            <p className="text-xs text-gray-500 mb-4">La baja del estudiante requiere el despacho obligatorio del comprobante oficial.</p>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">Solicitar Retiro de Estudiante</h3>
+            <p className="text-xs text-gray-500 mb-4">La baja del estudiante requiere que el apoderado complete obligatoriamente el cuestionario confidencial de retiro. El alumno quedará en estado <strong>'Pendiente Retiro'</strong> hasta que el sistema reciba las respuestas.</p>
 
             <form onSubmit={confirmarRetiro} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Fecha Efectiva de Retiro</label>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Fecha Prevista de Retiro</label>
                 <input type="date" required value={fechaRetiro} onChange={(e) => setFechaRetiro(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm" />
               </div>
 
               <div className="border-t pt-3 space-y-3">
-                <p className="text-xs font-bold text-gray-700 uppercase">Envío Obligatorio de Comprobante de Retiro</p>
+                <p className="text-xs font-bold text-gray-700 uppercase">Envío Obligatorio de Cuestionario al Apoderado</p>
                 
                 <div className="p-2.5 border rounded-lg bg-gray-50 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800">
                     <input type="checkbox" checked={enviarApoderadoRetiro} onChange={(e) => setEnviarApoderadoRetiro(e.target.checked)} className="w-4 h-4 text-red-600 rounded" />
-                    Enviar correo
+                    Enviar cuestionario a correo del apoderado
                   </label>
                   {enviarApoderadoRetiro && (
                     <input type="email" placeholder="correo.apoderado@gmail.com" value={correoApoderadoRetiro} onChange={(e) => setCorreoApoderadoRetiro(e.target.value)} className="w-full border p-2 rounded text-xs bg-white" required />
@@ -346,17 +438,10 @@ export default function Matriculas() {
                 </div>
               </div>
 
-              <div className="pt-2">
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700">
-                  <input type="checkbox" checked={descargarLocalRetiro} onChange={(e) => setDescargarLocalRetiro(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
-                  Descargar también una copia local en mi equipo (Opcional)
-                </label>
-              </div>
-
               <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
                 <button type="button" onClick={() => setModalAbierto(false)} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancelar</button>
                 <button type="submit" disabled={procesandoRetiro} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-                  {procesandoRetiro ? 'Procesando...' : 'Confirmar Retiro y Enviar'}
+                  {procesandoRetiro ? 'Procesando...' : 'Enviar Solicitud y Cuestionario al Apoderado'}
                 </button>
               </div>
             </form>

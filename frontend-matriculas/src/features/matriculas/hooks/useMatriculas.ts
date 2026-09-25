@@ -22,6 +22,7 @@ export interface Matricula {
   numero_resolucion_excedente?: string | null;
   fecha_resolucion_excedente?: string | null;
   ruta_documento_resolucion?: string | null;
+  motivo_cambio_curso?: string | null;
 }
 
 export const useMatriculas = () => {
@@ -31,6 +32,8 @@ export const useMatriculas = () => {
   const usuarioString = localStorage.getItem('usuario');
   const usuario = usuarioString ? JSON.parse(usuarioString) : null;
   const puedeEditar = !['Visualizador_SLEP', 'Visualizador_Colegio'].includes(usuario?.rol);
+  const esAdminOSlep = ['admin_slep', 'slep', 'admin'].includes(String(usuario?.rol || '').toLowerCase());
+  const puedeCargarSIGE = esAdminOSlep && puedeEditar;
 
   const [motivoCambio, setMotivoCambio] = useState('');
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
@@ -48,6 +51,8 @@ export const useMatriculas = () => {
   const [procesandoCurso, setProcesandoCurso] = useState(false);
   const [planDestino, setPlanDestino] = useState<string>('');
   const [cursoDestino, setCursoDestino] = useState<string>('');
+  const [capacidadCursoDestino, setCapacidadCursoDestino] = useState<number>(45);
+  const [cargandoCapacidadDestino, setCargandoCapacidadDestino] = useState<boolean>(false);
   
   const [modalAbierto, setModalAbierto] = useState(false);
   const [idSeleccionado, setIdSeleccionado] = useState<number | null>(null);
@@ -291,6 +296,62 @@ useEffect(() => {
     return matriculasProcesadas.filter(m => m.estado === 'Activa').length;
   }, [matriculasProcesadas, mostrarCupos]);
 
+  // 🌟 CAPACIDAD DE SALA Y CONTROL DE CUPO PARA CAMBIO DE CURSO
+  const matriculadosCursoDestino = useMemo(() => {
+    if (!cursoDestino) return 0;
+    return matriculas.filter(m =>
+      m.anio_escolar === anioActual &&
+      m.curso === cursoDestino &&
+      m.estado === 'Activa'
+    ).length;
+  }, [matriculas, cursoDestino, anioActual]);
+
+  const cuposPorCurso = useMemo(() => {
+    const conteo: Record<string, number> = {};
+    matriculas.forEach(m => {
+      if (m.anio_escolar === anioActual && m.estado === 'Activa' && m.curso) {
+        conteo[m.curso] = (conteo[m.curso] || 0) + 1;
+      }
+    });
+    return conteo;
+  }, [matriculas, anioActual]);
+
+  useEffect(() => {
+    const obtenerCapacidadDestino = async () => {
+      if (!modalCursoAbierto || !cursoDestino || matriculas.length === 0) {
+        setCapacidadCursoDestino(45);
+        return;
+      }
+      const rbdReal = matriculas[0]?.rbd;
+      if (!rbdReal) return;
+
+      const nivelExcel = formatearNivelExcel(cursoDestino);
+      const token = localStorage.getItem('token');
+      setCargandoCapacidadDestino(true);
+
+      try {
+        const url = `${API_BASE_URL}/establecimientos/capacidad-sala?rbd=${rbdReal}&anio_escolar=${anioActual}&nivel=${nivelExcel}`;
+        const res = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCapacidadCursoDestino(data.capacidad_maxima || 45);
+        } else {
+          setCapacidadCursoDestino(45);
+        }
+      } catch (e) {
+        setCapacidadCursoDestino(45);
+      } finally {
+        setCargandoCapacidadDestino(false);
+      }
+    };
+
+    obtenerCapacidadDestino();
+  }, [modalCursoAbierto, cursoDestino, matriculas, anioActual]);
+
+  const cursoDestinoLleno = Boolean(cursoDestino && matriculadosCursoDestino >= capacidadCursoDestino);
+
   const abrirModalEmision = (idMatricula: number, tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO') => {
     const matricula = matriculas.find(m => m.id_matricula === idMatricula);
     if (matricula) {
@@ -362,6 +423,7 @@ useEffect(() => {
     setCodigoActual(codigo_actual);
     setPlanDestino('');
     setCursoDestino('');
+    setCapacidadCursoDestino(45);
     setMotivoCambio('');
     setAdvertenciaNivel(null); 
     setModalCursoAbierto(true);
@@ -370,6 +432,11 @@ useEffect(() => {
   const confirmarCambioCurso = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!idSeleccionado || !planDestino || !cursoDestino) return;
+
+    if (cursoDestinoLleno) {
+      alert(`⚠️ NO ES POSIBLE EL TRASLADO:\n\nEl curso '${cursoDestino}' ha alcanzado su capacidad máxima permitida (${matriculadosCursoDestino}/${capacidadCursoDestino} cupos ocupados). Seleccione una sala con vacantes disponibles.`);
+      return;
+    }
 
     if (advertenciaNivel) {
       const seguro = window.confirm(`⚠️ ADVERTENCIA DE SEGURIDAD:\n\n${advertenciaNivel}\n\n¿Está completamente seguro de que desea confirmar este cambio de nivel?`);
@@ -506,7 +573,7 @@ useEffect(() => {
   const [modalExcelAbierto, setModalExcelAbierto] = useState(false);
 
   return {
-    colegioSeleccionado, puedeEditar, anioActual,
+    colegioSeleccionado, puedeEditar, puedeCargarSIGE, esAdminOSlep, anioActual,
     cargando, error, subiendoArchivo,
     busqueda, setBusqueda,
     filtroAnio, setFiltroAnio,
@@ -532,6 +599,7 @@ useEffect(() => {
     aniosUnicos, codigosUnicos, cursosUnicos, estructuraColegio, matriculasProcesadas,
     manejarSubidaCSV, abrirModalEmision, iniciarRetiro, confirmarRetiro, iniciarCambioCurso, confirmarCambioCurso,
     mostrarCupos, cuposOcupados, descargandoExcel, exportarAExcel, capacidadSala,
+    capacidadCursoDestino, cargandoCapacidadDestino, matriculadosCursoDestino, cursoDestinoLleno, cuposPorCurso,
     modalExcelAbierto, setModalExcelAbierto,
   };
 };

@@ -5,7 +5,7 @@ interface ModalFaltantesProps {
   onClose: () => void;
   estudiante: any;
   formFaltantes: any;
-  handleFaltantesChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleFaltantesChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   guardarDatosFaltantes: (e: React.FormEvent) => void;
   guardandoFaltantes: boolean;
   copiarDomicilio: () => void;
@@ -97,6 +97,28 @@ export const ModalFaltantes: React.FC<ModalFaltantesProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Parentesco con el Estudiante <span className="text-red-500">*</span>
+                </label>
+                <select
+                  name="relacion_apoderado"
+                  value={formFaltantes.relacion_apoderado || 'Madre'}
+                  onChange={handleFaltantesChange}
+                  required
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white"
+                >
+                  <option value="Madre">Madre</option>
+                  <option value="Padre">Padre</option>
+                  <option value="Abuelo Paterno">Abuelo Paterno</option>
+                  <option value="Abuela Paterna">Abuela Paterna</option>
+                  <option value="Abuelo Materno">Abuelo Materno</option>
+                  <option value="Abuela Materna">Abuela Materna</option>
+                  <option value="Tutor Legal Designado">Tutor Legal Designado</option>
+                  <option value="Otro">Otro</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
                   Nombres <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -154,7 +176,7 @@ export const ModalFaltantes: React.FC<ModalFaltantesProps> = ({
                 />
               </div>
 
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-gray-700 mb-1">
                   Correo Electrónico <span className="text-red-500">*</span>
                 </label>
@@ -184,6 +206,135 @@ export const ModalFaltantes: React.FC<ModalFaltantesProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Sección Apoderado Suplente (Opcional) */}
+          <div className="pt-2 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-3 pb-1 border-b border-gray-200">
+              <h4 className="text-xs font-black text-gray-700 uppercase tracking-wider">
+                3. Datos del Apoderado Suplente (Opcional)
+              </h4>
+              <label className="flex items-center gap-2 text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-200 cursor-pointer hover:bg-blue-100 transition-colors">
+                <input
+                  type="checkbox"
+                  name="tiene_suplente"
+                  checked={Boolean(formFaltantes.tiene_suplente)}
+                  onChange={handleFaltantesChange}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                Registrar / Mantener Apoderado Suplente
+              </label>
+            </div>
+
+            {formFaltantes.tiene_suplente ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50/70 p-4 rounded-xl border border-gray-200 animate-in fade-in">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    RUT / Pasaporte Suplente <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="rut_suplente"
+                    value={formFaltantes.rut_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    required={Boolean(formFaltantes.tiene_suplente)}
+                    placeholder="12345678-9"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Parentesco Suplente
+                  </label>
+                  <input
+                    type="text"
+                    name="relacion_suplente"
+                    value={formFaltantes.relacion_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    placeholder="Ej: Tía, Hermano mayor, Abuelo..."
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Nombres <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="nombres_suplente"
+                    value={formFaltantes.nombres_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    required={Boolean(formFaltantes.tiene_suplente)}
+                    placeholder="Nombres del suplente"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Apellido Paterno <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="apellido_paterno_suplente"
+                    value={formFaltantes.apellido_paterno_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    required={Boolean(formFaltantes.tiene_suplente)}
+                    placeholder="Primer apellido"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Apellido Materno
+                  </label>
+                  <input
+                    type="text"
+                    name="apellido_materno_suplente"
+                    value={formFaltantes.apellido_materno_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    placeholder="Segundo apellido (opcional)"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Teléfono Móvil <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="telefono_suplente"
+                    value={formFaltantes.telefono_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    required={Boolean(formFaltantes.tiene_suplente)}
+                    placeholder="+56 9 1234 5678"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Correo Electrónico
+                  </label>
+                  <input
+                    type="email"
+                    name="correo_suplente"
+                    value={formFaltantes.correo_suplente || ''}
+                    onChange={handleFaltantesChange}
+                    placeholder="correo@ejemplo.com (opcional)"
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl border border-dashed border-gray-300 text-center text-xs text-gray-500 bg-gray-50">
+                No se registrará un apoderado suplente para esta matrícula. Puede marcar la casilla superior si desea añadir uno.
+              </div>
+            )}
           </div>
 
           {/* Botones de pie */}

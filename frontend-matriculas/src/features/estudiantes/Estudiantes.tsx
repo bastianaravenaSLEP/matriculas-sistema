@@ -21,7 +21,7 @@ export default function Estudiantes() {
     // Wizard Nuevo Estudiante
     vistaCrearEstudiante, setVistaCrearEstudiante,
     pasoCrear, irSiguientePasoCrear, irPasoAnteriorCrear, iniciarCrearEstudiante,
-    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular,
+    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular, navegandoAMatricular,
     nuevoEstudiante, setNuevoEstudiante, formatearRUT, handleCrearEstudiante,
     creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion, archivoTutor, setArchivoTutor,
     
@@ -32,6 +32,7 @@ export default function Estudiantes() {
   } = useEstudiantes();
 
   const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
+  const esIpaApoderado = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
 
   // Estado para el historial RGM colapsable
   const [historialExpandido, setHistorialExpandido] = React.useState(false);
@@ -127,18 +128,42 @@ export default function Estudiantes() {
             <p className="text-gray-600 text-sm mb-6 leading-relaxed">
               El estudiante quedó registrado en la base de datos central bajo el identificador <strong className="font-mono bg-gray-100 px-2 py-0.5 rounded text-blue-800">{rutRecienCreado}</strong>, junto a sus apoderados y su ficha médica completa.
             </p>
+
+            {/* Banner de carga visible al presionar "Matricular Ahora" */}
+            {navegandoAMatricular && (
+              <div className="mb-4 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-center gap-3 text-blue-800 text-sm font-semibold">
+                <svg className="animate-spin h-5 w-5 text-blue-600 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Cargando datos del estudiante, por favor espere...
+              </div>
+            )}
+
             <div className="flex justify-center gap-4">
               <button 
-                onClick={cerrarModalExito} 
-                className="px-6 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold transition-colors"
+                onClick={cerrarModalExito}
+                disabled={navegandoAMatricular}
+                className="px-6 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-bold transition-colors"
               >
                 Volver al Directorio
               </button>
               <button 
-                onClick={irAMatricular} 
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-colors flex items-center gap-2 shadow-md"
+                onClick={irAMatricular}
+                disabled={navegandoAMatricular}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-colors flex items-center gap-2 shadow-md"
               >
-                Matricular Ahora <ChevronRight size={18} />
+                {navegandoAMatricular ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                    </svg>
+                    Cargando...
+                  </>
+                ) : (
+                  <>Matricular Ahora <ChevronRight size={18} /></>
+                )}
               </button>
             </div>
           </div>
@@ -169,29 +194,22 @@ export default function Estudiantes() {
                   </div>
 
                   {esIpeEstudiante && (
-                    <div className="col-span-full bg-blue-50 border border-blue-200 p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="col-span-full bg-blue-50 border border-blue-200 p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-200">
                       <div>
                         <label className="block text-xs font-bold text-blue-900 mb-1">País de Origen <span className="text-red-500">*</span></label>
-                        <select 
+                        <input 
                           required 
+                          type="text" 
+                          placeholder="Ej: Venezuela, Colombia, Perú, etc." 
                           value={nuevoEstudiante.pais_origen_estudiante || ''} 
                           onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, pais_origen_estudiante: e.target.value})} 
-                          className="w-full border border-blue-300 rounded-lg p-2 text-sm bg-white"
-                        >
-                          <option value="">Seleccione país...</option>
-                          <option value="Venezuela">Venezuela</option>
-                          <option value="Colombia">Colombia</option>
-                          <option value="Perú">Perú</option>
-                          <option value="Bolivia">Bolivia</option>
-                          <option value="Haití">Haití</option>
-                          <option value="Ecuador">Ecuador</option>
-                          <option value="Otro">Otro país</option>
-                        </select>
+                          className="w-full border border-blue-300 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500" 
+                        />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-blue-900 mb-1">Documento Nacional Extranjero <span className="text-red-500">*</span></label>
                         <input 
-                          required type="text" placeholder="N° DNI o Pasaporte" 
+                          required type="text" placeholder="N° DNI o Pasaporte del Estudiante" 
                           value={nuevoEstudiante.doc_extranjero_estudiante || ''} 
                           onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, doc_extranjero_estudiante: e.target.value})} 
                           className="w-full border border-blue-300 rounded-lg p-2 text-sm bg-white" 
@@ -310,8 +328,33 @@ export default function Estudiantes() {
 
                     <div>
                       <label className="block text-xs font-bold text-gray-700 mb-1">RUT o Pasaporte <span className="text-red-500">*</span></label>
-                      <input required type="text" placeholder="Ej: 12345678-9" value={nuevoEstudiante.run_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run_apoderado: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-mono" maxLength={12} />
+                      <input required type="text" placeholder="Ej: 12345678-9" value={nuevoEstudiante.run_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, run_apoderado: formatearRUT(e.target.value)})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-mono" maxLength={15} />
                     </div>
+
+                    {esIpaApoderado && (
+                      <div className="col-span-full bg-emerald-50 border border-emerald-200 p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-200">
+                        <div>
+                          <label className="block text-xs font-bold text-emerald-900 mb-1">País de Origen <span className="text-red-500">*</span></label>
+                          <input 
+                            required 
+                            type="text" 
+                            placeholder="Ej: Venezuela, Colombia, Perú, etc." 
+                            value={nuevoEstudiante.pais_origen_apoderado || ''} 
+                            onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, pais_origen_apoderado: e.target.value})} 
+                            className="w-full border border-emerald-300 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-emerald-500" 
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-emerald-900 mb-1">Documento Nacional Extranjero (DNI o Pasaporte) <span className="text-red-500">*</span></label>
+                          <input 
+                            required type="text" placeholder="N° DNI o Pasaporte del Apoderado" 
+                            value={nuevoEstudiante.doc_extranjero_apoderado || ''} 
+                            onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, doc_extranjero_apoderado: e.target.value})} 
+                            className="w-full border border-emerald-300 rounded-lg p-2 text-sm bg-white" 
+                          />
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-bold text-gray-700 mb-1">Nombres <span className="text-red-500">*</span></label>
                       <input required type="text" value={nuevoEstudiante.nombres_apoderado} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, nombres_apoderado: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm" />
@@ -375,6 +418,10 @@ export default function Estudiantes() {
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">Apellido Paterno <span className="text-red-500">*</span></label>
                         <input required={nuevoEstudiante.tiene_suplente} type="text" value={nuevoEstudiante.apellido_paterno_suplente} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, apellido_paterno_suplente: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Apellido Materno</label>
+                        <input type="text" placeholder="Segundo apellido (opcional)" value={nuevoEstudiante.apellido_materno_suplente} onChange={(e) => setNuevoEstudiante({...nuevoEstudiante, apellido_materno_suplente: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm" />
                       </div>
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">Teléfono Móvil <span className="text-red-500">*</span></label>
@@ -592,7 +639,14 @@ export default function Estudiantes() {
           VISTA 2: FICHA DETALLADA DEL ESTUDIANTE (MODO VISTA / MODO EDICIÓN TOTAL)
           ======================================================================= */}
       {!vistaCrearEstudiante && datosEstudiante && (() => {
-        const historialOrdenado = [...datosEstudiante.historial].sort((a: any, b: any) => b.id - a.id);
+        const historialOrdenado = [...(datosEstudiante.historial || [])].sort((a: any, b: any) => {
+          const anioA = Number(a.anio) || 0;
+          const anioB = Number(b.anio) || 0;
+          if (anioB !== anioA) {
+            return anioB - anioA;
+          }
+          return (Number(b.id) || 0) - (Number(a.id) || 0);
+        });
         const ultimaMatricula = historialOrdenado.length > 0 ? historialOrdenado[0] : null;
 
         return (
@@ -618,6 +672,18 @@ export default function Estudiantes() {
                     <p className="text-xs font-bold text-gray-500 uppercase">Fecha Nacimiento</p>
                     <p className="font-medium text-gray-700">{datosEstudiante.personal.fecha_nacimiento}</p>
                   </div>
+                  {datosEstudiante.personal.pais_origen && datosEstudiante.personal.pais_origen !== 'Chile' && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase">País de Origen</p>
+                      <p className="font-semibold text-blue-700">{datosEstudiante.personal.pais_origen}</p>
+                    </div>
+                  )}
+                  {datosEstudiante.personal.documento_extranjero && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase">Doc. Extranjero (DNI/Pasaporte)</p>
+                      <p className="font-mono font-medium text-gray-800">{datosEstudiante.personal.documento_extranjero}</p>
+                    </div>
+                  )}
                   
                   <div className="pt-2 border-t border-gray-50">
                     <p className="text-xs font-bold text-gray-500 uppercase mb-1">Última Matrícula Registrada</p>
@@ -766,6 +832,18 @@ export default function Estudiantes() {
                       <div><p className="text-xs font-bold text-gray-500 uppercase">Teléfono Móvil</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.telefono || '-'}</p></div>
                       <div className="sm:col-span-2"><p className="text-xs font-bold text-gray-500 uppercase">Correo Electrónico</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.correo || '-'}</p></div>
                       <div className="sm:col-span-2"><p className="text-xs font-bold text-gray-500 uppercase">Domicilio</p><p className="font-medium text-gray-700">{datosEstudiante.apoderado?.domicilio || 'Sin registrar'}</p></div>
+                      {datosEstudiante.apoderado?.pais_origen && datosEstudiante.apoderado.pais_origen !== 'Chile' && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase">País de Origen</p>
+                          <p className="font-semibold text-emerald-800">{datosEstudiante.apoderado.pais_origen}</p>
+                        </div>
+                      )}
+                      {datosEstudiante.apoderado?.documento_extranjero && (
+                        <div>
+                          <p className="text-xs font-bold text-gray-500 uppercase">Doc. Extranjero (DNI/Pasaporte)</p>
+                          <p className="font-mono font-medium text-gray-800">{datosEstudiante.apoderado.documento_extranjero}</p>
+                        </div>
+                      )}
                       {datosEstudiante.apoderado?.ruta_documento_tutor && (
                         <div className="sm:col-span-2 pt-3 border-t border-gray-200 flex items-center justify-between">
                           <div>

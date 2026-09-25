@@ -74,7 +74,8 @@ class ActualizarEstudianteRequest(BaseModel):
     relacion_apoderado: Optional[str] = None
 
     # 3. Apoderado Suplente
-    tiene_suplente: Optional[bool] = False
+    modificar_suplente: Optional[bool] = False
+    tiene_suplente: Optional[bool] = None
     rut_suplente: Optional[str] = None
     nombres_suplente: Optional[str] = None
     apellido_paterno_suplente: Optional[str] = None
@@ -97,11 +98,36 @@ class ActualizarEstudianteRequest(BaseModel):
     nee: Optional[str] = None
     nee_tipo: Optional[str] = None
 
-@router.get("")
-def obtener_estudiantes(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
+@router.get("/buscar")
+def buscar_estudiantes(
+    q: str, 
+    establecimiento_id: Optional[int] = None, 
+    buscar_global: Optional[bool] = False,
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     rol = usuario_actual.get("rol")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
-        establecimiento_id = usuario_actual.get("id_establecimiento")       
+    if rol in ["Colegio", "Visualizador_Colegio"] and not buscar_global:
+        establecimiento_id = usuario_actual.get("id_establecimiento")
+    elif buscar_global:
+        establecimiento_id = None
+        
+    return estudiante_service.buscar_estudiantes_db(q, establecimiento_id)
+
+@router.get("")
+def obtener_estudiantes(
+    q: Optional[str] = None, 
+    establecimiento_id: Optional[int] = None, 
+    buscar_global: Optional[bool] = False,
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
+    rol = usuario_actual.get("rol")
+    if rol in ["Colegio", "Visualizador_Colegio"] and not buscar_global:
+        establecimiento_id = usuario_actual.get("id_establecimiento")
+    elif buscar_global:
+        establecimiento_id = None
+        
+    if q:
+        return estudiante_service.buscar_estudiantes_db(q, establecimiento_id)
     return estudiante_service.obtener_estudiantes_db(establecimiento_id, rol)
 
 @router.get("/{rut}")

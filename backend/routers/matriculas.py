@@ -77,7 +77,16 @@ def descargar_certificado(id_matricula: int, tipo: str = "MATRICULA", usuario_ac
     )
 
 @router.post("/carga-masiva")
-async def carga_masiva_sige(archivos: List[UploadFile] = File(...), usuario_actual: dict = Depends(obtener_usuario_actual)):
+async def carga_masiva_sige(
+    archivos: List[UploadFile] = File(...), 
+    usuario_actual: dict = Depends(verificar_escritura)
+):
+    rol = str(usuario_actual.get("rol", "")).lower()
+    if rol not in ["admin_slep", "slep", "admin"]:
+        raise HTTPException(
+            status_code=403, 
+            detail="Acceso restringido: La carga masiva de SIGE está reservada exclusivamente para administradores o nivel central SLEP."
+        )
     # Pasamos el trabajo pesado al servicio enviando el request
     return await matricula_service.procesar_carga_masiva_db(archivos, usuario_actual)
 

@@ -48,6 +48,130 @@ def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
         cur.close()
         conn.close()
 
+def buscar_estudiantes_db(termino: str, establecimiento_id: int = None, limite: int = 20):
+    if not termino or len(termino.strip()) < 2:
+        return []
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        t_limpio = termino.replace('.', '').replace('-', '').strip()
+        t_clean_pattern = f"%{t_limpio}%" if len(t_limpio) >= 2 else "%___NO_RUT___%"
+        t_pattern = f"%{termino.strip()}%"
+
+        palabras = [p.strip() for p in termino.strip().split() if p.strip()]
+
+        # 1. Búsqueda por palabras (tokenized search) con unaccent
+        params_unaccent = [t_clean_pattern, t_pattern]
+        name_conds_unaccent = []
+        for p in palabras:
+            name_conds_unaccent.append("unaccent(LOWER(CONCAT(e.nombres, ' ', e.apellido_paterno, ' ', coalesce(e.apellido_materno, '')))) LIKE unaccent(LOWER(%s))")
+            params_unaccent.append(f"%{p}%")
+
+        name_clause_unaccent = " AND ".join(name_conds_unaccent) if name_conds_unaccent else "1=0"
+
+        est_filter = ""
+        if establecimiento_id is not None:
+            est_filter = " AND m.id_establecimiento = %s"
+            params_unaccent.append(establecimiento_id)
+
+        # Priorizar coincidencias directas en el nombre
+        primera_palabra = palabras[0] if palabras else termino.strip()
+        params_unaccent.append(f"%{primera_palabra}%")
+        params_unaccent.append(limite)
+
+        try:
+            query = f"""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (e.id_estudiante)
+                        e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno,
+                        m.estado, m.anio_escolar, m.curso, est.nombre as colegio_actual
+                    FROM estudiante e
+                    LEFT JOIN matricula m ON e.id_estudiante = m.id_estudiante
+                    LEFT JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+                    WHERE (
+                        REPLACE(REPLACE(REPLACE(UPPER(e.run_ipe), '.', ''), '-', ''), ' ', '') LIKE %s
+                        OR e.run_ipe ILIKE %s
+                        OR ({name_clause_unaccent})
+                    ){est_filter}
+                    ORDER BY e.id_estudiante, m.anio_escolar DESC NULLS LAST
+                ) sub
+                ORDER BY 
+                    CASE 
+                        WHEN unaccent(LOWER(sub.nombres)) LIKE unaccent(LOWER(%s)) THEN 0 
+                        ELSE 1 
+                    END,
+                    sub.apellido_paterno ASC, sub.nombres ASC
+                LIMIT %s
+            """
+            cur.execute(query, tuple(params_unaccent))
+            filas = cur.fetchall()
+        except Exception:
+            conn.rollback()
+            params_fallback = [t_clean_pattern, t_pattern]
+            name_conds_fb = []
+            for p in palabras:
+                name_conds_fb.append("UPPER(CONCAT(e.nombres, ' ', e.apellido_paterno, ' ', coalesce(e.apellido_materno, ''))) LIKE UPPER(%s)")
+                params_fallback.append(f"%{p}%")
+
+            name_clause_fb = " AND ".join(name_conds_fb) if name_conds_fb else "1=0"
+
+            if establecimiento_id is not None:
+                est_filter_fb = " AND m.id_establecimiento = %s"
+                params_fallback.append(establecimiento_id)
+            else:
+                est_filter_fb = ""
+
+            params_fallback.append(f"%{primera_palabra}%")
+            params_fallback.append(limite)
+
+            query_fallback = f"""
+                SELECT * FROM (
+                    SELECT DISTINCT ON (e.id_estudiante)
+                        e.id_estudiante, e.run_ipe, e.nombres, e.apellido_paterno, e.apellido_materno,
+                        m.estado, m.anio_escolar, m.curso, est.nombre as colegio_actual
+                    FROM estudiante e
+                    LEFT JOIN matricula m ON e.id_estudiante = m.id_estudiante
+                    LEFT JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
+                    WHERE (
+                        REPLACE(REPLACE(REPLACE(UPPER(e.run_ipe), '.', ''), '-', ''), ' ', '') LIKE %s
+                        OR e.run_ipe ILIKE %s
+                        OR ({name_clause_fb})
+                    ){est_filter_fb}
+                    ORDER BY e.id_estudiante, m.anio_escolar DESC NULLS LAST
+                ) sub
+                ORDER BY 
+                    CASE 
+                        WHEN UPPER(sub.nombres) LIKE UPPER(%s) THEN 0 
+                        ELSE 1 
+                    END,
+                    sub.apellido_paterno ASC, sub.nombres ASC
+                LIMIT %s
+            """
+            cur.execute(query_fallback, tuple(params_fallback))
+            filas = cur.fetchall()
+
+        return [{
+            "id": f[0],
+            "id_estudiante": f[0],
+            "run": f[1],
+            "run_ipe": f[1],
+            "nombres": f[2],
+            "apellido_paterno": f[3],
+            "apellido_materno": f[4] or "",
+            "nombre_completo": f"{f[2]} {f[3]} {f[4] or ''}".strip(),
+            "estado": f[5] or "Sin Matrícula",
+            "anio_escolar": f[6],
+            "curso": f[7] or "Sin Curso",
+            "colegio": f[8] or "Sin Colegio"
+        } for f in filas]
+    except Exception as e:
+        print(f"Error en buscar_estudiantes_db: {e}")
+        return []
+    finally:
+        cur.close()
+        conn.close()
+
 def obtener_ficha_estudiante_db(rut: str):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -57,13 +181,17 @@ def obtener_ficha_estudiante_db(rut: str):
                    a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno, a.telefono, a.correo_electronico, a.domicilio, a.relacion_estudiante, a.ruta_documento_tutor,
                    asup.rut_pasaporte, asup.nombres, asup.apellido_paterno, asup.apellido_materno, asup.telefono, asup.correo_electronico, asup.domicilio, asup.relacion_estudiante,
                    fs.id_ficha, fs.sistema_salud, fs.letra_fonasa, fs.cesfam, fs.centro_emergencia, 
-                   fs.alergias, fs.diagnostico_medico, fs.medico_tratante, fs.medicamento, fs.nee, fs.nee_tipo
+                    fs.alergias, fs.diagnostico_medico, fs.medico_tratante, fs.medicamento, fs.nee, fs.nee_tipo,
+                    e.fecha_actualizacion,
+                    e.pais_origen, e.documento_extranjero,
+                    a.pais_origen, a.documento_extranjero
             FROM estudiante e
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
             LEFT JOIN apoderado asup ON e.id_apoderado_suplente = asup.id_apoderado
             LEFT JOIN ficha_salud fs ON e.id_estudiante = fs.id_estudiante
-            WHERE e.run_ipe = %s
-        """, (rut,))
+            WHERE REPLACE(REPLACE(REPLACE(UPPER(e.run_ipe), '.', ''), '-', ''), ' ', '') = REPLACE(REPLACE(REPLACE(UPPER(%s), '.', ''), '-', ''), ' ', '')
+               OR e.run_ipe = %s
+        """, (rut, rut))
         estudiante_db = cur.fetchone()
         
         if not estudiante_db:
@@ -75,7 +203,7 @@ def obtener_ficha_estudiante_db(rut: str):
             FROM matricula m
             INNER JOIN establecimiento est ON m.id_establecimiento = est.id_establecimiento
             WHERE m.id_estudiante = %s 
-            ORDER BY m.anio_escolar DESC, m.fecha_matricula DESC, m.id_matricula DESC
+            ORDER BY m.anio_escolar DESC, m.fecha_matricula DESC NULLS LAST, m.id_matricula DESC
         """, (estudiante_db[0],))
         
         historial_db = cur.fetchall()
@@ -92,7 +220,10 @@ def obtener_ficha_estudiante_db(rut: str):
                 "fecha_nacimiento": str(estudiante_db[5]) if estudiante_db[5] else "No registrada",
                 "domicilio": estudiante_db[6] if estudiante_db[6] else "Sin registrar",
                 "rbd_actual": ultimo_rbd,
-                "colegio_actual": ultimo_colegio
+                "colegio_actual": ultimo_colegio,
+                "fecha_actualizacion": str(estudiante_db[35]) if len(estudiante_db) > 35 and estudiante_db[35] else None,
+                "pais_origen": estudiante_db[36] if len(estudiante_db) > 36 and estudiante_db[36] else "Chile",
+                "documento_extranjero": estudiante_db[37] if len(estudiante_db) > 37 else None
             },
             "apoderado": {
                 "rut": estudiante_db[7] if estudiante_db[7] else "Sin registrar",
@@ -104,7 +235,9 @@ def obtener_ficha_estudiante_db(rut: str):
                 "correo": estudiante_db[12] if estudiante_db[12] else "-",
                 "domicilio": estudiante_db[13] if estudiante_db[13] else "",
                 "relacion": estudiante_db[14] or "Titular",
-                "ruta_documento_tutor": estudiante_db[15]
+                "ruta_documento_tutor": estudiante_db[15],
+                "pais_origen": estudiante_db[38] if len(estudiante_db) > 38 and estudiante_db[38] else "Chile",
+                "documento_extranjero": estudiante_db[39] if len(estudiante_db) > 39 else None
             },
             "apoderado_suplente": {
                 "rut": estudiante_db[16],
@@ -212,6 +345,23 @@ def crear_estudiante_db(payload: dict):
         
         if apod_db:
             id_apoderado = apod_db[0]
+            cur.execute("""
+                UPDATE apoderado SET
+                    nombres = COALESCE(NULLIF(%s, ''), nombres),
+                    apellido_paterno = COALESCE(NULLIF(%s, ''), apellido_paterno),
+                    apellido_materno = COALESCE(NULLIF(%s, ''), apellido_materno),
+                    domicilio = COALESCE(NULLIF(%s, ''), domicilio),
+                    telefono = COALESCE(NULLIF(%s, ''), telefono),
+                    correo_electronico = COALESCE(NULLIF(%s, ''), correo_electronico),
+                    relacion_estudiante = COALESCE(NULLIF(%s, ''), relacion_estudiante),
+                    pais_origen = COALESCE(NULLIF(%s, ''), pais_origen),
+                    documento_extranjero = COALESCE(NULLIF(%s, ''), documento_extranjero)
+                WHERE id_apoderado = %s
+            """, (payload.get("nombres_apoderado"), payload.get("apellido_paterno_apoderado"), 
+                  payload.get("apellido_materno_apoderado"), payload.get("domicilio_apoderado"), 
+                  payload.get("telefono_apoderado"), payload.get("correo_apoderado"),
+                  payload.get("relacion_estudiante"), payload.get("pais_origen_apoderado"),
+                  payload.get("doc_extranjero_apoderado"), id_apoderado))
         else:
             cur.execute("""
                 INSERT INTO apoderado (
@@ -235,6 +385,20 @@ def crear_estudiante_db(payload: dict):
             sup_db = cur.fetchone()
             if sup_db:
                 id_suplente = sup_db[0]
+                cur.execute("""
+                    UPDATE apoderado SET
+                        nombres = COALESCE(NULLIF(%s, ''), nombres),
+                        apellido_paterno = COALESCE(NULLIF(%s, ''), apellido_paterno),
+                        apellido_materno = COALESCE(NULLIF(%s, ''), apellido_materno),
+                        domicilio = COALESCE(NULLIF(%s, ''), domicilio),
+                        telefono = COALESCE(NULLIF(%s, ''), telefono),
+                        correo_electronico = COALESCE(NULLIF(%s, ''), correo_electronico),
+                        relacion_estudiante = COALESCE(NULLIF(%s, ''), relacion_estudiante)
+                    WHERE id_apoderado = %s
+                """, (payload.get("nombres_suplente"), payload.get("apellido_paterno_suplente"),
+                      payload.get("apellido_materno_suplente"), payload.get("domicilio_suplente") or payload.get("domicilio_apoderado"),
+                      payload.get("telefono_suplente"), payload.get("correo_suplente"),
+                      payload.get("relacion_suplente"), id_suplente))
             else:
                 cur.execute("""
                     INSERT INTO apoderado (
@@ -347,7 +511,16 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
             dom_a = req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
             tel_a = req.telefono_apoderado or ""
             cor_a = req.correo_apoderado or ""
-            rel_a = getattr(req, "relacion_apoderado", None) or "Titular"
+
+            # Preservar relacion existente si no se especifico en el request
+            rel_a = getattr(req, "relacion_apoderado", None)
+            if not rel_a and id_apod_princ:
+                cur.execute("SELECT relacion_estudiante FROM apoderado WHERE id_apoderado = %s", (id_apod_princ,))
+                row_rel = cur.fetchone()
+                if row_rel and row_rel[0]:
+                    rel_a = row_rel[0]
+            if not rel_a:
+                rel_a = "Madre"
 
             if id_apod_princ:
                 cur.execute("""
@@ -357,10 +530,12 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                     WHERE id_apoderado = %s
                 """, (req.rut_apoderado, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
             else:
-                cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (req.rut_apoderado,))
+                cur.execute("SELECT id_apoderado, relacion_estudiante FROM apoderado WHERE rut_pasaporte = %s", (req.rut_apoderado,))
                 apod_exist = cur.fetchone()
                 if apod_exist:
                     id_apod_princ = apod_exist[0]
+                    if not getattr(req, "relacion_apoderado", None) and apod_exist[1]:
+                        rel_a = apod_exist[1]
                     cur.execute("""
                         UPDATE apoderado 
                         SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
@@ -377,6 +552,7 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                 cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE id_estudiante = %s", (id_apod_princ, id_estudiante))
 
         # 4. Procesar Apoderado Suplente
+        modificar_supl = getattr(req, "modificar_suplente", False)
         if getattr(req, "tiene_suplente", False) and getattr(req, "rut_suplente", None):
             nom_s = req.nombres_suplente or "Apoderado"
             pat_s = req.apellido_paterno_suplente or "Suplente"
@@ -384,7 +560,15 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
             dom_s = req.domicilio_suplente or req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
             tel_s = req.telefono_suplente or ""
             cor_s = req.correo_suplente or ""
-            rel_s = req.relacion_suplente or "Suplente"
+
+            rel_s = getattr(req, "relacion_suplente", None)
+            if not rel_s and id_apod_supl:
+                cur.execute("SELECT relacion_estudiante FROM apoderado WHERE id_apoderado = %s", (id_apod_supl,))
+                row_rel_s = cur.fetchone()
+                if row_rel_s and row_rel_s[0]:
+                    rel_s = row_rel_s[0]
+            if not rel_s:
+                rel_s = "Suplente"
 
             if id_apod_supl:
                 cur.execute("""
@@ -394,10 +578,12 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                     WHERE id_apoderado = %s
                 """, (req.rut_suplente, nom_s, pat_s, mat_s, dom_s, tel_s, cor_s, rel_s, id_apod_supl))
             else:
-                cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (req.rut_suplente,))
+                cur.execute("SELECT id_apoderado, relacion_estudiante FROM apoderado WHERE rut_pasaporte = %s", (req.rut_suplente,))
                 sup_exist = cur.fetchone()
                 if sup_exist:
                     id_apod_supl = sup_exist[0]
+                    if not getattr(req, "relacion_suplente", None) and sup_exist[1]:
+                        rel_s = sup_exist[1]
                     cur.execute("""
                         UPDATE apoderado 
                         SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
@@ -412,7 +598,7 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                     id_apod_supl = cur.fetchone()[0]
 
                 cur.execute("UPDATE estudiante SET id_apoderado_suplente = %s WHERE id_estudiante = %s", (id_apod_supl, id_estudiante))
-        elif getattr(req, "tiene_suplente", None) is False:
+        elif modificar_supl and (getattr(req, "tiene_suplente", None) is False):
             cur.execute("UPDATE estudiante SET id_apoderado_suplente = NULL WHERE id_estudiante = %s", (id_estudiante,))
 
         # 5. Procesar Ficha Médica / Salud

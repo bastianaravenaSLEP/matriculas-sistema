@@ -1,6 +1,6 @@
 // NuevaMatricula.tsx
 import React from 'react';
-import { Search, UserCheck, AlertCircle, CheckCircle, Download, Mail, ArrowRight, ChevronRight, ChevronLeft, AlertTriangle, Calendar, Edit3 } from 'lucide-react';
+import { Search, UserCheck, AlertCircle, CheckCircle, Download, Mail, ArrowRight, ChevronRight, ChevronLeft, AlertTriangle, Calendar, Edit3, Loader2, Globe, Building2 } from 'lucide-react';
 import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 import { ModalFaltantes } from './components/ModalFaltantes';
 import { ModalExito } from './components/ModalExito';
@@ -28,7 +28,10 @@ export default function NuevaMatricula() {
     fichaConfirmada, setFichaConfirmada, estadoActualizacion,
     mensajeAntiguedad, fechaUltimaActualizacion,
     formFaltantes, handleFaltantesChange, guardarDatosFaltantes,
-    guardandoFaltantes, copiarDomicilio
+    guardandoFaltantes, copiarDomicilio,
+    cargandoPreseleccion,
+    busquedaGlobal, setBusquedaGlobal, toggleBusquedaGlobal,
+    buscarEstudianteDirecto, buscandoSugerencias, buscandoDirecto
   } = useNuevaMatricula();
 
   const abrirPortalPrueba = () => {
@@ -41,7 +44,7 @@ export default function NuevaMatricula() {
       curso: formulario.cursoSeleccionado || 'Sin Asignar',
       apoderado: (apoderadoInfo.nombre || apoderadoInfo.nombres || 'APODERADO NO REGISTRADO').toUpperCase(),
       rutApoderado: apoderadoInfo.rut || apoderadoInfo.rut_pasaporte || 'SIN RUT',
-      relacion: 'APODERADO/A',
+      relacion: (apoderadoInfo.relacion || apoderadoInfo.relacion_estudiante || 'APODERADO/A').toUpperCase(),
       domicilio: estudiante?.domicilio || 'Sin registro',
       colegio: colegioObj ? colegioObj.nombre.toUpperCase() : 'ESTABLECIMIENTO EDUCACIONAL',
       anio: formulario.anio_escolar,
@@ -65,7 +68,21 @@ export default function NuevaMatricula() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
-      
+
+      {/* Banner de carga — visible solo cuando el sistema está sincronizando el estudiante recién creado */}
+      {cargandoPreseleccion && !estudiante && (
+        <div className="flex items-center gap-4 px-5 py-4 bg-blue-50 border border-blue-200 rounded-xl shadow-sm animate-pulse">
+          <svg className="animate-spin h-6 w-6 text-blue-600 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+          <div>
+            <p className="font-bold text-blue-900 text-sm">Sincronizando datos del estudiante recién registrado...</p>
+            <p className="text-xs text-blue-600 mt-0.5">Por favor espere mientras el sistema carga la información. Evite hacer clic en otros elementos.</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-2xl font-bold text-gray-800">Registrar Nueva Matrícula</h2>
         
@@ -85,22 +102,69 @@ export default function NuevaMatricula() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 animate-in fade-in slide-in-from-right-4">
             <h3 className="font-semibold text-gray-700 mb-4 border-b pb-2">Paso 1: Identificación y Validación del Estudiante</h3>
             
+            {/* SELECTOR DE ALCANCE DE BÚSQUEDA (LOCAL COLEGIO vs GLOBAL TODA LA RED) */}
+            {!estudiante && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 bg-slate-50 border border-slate-200 p-3.5 rounded-xl">
+                <div className="flex items-center gap-2.5">
+                  <div className={`p-2 rounded-lg ${busquedaGlobal ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {busquedaGlobal ? <Globe size={18} /> : <Building2 size={18} />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">
+                      {busquedaGlobal ? "Búsqueda Global (Todos los Colegios / SLEP)" : "Búsqueda Local (Solo este Establecimiento)"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {busquedaGlobal 
+                        ? "Buscando en toda la base de datos para traslados o alumnos nuevos provenientes de otros colegios."
+                        : "Búsqueda rápida enfocada únicamente en alumnos de este colegio para renovación de matrícula."}
+                    </p>
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2.5 cursor-pointer select-none bg-white px-3.5 py-2 rounded-lg border border-gray-300 hover:border-blue-400 transition-all shadow-sm shrink-0">
+                  <input 
+                    type="checkbox"
+                    checked={busquedaGlobal}
+                    onChange={(e) => toggleBusquedaGlobal(e.target.checked)}
+                    disabled={buscandoDirecto}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-gray-700">
+                    ¿Alumno de otro establecimiento?
+                  </span>
+                </label>
+              </div>
+            )}
+
             <div className="relative mb-6">
-              <div className="flex gap-4">
+              <div className="flex gap-3">
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-3 text-gray-400" size={20} />
                   <input 
                     type="text" 
-                    placeholder="Ingrese RUT o Nombre del estudiante a matricular..."
+                    placeholder={busquedaGlobal 
+                      ? "Buscar en toda la red por RUT o Nombre completo..." 
+                      : "Buscar estudiante de este colegio por RUT o Nombre..."}
                     value={rutBusqueda} 
                     onChange={(e) => handleEscribirBuscador(e.target.value)}
-                    onFocus={() => { if (sugerencias.length > 0) setMostrarSugerencias(true) }}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    disabled={estudiante !== null} 
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        buscarEstudianteDirecto();
+                      }
+                    }}
+                    onFocus={() => { if (sugerencias.length > 0 || buscandoSugerencias) setMostrarSugerencias(true); }}
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    disabled={estudiante !== null || buscandoDirecto} 
                   />
+                  {buscandoSugerencias && (
+                    <div className="absolute right-3 top-2.5 text-blue-500">
+                      <Loader2 size={18} className="animate-spin" />
+                    </div>
+                  )}
                 </div>
                 
-                {estudiante && (
+                {estudiante ? (
                   <button 
                     type="button" 
                     onClick={() => { 
@@ -109,17 +173,64 @@ export default function NuevaMatricula() {
                       setCheckCertNotas(false); setCheckCertRetiro(false); setIdEstablecimientoPrevio(null);
                       setFichaConfirmada(false);
                     }} 
-                    className="px-6 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-bold"
+                    className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors font-bold shrink-0"
                   >
                     Cambiar Alumno
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => buscarEstudianteDirecto()}
+                    disabled={buscandoDirecto || !rutBusqueda.trim()}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg transition-colors font-bold flex items-center gap-2 shadow-sm shrink-0"
+                  >
+                    {buscandoDirecto ? (
+                      <>
+                        <Loader2 className="animate-spin" size={18} />
+                        <span>Buscando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Search size={18} />
+                        <span>Buscar</span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>
 
               {mostrarSugerencias && !estudiante && (
-                <ul className="absolute z-50 w-full md:w-[calc(100%-140px)] mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                  {sugerencias.length === 0 ? (
-                    <li className="p-3 text-sm text-gray-500 text-center">No se encontraron estudiantes coincidentes.</li>
+                <ul className="absolute z-50 w-full md:w-[calc(100%-120px)] mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+                  {buscandoSugerencias ? (
+                    <li className="p-4 text-sm text-blue-700 bg-blue-50 flex items-center justify-center gap-2">
+                      <Loader2 className="animate-spin text-blue-600" size={18} />
+                      <span>{busquedaGlobal ? "Buscando en toda la base de datos..." : "Buscando en este colegio..."}</span>
+                    </li>
+                  ) : sugerencias.length === 0 ? (
+                    <li className="p-4 text-sm text-gray-600 text-center flex flex-col items-center gap-2">
+                      <span>
+                        {busquedaGlobal
+                          ? `No se encontraron coincidencias en la base de datos para "${rutBusqueda}".`
+                          : `No se encontró al estudiante en este colegio con "${rutBusqueda}".`}
+                      </span>
+                      {!busquedaGlobal ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleBusquedaGlobal(true)}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                        >
+                          <Globe size={14} /> Buscar en otros establecimientos (Búsqueda Global)
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => buscarEstudianteDirecto()}
+                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                        >
+                          <Search size={14} /> Buscar directamente por RUT en el servidor
+                        </button>
+                      )}
+                    </li>
                   ) : (
                     sugerencias.map((est, idx) => (
                       <li 
@@ -127,14 +238,38 @@ export default function NuevaMatricula() {
                         onClick={() => seleccionarEstudiante(est)}
                         className="p-3 border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors flex flex-col"
                       >
-                        <span className="font-semibold text-gray-800">{est.nombre_completo}</span>
-                        <span className="text-xs text-gray-500 font-mono">RUT: {est.run || 'Sin registro'}</span>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-800">{est.nombre_completo}</span>
+                          <div className="flex items-center gap-1.5">
+                            {est.curso && est.curso !== 'Sin Curso' && (
+                              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+                                {est.curso}
+                              </span>
+                            )}
+                            {busquedaGlobal && est.colegio && (
+                              <span className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium">
+                                {est.colegio}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500 font-mono">RUT: {est.run || est.run_ipe || 'Sin registro'}</span>
                       </li>
                     ))
                   )}
                 </ul>
               )}
             </div>
+
+            {cargando && !estudiante && (
+              <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 animate-pulse mb-6">
+                <Loader2 className="animate-spin text-blue-600 shrink-0" size={22} />
+                <div>
+                  <p className="font-bold text-sm">Cargando expediente completo del estudiante...</p>
+                  <p className="text-xs text-blue-700">Recuperando antecedentes familiares, médicos e historial académico. Por favor espere un momento.</p>
+                </div>
+              </div>
+            )}
 
             {error && <div className="p-3 bg-red-100 text-red-700 rounded-lg mb-4">{error}</div>}
 

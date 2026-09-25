@@ -341,6 +341,7 @@ export const useEstudiantes = () => {
         relacion_apoderado: datosEdicion.relacion_apoderado,
 
         // Suplente
+        modificar_suplente: true,
         tiene_suplente: datosEdicion.tiene_suplente,
         rut_suplente: datosEdicion.rut_suplente,
         nombres_suplente: datosEdicion.nombres_suplente,
@@ -520,11 +521,17 @@ export const useEstudiantes = () => {
     }
   };
 
+  const [navegandoAMatricular, setNavegandoAMatricular] = useState(false);
+
   const irAMatricular = () => {
-    setVistaCrearEstudiante(false);
-    setEstudianteCreadoExito(false);
-    setPasoCrear(1);
-    navigate('/matriculas/nueva', { state: { rutPreseleccionado: rutRecienCreado } });
+    setNavegandoAMatricular(true);
+    // Pequeño delay para que el spinner sea visible antes de que React desmonte el componente
+    setTimeout(() => {
+      setVistaCrearEstudiante(false);
+      setEstudianteCreadoExito(false);
+      setPasoCrear(1);
+      navigate('/matriculas/nueva', { state: { rutPreseleccionado: rutRecienCreado } });
+    }, 300);
   };
 
   const cerrarModalExito = () => {
@@ -562,7 +569,7 @@ export const useEstudiantes = () => {
     pasoCrear, setPasoCrear,
     irSiguientePasoCrear, irPasoAnteriorCrear,
     iniciarCrearEstudiante,
-    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular,
+    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular, navegandoAMatricular,
     nuevoEstudiante, setNuevoEstudiante, formatearRUT, handleCrearEstudiante,
     creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion, archivoTutor, setArchivoTutor
   };
