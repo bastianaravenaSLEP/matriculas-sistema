@@ -1,5 +1,4 @@
-// hooks/useEstudiantes.ts
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../../../config/api';
 import { coincideBusqueda } from '../../../utils/search';
@@ -105,6 +104,18 @@ export const useEstudiantes = () => {
   // Filtros Directorio
   const [textoBusqueda, setTextoBusqueda] = useState('');
   const [filtroAnio, setFiltroAnio] = useState<string>('');
+  const anioInicializadoRef = useRef(false);
+  const colegioPrevioRef = useRef<string | null>(null);
+
+  // Reiniciar indicador cuando cambia el establecimiento seleccionado
+  useEffect(() => {
+    if (colegioSeleccionado !== colegioPrevioRef.current) {
+      colegioPrevioRef.current = colegioSeleccionado;
+      anioInicializadoRef.current = false;
+      setFiltroAnio('');
+    }
+  }, [colegioSeleccionado]);
+
   const [filtroCodigo, setFiltroCodigo] = useState<string>('');
   const [filtroCurso, setFiltroCurso] = useState<string>('');
   const [filtroEstado, setFiltroEstado] = useState<string>('');
@@ -127,6 +138,8 @@ export const useEstudiantes = () => {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [datosEdicion, setDatosEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [buscandoApoderado, setBuscandoApoderado] = useState(false);
+  const [avisoApoderado, setAvisoApoderado] = useState('');
   
   const [buscandoMapa, setBuscandoMapa] = useState(false);
   const [sugerenciasMapa, setSugerenciasMapa] = useState<any[]>([]);
@@ -221,6 +234,14 @@ export const useEstudiantes = () => {
     return { estudiantesFiltrados: filtrados, aniosUnicos: anios, codigosUnicos: codigos, cursosUnicos: cursos, estadosUnicos: estados };
   }, [listaEstudiantes, textoBusqueda, filtroAnio, filtroCodigo, filtroCurso, filtroEstado]);
 
+  // Cuando se computan los años únicos, seleccionar automáticamente el último año de matrículas registradas
+  useEffect(() => {
+    if (!anioInicializadoRef.current && aniosUnicos && aniosUnicos.length > 0) {
+      setFiltroAnio(String(aniosUnicos[0]));
+      anioInicializadoRef.current = true;
+    }
+  }, [aniosUnicos]);
+
   const verFichaEstudiante = async (rut: string) => {
     setCargandoFicha(true);
     setError('');
@@ -280,6 +301,13 @@ export const useEstudiantes = () => {
 
       // Precargar TODO el formulario de edición con los datos existentes
       setDatosEdicion({
+        calle: datos.personal?.calle
+          || (!datos.personal?.numero && !datos.personal?.sector && !datos.personal?.comuna
+              && datos.personal?.domicilio && datos.personal?.domicilio !== 'Sin registrar'
+              ? datos.personal.domicilio : ''),
+        numero: datos.personal?.numero || '',
+        sector: datos.personal?.sector || '',
+        comuna: datos.personal?.comuna || '',
         domicilio: datos.personal?.domicilio && datos.personal.domicilio !== 'Sin registrar' ? datos.personal.domicilio : '',
         
         // Titular
@@ -323,11 +351,57 @@ export const useEstudiantes = () => {
     }
   };
 
+  const buscarApoderadoPorRut = async () => {
+    const rutApod = (datosEdicion.rut_apoderado || '').trim();
+    setAvisoApoderado('');
+    if (!rutApod) {
+      alert('Ingresa un RUT de apoderado para buscar.');
+      return;
+    }
+    setBuscandoApoderado(true);
+    const token = localStorage.getItem('token');
+    try {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/apoderado/buscar/${encodeURIComponent(rutApod)}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!respuesta.ok) throw new Error('Error al buscar el apoderado');
+      const data = await respuesta.json();
+
+      if (data.existe) {
+        setDatosEdicion((prev: any) => ({
+          ...prev,
+          rut_apoderado: data.rut_apoderado,
+          nombres_apoderado: data.nombres_apoderado,
+          apellido_paterno_apoderado: data.apellido_paterno_apoderado,
+          apellido_materno_apoderado: data.apellido_materno_apoderado,
+          domicilio_apoderado: data.domicilio_apoderado,
+          telefono_apoderado: data.telefono_apoderado,
+          correo_apoderado: data.correo_apoderado,
+        }));
+        setAvisoApoderado(
+          `✅ Apoderado encontrado: ${data.nombres_apoderado} ${data.apellido_paterno_apoderado}. ` +
+          `Asociado a ${data.n_estudiantes} estudiante(s). Al guardar, este alumno quedará vinculado a él ` +
+          `(sus datos NO se modificarán salvo que los edites explícitamente).`
+        );
+      } else {
+        setAvisoApoderado('ℹ️ No existe un apoderado con ese RUT. Completa los datos para crearlo al guardar.');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setBuscandoApoderado(false);
+    }
+  };
+
   const handleGuardarEdicion = async () => {
     setGuardandoEdicion(true);
     const token = localStorage.getItem('token');
     try {
       const payloadEnvio = {
+        calle: datosEdicion.calle || null,
+        numero: datosEdicion.numero || null,
+        sector: datosEdicion.sector || null,
+        comuna: datosEdicion.comuna || null,
         domicilio_estudiante: datosEdicion.domicilio || "Sin registrar",
         
         // Titular
@@ -564,6 +638,7 @@ export const useEstudiantes = () => {
     cargandoLista, estudiantesFiltrados,
     verFichaEstudiante,
     datosEdicion, setDatosEdicion,
+    buscarApoderadoPorRut, buscandoApoderado, avisoApoderado, setAvisoApoderado,
     // Asistente Nuevo Estudiante
     vistaCrearEstudiante, setVistaCrearEstudiante,
     pasoCrear, setPasoCrear,

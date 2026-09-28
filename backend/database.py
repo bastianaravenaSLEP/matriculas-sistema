@@ -2,11 +2,12 @@ import psycopg2
 import queue
 import threading
 from contextlib import contextmanager
-from config import DB_CONFIG, DB_POOL_MIN, DB_POOL_MAX, DB_POOL_TIMEOUT
+import config
+from config import DB_CONFIG, DB_POOL_MIN, DB_POOL_MAX, DB_POOL_TIMEOUT, DATABASE_URL, DB_SCHEMA
 
 class DatabaseConnectionPool:
     """
-    Pool de conexiones multihilo (Thread-safe) para PostgreSQL.
+    Pool de conexiones multihilo (Thread-safe) para PostgreSQL / Supabase.
     Gestiona la reutilización de conexiones mediante cola bloqueante,
     previniendo errores por saturación y verificando la salud de las conexiones.
     """
@@ -29,8 +30,24 @@ class DatabaseConnectionPool:
                 print(f"Advertencia al pre-poblar pool de BD: {e}")
 
     def _create_connection(self):
-        conn = psycopg2.connect(**self.conn_kwargs)
+        if getattr(config, "DATABASE_URL", None):
+            conn = psycopg2.connect(config.DATABASE_URL)
+        else:
+            conn = psycopg2.connect(**self.conn_kwargs)
+
         conn.set_client_encoding(self.conn_kwargs.get("client_encoding", "UTF8"))
+
+        # Fijar search_path para esquema de Supabase si está definido (ej: matriculas)
+        schema = getattr(config, "DB_SCHEMA", None)
+        if schema:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(f"SET search_path TO {schema}, public;")
+                conn.commit()
+            except Exception as e:
+                # Si el esquema aún no existe localmente, revertir limpiamente
+                conn.rollback()
+
         with self._lock:
             self._total_conns += 1
         return conn

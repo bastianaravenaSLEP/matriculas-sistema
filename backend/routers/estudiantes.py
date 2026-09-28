@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from security import obtener_usuario_actual, verificar_escritura
 
 from services import estudiante_service
+from services.storage_service import validar_tamano_archivo
 
 router = APIRouter(prefix="/estudiante", tags=["Estudiantes"])
 
@@ -61,6 +62,10 @@ class CrearEstudianteRequest(BaseModel):
 
 class ActualizarEstudianteRequest(BaseModel):
     # 1. Domicilio Estudiante
+    calle: Optional[str] = None
+    numero: Optional[str] = None
+    sector: Optional[str] = None
+    comuna: Optional[str] = None
     domicilio_estudiante: Optional[str] = None
     
     # 2. Apoderado Titular
@@ -130,6 +135,10 @@ def obtener_estudiantes(
         return estudiante_service.buscar_estudiantes_db(q, establecimiento_id)
     return estudiante_service.obtener_estudiantes_db(establecimiento_id, rol)
 
+@router.get("/apoderado/buscar/{rut_apoderado}")
+def buscar_apoderado(rut_apoderado: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
+    return estudiante_service.buscar_apoderado_por_rut_db(rut_apoderado)
+
 @router.get("/{rut}")
 def obtener_ficha_estudiante(rut: str, usuario_actual: dict = Depends(obtener_usuario_actual)):
     return estudiante_service.obtener_ficha_estudiante_db(rut)
@@ -155,6 +164,10 @@ async def subir_documento_tutor(
     contenido = await archivo.read()
     if not contenido:
         raise HTTPException(status_code=400, detail="El archivo enviado está vacío.")
+    
+    # Validar tamaño máximo permitido (5 MB)
+    validar_tamano_archivo(contenido, archivo.filename)
+
     return estudiante_service.guardar_documento_tutor_db(
         rut, contenido, archivo.filename, usuario_actual
     )

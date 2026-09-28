@@ -5,6 +5,7 @@ import { useNuevaMatricula } from './hooks/useNuevaMatricula';
 import { ModalFaltantes } from './components/ModalFaltantes';
 import { ModalExito } from './components/ModalExito';
 import { ModalSalida } from './components/ModalSalida';
+import { validarTamanoArchivo } from '../../utils/fileValidation';
 
 export default function NuevaMatricula() {
   const {
@@ -524,9 +525,35 @@ export default function NuevaMatricula() {
                           <div className="flex items-center justify-center w-full">
                             <label htmlFor="pdf-upload" className={`flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer ${archivoResolucion ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-gray-50'}`}>
                               <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                {archivoResolucion ? <p className="text-sm font-semibold text-emerald-700">{archivoResolucion.name}</p> : <p className="text-sm text-gray-500">Haga clic para subir PDF</p>}
+                                {archivoResolucion ? (
+                                  <p className="text-sm font-semibold text-emerald-700">{archivoResolucion.name} ({(archivoResolucion.size / (1024 * 1024)).toFixed(2)} MB)</p>
+                                ) : (
+                                  <>
+                                    <p className="text-sm text-gray-500 font-medium">Haga clic para subir PDF de la resolución</p>
+                                    <p className="text-xs text-gray-400 mt-1">Formato PDF (máximo 5 MB)</p>
+                                  </>
+                                )}
                               </div>
-                              <input id="pdf-upload" type="file" accept=".pdf" className="hidden" required={!archivoResolucion} onChange={(e) => setArchivoResolucion(e.target.files?.[0] || null)}/>
+                              <input 
+                                id="pdf-upload" 
+                                type="file" 
+                                accept=".pdf" 
+                                className="hidden" 
+                                required={!archivoResolucion} 
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0] || null;
+                                  if (file) {
+                                    const res = validarTamanoArchivo(file);
+                                    if (!res.valido) {
+                                      alert(res.mensaje);
+                                      e.target.value = '';
+                                      setArchivoResolucion(null);
+                                      return;
+                                    }
+                                  }
+                                  setArchivoResolucion(file);
+                                }}
+                              />
                             </label>
                           </div>
                         </div>

@@ -1,19 +1,30 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { API_BASE_URL } from '../../../config/api';
 
 export const useLogin = () => {
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [mensajeExpiracion, setMensajeExpiracion] = useState('');
   const [rol, setRol] = useState('COLEGIO');
   const [cargando, setCargando] = useState(false);
   
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (searchParams.get('motivo') === 'expirado') {
+      setMensajeExpiracion(
+        'Su sesión ha expirado por límite de tiempo o inactividad. Por favor, vuelva a iniciar sesión para continuar.'
+      );
+    }
+  }, [searchParams]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMensajeExpiracion('');
     setCargando(true);
 
     try {
@@ -40,6 +51,7 @@ export const useLogin = () => {
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setError('');
+    setMensajeExpiracion('');
     setCargando(true);
 
     try {
@@ -71,6 +83,7 @@ export const useLogin = () => {
     email, setEmail,
     password, setPassword,
     error, setError,
+    mensajeExpiracion, setMensajeExpiracion,
     rol, setRol,
     cargando,
     handleLogin,

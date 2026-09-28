@@ -7,6 +7,7 @@ from schemas import MatriculaCreate, MatriculaUpdate, CuestionarioRetiro
 from security import obtener_usuario_actual, verificar_escritura
 from services import matricula_service
 from services.matricula_service import exportar_matriculas_excel_service
+from services.storage_service import validar_tamano_archivo
 
 router = APIRouter(prefix="/matriculas", tags=["Matrículas"])
 
@@ -17,12 +18,36 @@ class CambioCursoRequest(BaseModel):
     correo_destino: Optional[str] = None
 
 @router.get("")
-def obtener_matriculas(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
+def obtener_matriculas(
+    establecimiento_id: Optional[int] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    anio: Optional[int] = Query(None),
+    busqueda: Optional[str] = Query(None),
+    curso: Optional[str] = Query(None),
+    codigo: Optional[int] = Query(None),
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
     rol = usuario_actual.get("rol")
     if rol in ["Colegio", "Visualizador_Colegio"]:
         establecimiento_id = usuario_actual.get("id_establecimiento")
         
-    return matricula_service.obtener_todas_matriculas_db(establecimiento_id)
+    return matricula_service.obtener_todas_matriculas_db(
+        establecimiento_id=establecimiento_id,
+        page=page,
+        page_size=page_size,
+        anio=anio,
+        busqueda=busqueda,
+        curso=curso,
+        codigo=codigo,
+    )
+
+@router.get("/anios-disponibles")
+def anios_disponibles(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
+    rol = usuario_actual.get("rol")
+    if rol in ["Colegio", "Visualizador_Colegio"]:
+        establecimiento_id = usuario_actual.get("id_establecimiento")
+    return matricula_service.obtener_anios_disponibles_db(establecimiento_id)
 
 @router.post("")
 def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(verificar_escritura)):
@@ -87,6 +112,13 @@ async def carga_masiva_sige(
             status_code=403, 
             detail="Acceso restringido: La carga masiva de SIGE está reservada exclusivamente para administradores o nivel central SLEP."
         )
+    
+    # Validar que ningún archivo supere el tamaño máximo permitido (5 MB)
+    for arch in archivos:
+        contenido = await arch.read()
+        validar_tamano_archivo(contenido, arch.filename)
+        await arch.seek(0)
+
     # Pasamos el trabajo pesado al servicio enviando el request
     return await matricula_service.procesar_carga_masiva_db(archivos, usuario_actual)
 
@@ -161,6 +193,10 @@ async def subir_documento_resolucion(
     contenido = await archivo.read()
     if not contenido:
         raise HTTPException(status_code=400, detail="El archivo enviado está vacío.")
+    
+    # Validar tamaño máximo permitido (5 MB)
+    validar_tamano_archivo(contenido, archivo.filename)
+
     return matricula_service.guardar_documento_resolucion_db(
         id_matricula, contenido, archivo.filename, usuario_actual
     )

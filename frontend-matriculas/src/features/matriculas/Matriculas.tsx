@@ -29,6 +29,7 @@ export default function Matriculas() {
     mostrarCupos, cuposOcupados, capacidadSala, descargandoExcel, exportarAExcel,
     capacidadCursoDestino, cargandoCapacidadDestino, matriculadosCursoDestino, cursoDestinoLleno, cuposPorCurso,
     modalExcelAbierto, setModalExcelAbierto,
+    page, setPage, totalPages, total,
   } = useMatriculas();
 
   const formatearNombreCorto = (nombre?: string) => {
@@ -107,21 +108,21 @@ export default function Matriculas() {
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📅 1. Año</label>
-            <select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white cursor-pointer">
+            <select value={filtroAnio} onChange={(e) => { setFiltroAnio(e.target.value); setPage(1); }} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white cursor-pointer">
               <option value="">Todos los años</option>
               {aniosUnicos.map(anio => <option key={anio} value={anio}>{anio}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📚 2. Plan de Estudio</label>
-            <select value={filtroCodigo} onChange={(e) => setFiltroCodigo(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white cursor-pointer">
+            <select value={filtroCodigo} onChange={(e) => { setFiltroCodigo(e.target.value); setPage(1); }} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white cursor-pointer">
               <option value="">Todos los planes</option>
               {codigosUnicos.map(cod => <option key={cod} value={cod}>Cod. {cod}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🏫 3. Curso</label>
-            <select value={filtroCurso} onChange={(e) => setFiltroCurso(e.target.value)} disabled={cursosUnicos.length === 0} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white disabled:bg-gray-100 disabled:text-gray-400">
+            <select value={filtroCurso} onChange={(e) => { setFiltroCurso(e.target.value); setPage(1); }} disabled={cursosUnicos.length === 0} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white disabled:bg-gray-100 disabled:text-gray-400">
               <option value="">Todos los cursos</option>
               {cursosUnicos.map(curso => <option key={curso} value={curso}>{curso}</option>)}
             </select>
@@ -138,7 +139,9 @@ export default function Matriculas() {
           {/* 🌟 NUEVO: BARRA INFORMATIVA CON INDICADOR DE CUPOS */}
           <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex flex-wrap gap-4 items-center justify-between">
             <span className="text-xs font-bold text-gray-700">
-              Mostrando {matriculasProcesadas.length} resultados
+              {total > matriculasProcesadas.length 
+                ? `Mostrando ${matriculasProcesadas.length} de ${total.toLocaleString()} resultados`
+                : `Mostrando ${matriculasProcesadas.length} resultados`}
             </span>
             
             {/* Lógica Condicional: Se muestra solo cuando los 3 filtros están seleccionados */}
@@ -284,6 +287,34 @@ export default function Matriculas() {
               )}
             </tbody>
           </table>
+
+          {/* Controles de paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 px-2">
+              <p className="text-sm text-gray-500">
+                Mostrando <span className="font-semibold text-gray-700">{(page - 1) * 50 + 1}–{Math.min(page * 50, total)}</span> de <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> matrículas
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  ← Anterior
+                </button>
+                <span className="text-sm text-gray-700 font-semibold px-2">
+                  Pág. {page} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

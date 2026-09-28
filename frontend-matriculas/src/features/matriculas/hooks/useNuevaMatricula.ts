@@ -229,17 +229,39 @@ export const useNuevaMatricula = () => {
     obtenerCapacidadDinamica();
   }, [formulario.id_establecimiento, formulario.anio_escolar, formulario.cursoSeleccionado, establecimientosDb]);
 
-  const cuposOcupados = useMemo(() => {
-    if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza || !formulario.cursoSeleccionado) return 0;
-    
-    return todasLasMatriculas.filter(m =>
-      String(m.id_establecimiento) === String(formulario.id_establecimiento) &&
-      String(m.anio_escolar) === String(formulario.anio_escolar) &&
-      String(m.cod_tipo_ensenanza) === String(formulario.cod_tipo_ensenanza) &&
-      m.curso === formulario.cursoSeleccionado &&
-      (m.estado === 'Activa' || !m.estado)
-    ).length;
-  }, [formulario.id_establecimiento, formulario.anio_escolar, formulario.cod_tipo_ensenanza, formulario.cursoSeleccionado, todasLasMatriculas]);
+  const [cuposOcupados, setCuposOcupados] = useState<number>(0);
+
+  useEffect(() => {
+    const consultarCuposOcupados = async () => {
+      if (!formulario.id_establecimiento || !formulario.cursoSeleccionado) {
+        setCuposOcupados(0);
+        return;
+      }
+
+      const token = localStorage.getItem('token');
+      try {
+        const params = new URLSearchParams({
+          establecimiento_id: String(formulario.id_establecimiento),
+          anio: String(formulario.anio_escolar),
+          curso: formulario.cursoSeleccionado,
+          page_size: '1'
+        });
+        const res = await fetch(`${API_BASE_URL}/matriculas?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCuposOcupados(Number(data.total) || 0);
+        } else {
+          setCuposOcupados(0);
+        }
+      } catch (e) {
+        setCuposOcupados(0);
+      }
+    };
+
+    consultarCuposOcupados();
+  }, [formulario.id_establecimiento, formulario.anio_escolar, formulario.cursoSeleccionado]);
 
   useEffect(() => {
     if (cuposOcupados >= limiteCupos) {
@@ -290,8 +312,14 @@ export const useNuevaMatricula = () => {
 
     fetch(`${API_BASE_URL}/matriculas`, { headers })
       .then(res => res.json())
-      .then(data => setTodasLasMatriculas(data))
-      .catch(err => console.error("Error matrículas:", err));
+      .then(data => {
+        const lista = Array.isArray(data) ? data : (data?.items || []);
+        setTodasLasMatriculas(lista);
+      })
+      .catch(err => {
+        console.error("Error matrículas:", err);
+        setTodasLasMatriculas([]);
+      });
 
     const rutPre = location.state?.rutPreseleccionado;
     if (rutPre) {
@@ -313,6 +341,32 @@ export const useNuevaMatricula = () => {
     }
   }, [location.state]);
 
+  // Carga de catálogo oficial de planes y cursos del establecimiento seleccionado
+  const [opcionesColegio, setOpcionesColegio] = useState<{
+    planes: { codigo: number; descripcion: string }[];
+    cursos: string[];
+    cursos_por_plan: Record<string, string[]>;
+  }>({ planes: [], cursos: [], cursos_por_plan: {} });
+
+  useEffect(() => {
+    if (!formulario.id_establecimiento) return;
+    const token = localStorage.getItem('token');
+    fetch(`${API_BASE_URL}/matriculas/opciones-filtro?establecimiento_id=${formulario.id_establecimiento}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setOpcionesColegio({
+            planes: data.planes || [],
+            cursos: data.cursos || [],
+            cursos_por_plan: data.cursos_por_plan || {}
+          });
+        }
+      })
+      .catch(e => console.error("Error al cargar opciones de establecimiento:", e));
+  }, [formulario.id_establecimiento]);
+
   useEffect(() => {
     return () => {
       if (debounceBusquedaRef.current) {
@@ -333,7 +387,15 @@ export const useNuevaMatricula = () => {
   };
 
   const codigosDisponibles = useMemo(() => {
-    if (!formulario.id_establecimiento) return [];
+    if (opcionesColegio.planes && opcionesColegio.planes.length > 0) {
+      return opcionesColegio.planes.map(p => ({
+        codigo: p.codigo,
+        nombre: p.descripcion && p.descripcion !== 'Importado desde SIGE' && p.descripcion !== 'Sin descripción'
+          ? p.descripcion
+          : `Plan de Estudio (Cod. ${p.codigo})`
+      }));
+    }
+    if (!formulario.id_establecimiento || !Array.isArray(todasLasMatriculas)) return [];
     const idEst = Number(formulario.id_establecimiento);
     const filtradas = todasLasMatriculas.filter(m => Number(m.id_establecimiento) === idEst);
     const mapaCodigos = new Map();
@@ -343,10 +405,17 @@ export const useNuevaMatricula = () => {
       }
     });
     return Array.from(mapaCodigos.entries()).map(([codigo, nombre]) => ({ codigo, nombre }));
-  }, [formulario.id_establecimiento, todasLasMatriculas]);
+  }, [opcionesColegio.planes, formulario.id_establecimiento, todasLasMatriculas]);
 
   const cursosDisponibles = useMemo(() => {
-    if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza) return [];
+    const codStr = String(formulario.cod_tipo_ensenanza || '');
+    if (codStr && opcionesColegio.cursos_por_plan && opcionesColegio.cursos_por_plan[codStr] && opcionesColegio.cursos_por_plan[codStr].length > 0) {
+      return opcionesColegio.cursos_por_plan[codStr];
+    }
+    if (opcionesColegio.cursos && opcionesColegio.cursos.length > 0) {
+      return opcionesColegio.cursos;
+    }
+    if (!formulario.id_establecimiento || !formulario.cod_tipo_ensenanza || !Array.isArray(todasLasMatriculas)) return [];
     const idEst = Number(formulario.id_establecimiento);
     const codEns = Number(formulario.cod_tipo_ensenanza);
     const filtradas = todasLasMatriculas.filter(
@@ -357,7 +426,7 @@ export const useNuevaMatricula = () => {
       if (m.curso) cursosSet.add(m.curso);
     });
     return Array.from(cursosSet).sort();
-  }, [formulario.id_establecimiento, formulario.cod_tipo_ensenanza, todasLasMatriculas]);
+  }, [opcionesColegio, formulario.id_establecimiento, formulario.cod_tipo_ensenanza, todasLasMatriculas]);
 
   useEffect(() => {
     if (codigosDisponibles.length > 0) {
@@ -680,32 +749,40 @@ export const useNuevaMatricula = () => {
   }; 
 
   useEffect(() => {
-    if (estudiante && todasLasMatriculas.length > 0) {
-      const rutEst = estudiante.run || estudiante.run_ipe;
+    if (!estudiante) return;
+
+    const rutEst = estudiante.run || estudiante.run_ipe;
+    let ultimaMatricula: any = null;
+
+    if (estudianteCompleto?.historial && estudianteCompleto.historial.length > 0) {
+      const hist = [...estudianteCompleto.historial].sort((a: any, b: any) => (Number(b.anio) || 0) - (Number(a.anio) || 0));
+      ultimaMatricula = hist[0];
+    } else if (Array.isArray(todasLasMatriculas) && todasLasMatriculas.length > 0) {
       const historicas = todasLasMatriculas.filter(m => m.estudiante_rut === rutEst);
-      
       if (historicas.length > 0) {
-        historicas.sort((a, b) => b.anio_escolar - a.anio_escolar); 
-        const ultima = historicas[0];
-
-        setCursoPrevio(ultima.curso);
-        setCodigoPrevio(ultima.cod_tipo_ensenanza ? Number(ultima.cod_tipo_ensenanza) : null);
-
-        if (!huboPrecarga) {
-          setFormulario(prev => ({
-            ...prev,
-            cod_tipo_ensenanza: ultima.cod_tipo_ensenanza ? String(ultima.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
-            cursoSeleccionado: ultima.curso
-          }));
-          setHuboPrecarga(true);
-        }
-      } else {
-        setCursoPrevio('');
-        setCodigoPrevio(null);
-        setHuboPrecarga(false);
+        historicas.sort((a, b) => b.anio_escolar - a.anio_escolar);
+        ultimaMatricula = historicas[0];
       }
     }
-  }, [estudiante, todasLasMatriculas, huboPrecarga]);
+
+    if (ultimaMatricula) {
+      setCursoPrevio(ultimaMatricula.curso || '');
+      setCodigoPrevio(ultimaMatricula.cod_tipo_ensenanza ? Number(ultimaMatricula.cod_tipo_ensenanza) : null);
+
+      if (!huboPrecarga && ultimaMatricula.curso) {
+        setFormulario(prev => ({
+          ...prev,
+          cod_tipo_ensenanza: ultimaMatricula.cod_tipo_ensenanza ? String(ultimaMatricula.cod_tipo_ensenanza) : prev.cod_tipo_ensenanza,
+          cursoSeleccionado: ultimaMatricula.curso
+        }));
+        setHuboPrecarga(true);
+      }
+    } else {
+      setCursoPrevio('');
+      setCodigoPrevio(null);
+      setHuboPrecarga(false);
+    }
+  }, [estudiante, estudianteCompleto, todasLasMatriculas, huboPrecarga]);
 
   const seleccionarEstudiante = async (est: any) => {
     const rutVal = est.run || est.run_ipe || est.rut;

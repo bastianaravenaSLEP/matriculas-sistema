@@ -28,7 +28,8 @@ export default function Estudiantes() {
     filtroAnio, setFiltroAnio,
     filtroCodigo, setFiltroCodigo,
     filtroCurso, setFiltroCurso,
-    aniosUnicos, codigosUnicos, cursosUnicos
+    aniosUnicos, codigosUnicos, cursosUnicos,
+    buscarApoderadoPorRut, buscandoApoderado, avisoApoderado
   } = useEstudiantes();
 
   const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
@@ -196,7 +197,7 @@ export default function Estudiantes() {
                   {esIpeEstudiante && (
                     <div className="col-span-full bg-blue-50 border border-blue-200 p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-200">
                       <div>
-                        <label className="block text-xs font-bold text-blue-900 mb-1">País de Origen <span className="text-red-500">*</span></label>
+                        <label className="block text-xs font-bold text-blue-900 mb-1">País de Origen del Estudiante <span className="text-red-500">*</span></label>
                         <input 
                           required 
                           type="text" 
@@ -334,7 +335,7 @@ export default function Estudiantes() {
                     {esIpaApoderado && (
                       <div className="col-span-full bg-emerald-50 border border-emerald-200 p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in duration-200">
                         <div>
-                          <label className="block text-xs font-bold text-emerald-900 mb-1">País de Origen <span className="text-red-500">*</span></label>
+                          <label className="block text-xs font-bold text-emerald-900 mb-1">País de Origen del Apoderado Titular <span className="text-red-500">*</span></label>
                           <input 
                             required 
                             type="text" 
@@ -698,13 +699,50 @@ export default function Estudiantes() {
                     {!modoEdicion ? (
                       <p className="font-medium text-gray-800">{datosEstudiante.personal.domicilio}</p>
                     ) : (
-                      <input 
-                        type="text" 
-                        value={datosEdicion.domicilio || ''} 
-                        onChange={(e) => setDatosEdicion({...datosEdicion, domicilio: e.target.value})} 
-                        placeholder="Ej: Av. Argentina 1234, Valparaíso"
-                        className="w-full border border-blue-300 bg-blue-50/50 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
-                      />
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Calle</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ej: Av. Brasil" 
+                            value={datosEdicion.calle || ''} 
+                            onChange={(e) => setDatosEdicion({...datosEdicion, calle: e.target.value})} 
+                            className="w-full border border-blue-300 bg-blue-50/50 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Número</label>
+                            <input 
+                              type="text" 
+                              placeholder="Ej: 1234" 
+                              value={datosEdicion.numero || ''} 
+                              onChange={(e) => setDatosEdicion({...datosEdicion, numero: e.target.value})} 
+                              className="w-full border border-blue-300 bg-blue-50/50 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Sector / Cerro</label>
+                            <input 
+                              type="text" 
+                              placeholder="Ej: Cerro Alegre" 
+                              value={datosEdicion.sector || ''} 
+                              onChange={(e) => setDatosEdicion({...datosEdicion, sector: e.target.value})} 
+                              className="w-full border border-blue-300 bg-blue-50/50 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">Comuna</label>
+                          <input 
+                            type="text" 
+                            placeholder="Ej: Valparaíso" 
+                            value={datosEdicion.comuna || ''} 
+                            onChange={(e) => setDatosEdicion({...datosEdicion, comuna: e.target.value})} 
+                            className="w-full border border-blue-300 bg-blue-50/50 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 font-medium" 
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -868,8 +906,18 @@ export default function Estudiantes() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-emerald-50/40 p-4 rounded-xl border border-emerald-200">
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">RUT Apoderado <span className="text-red-500">*</span></label>
-                        <input type="text" value={datosEdicion.rut_apoderado || ''} onChange={(e) => setDatosEdicion({...datosEdicion, rut_apoderado: formatearRUT(e.target.value)})} placeholder="12345678-9" className="w-full border border-gray-300 rounded-lg p-2 text-sm font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500" />
+                        <div className="flex gap-1.5">
+                          <input type="text" value={datosEdicion.rut_apoderado || ''} onChange={(e) => setDatosEdicion({...datosEdicion, rut_apoderado: formatearRUT(e.target.value)})} placeholder="12345678-9" className="w-full border border-gray-300 rounded-lg p-2 text-sm font-mono bg-white outline-none focus:ring-2 focus:ring-blue-500" />
+                          <button type="button" onClick={buscarApoderadoPorRut} disabled={buscandoApoderado} className="px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
+                            {buscandoApoderado ? '...' : 'Buscar'}
+                          </button>
+                        </div>
                       </div>
+                      {avisoApoderado && (
+                        <div className="sm:col-span-2 text-xs p-2.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-200">
+                          {avisoApoderado}
+                        </div>
+                      )}
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1">Parentesco <span className="text-red-500">*</span></label>
                         <select value={datosEdicion.relacion_apoderado || 'Madre'} onChange={(e) => setDatosEdicion({...datosEdicion, relacion_apoderado: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-500">

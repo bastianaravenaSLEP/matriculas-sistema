@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from '../features/auth/Login';
 import HomeMenu from '../features/home/NuevoInicio';
@@ -13,20 +13,41 @@ import Layout from '../components/Layout';
 import EncuestaCambioCurso from '../features/matriculas/CuestionarioCambio';
 import PortalFirmaApoderado from '../features/matriculas/PortalFirmaAPoderado';
 import { ToastProvider } from '../components/Toast';
+import { esTokenExpirado, obtenerTiempoRestanteMs, cerrarSesionPorExpiracion } from '../utils/auth';
 
 // ============================================================================
-// COMPONENTE GUARDIÁN (Protección de Rutas)
+// COMPONENTE GUARDIÁN (Protección de Rutas y Expiración de Token)
 // ============================================================================
-// Este componente envuelve las partes privadas. Si no hay token, te expulsa al login.
 const RutaProtegida = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
   
   if (!token) {
-    // Si no hay token en la memoria del navegador, redirige inmediatamente a /login
     return <Navigate to="/login" replace />;
   }
+
+  // Si el token ya venció, limpiar almacenamiento y expulsar con aviso
+  if (esTokenExpirado(token)) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('usuario');
+    return <Navigate to="/login?motivo=expirado" replace />;
+  }
+
+  // Temporizador proactivo: Si el usuario permanece inactivo en la vista,
+  // se cierra la sesión en el instante exacto en que expira el token
+  useEffect(() => {
+    const tiempoRestante = obtenerTiempoRestanteMs(token);
+    if (tiempoRestante <= 0) {
+      cerrarSesionPorExpiracion();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      cerrarSesionPorExpiracion();
+    }, tiempoRestante);
+
+    return () => clearTimeout(timer);
+  }, [token]);
   
-  // Si hay token, renderiza el componente hijo (en este caso, el Layout)
   return <>{children}</>;
 };
 

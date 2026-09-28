@@ -71,3 +71,10 @@ S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "matriculas-documentos")
 S3_REGION_NAME = os.getenv("S3_REGION_NAME", "us-east-1")
 STORAGE_LOCAL_DIR = os.getenv("STORAGE_LOCAL_DIR", str(BASE_DIR / "uploads"))
+
+# ==============================================================================
+# LÍMITES DE SUBIDA DE ARCHIVOS (5 MB por defecto)
+# ==============================================================================
+MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_BYTES", str(5 * 1024 * 1024)))
+MAX_FILE_SIZE_MB = int(MAX_FILE_SIZE_BYTES / (1024 * 1024))
+

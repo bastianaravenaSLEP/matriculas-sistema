@@ -54,16 +54,37 @@ def formatear_nombre_apoderado_resumido(nombres: str, apellido_paterno: str) -> 
     resultado = f"{primer_nombre} {primer_apellido}".strip()
     return resultado if resultado else "Pendiente"
 
-def obtener_todas_matriculas_db(establecimiento_id: int = None):
+def obtener_anios_disponibles_db(establecimiento_id: int = None):
+    """Lista de años con datos + el año por defecto, para poblar el selector del frontend."""
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        query = """
-            SELECT m.id_matricula, m.numero_correlativo, m.nivel_ensenanza, m.curso, m.fecha_matricula, m.estado,
-                   e.run_ipe, e.nombres, e.apellido_paterno, a.rut_pasaporte, a.nombres, a.apellido_paterno,
-                   m.anio_escolar, cte.descripcion, est.rbd, m.cod_tipo_ensenanza, m.id_establecimiento,
-                   m.es_excedente, m.numero_resolucion_excedente, m.fecha_resolucion_excedente, m.ruta_documento_resolucion,
-                   m.motivo_cambio_curso
+        if establecimiento_id is not None:
+            cur.execute(
+                "SELECT DISTINCT anio_escolar FROM matricula WHERE id_establecimiento = %s ORDER BY anio_escolar DESC",
+                (establecimiento_id,),
+            )
+        else:
+            cur.execute("SELECT DISTINCT anio_escolar FROM matricula ORDER BY anio_escolar DESC")
+        anios = [f[0] for f in cur.fetchall()]
+        return {"anios": anios, "por_defecto": anios[0] if anios else None}
+    finally:
+        cur.close()
+        conn.close()
+
+def obtener_todas_matriculas_db(
+    establecimiento_id: int = None,
+    page: int = 1,
+    page_size: int = 50,
+    anio: int = None,
+    busqueda: str = None,
+    curso: str = None,
+    codigo: int = None,
+):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        base_where = """
             FROM matricula m
             INNER JOIN estudiante e ON m.id_estudiante = e.id_estudiante
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
@@ -72,14 +93,54 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
             WHERE 1=1
         """
         parametros = []
+
         if establecimiento_id is not None:
-            query += " AND m.id_establecimiento = %s"
+            base_where += " AND m.id_establecimiento = %s"
             parametros.append(establecimiento_id)
-            
-        query += " ORDER BY m.id_matricula DESC"
-        cur.execute(query, tuple(parametros))
-        
-        matriculas = [{
+
+        if anio is not None:
+            base_where += " AND m.anio_escolar = %s"
+            parametros.append(anio)
+
+        if codigo is not None:
+            base_where += " AND m.cod_tipo_ensenanza = %s"
+            parametros.append(codigo)
+
+        if curso:
+            base_where += " AND m.curso = %s"
+            parametros.append(curso)
+
+        if busqueda and busqueda.strip():
+            tokens = busqueda.strip().split()
+            for token in tokens:
+                like = f"%{token}%"
+                base_where += """ AND (
+                    e.nombres ILIKE %s OR e.apellido_paterno ILIKE %s OR
+                    e.run_ipe ILIKE %s OR
+                    a.nombres ILIKE %s OR a.apellido_paterno ILIKE %s OR
+                    CAST(m.numero_correlativo AS TEXT) ILIKE %s
+                )"""
+                parametros.extend([like, like, like, like, like, like])
+
+        # COUNT query
+        cur.execute(f"SELECT COUNT(*) {base_where}", tuple(parametros))
+        total = cur.fetchone()[0]
+
+        # Data query
+        offset = (page - 1) * page_size
+        data_query = f"""
+            SELECT m.id_matricula, m.numero_correlativo, m.nivel_ensenanza, m.curso, m.fecha_matricula, m.estado,
+                   e.run_ipe, e.nombres, e.apellido_paterno, a.rut_pasaporte, a.nombres, a.apellido_paterno,
+                   m.anio_escolar, cte.descripcion, est.rbd, m.cod_tipo_ensenanza, m.id_establecimiento,
+                   m.es_excedente, m.numero_resolucion_excedente, m.fecha_resolucion_excedente, m.ruta_documento_resolucion,
+                   m.motivo_cambio_curso
+            {base_where}
+            ORDER BY m.id_matricula DESC
+            LIMIT %s OFFSET %s
+        """
+        cur.execute(data_query, tuple(parametros) + (page_size, offset))
+
+        items = [{
             "id_matricula": f[0], "numero_correlativo": f[1], "nivel_ensenanza": f[2], "curso": f[3],
             "fecha_matricula": str(f[4]), "estado": f[5], "estudiante_rut": f[6], "estudiante_nombre": f"{f[7]} {f[8]}".strip(),
             "apoderado_rut": f[9] or "Sin registro", "apoderado_nombre": formatear_nombre_apoderado_resumido(f[10], f[11]),
@@ -91,7 +152,15 @@ def obtener_todas_matriculas_db(establecimiento_id: int = None):
             "ruta_documento_resolucion": f[20],
             "motivo_cambio_curso": f[21]
         } for f in cur.fetchall()]
-        return matriculas
+
+        import math
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if page_size > 0 else 1,
+        }
     finally:
         cur.close()
         conn.close()

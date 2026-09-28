@@ -4,6 +4,7 @@ from security import obtener_usuario_actual, verificar_escritura
 # Importamos la capa de servicio
 from services import establecimientos_service
 from services.establecimientos_service import cargar_capacidades_excel_service, obtener_capacidad_curso
+from services.storage_service import validar_tamano_archivo
 
 router = APIRouter(prefix="/establecimientos", tags=["Establecimientos Educacionales"])
 
@@ -32,6 +33,14 @@ async def cargar_capacidades(
     if not archivo.filename.endswith(('.xls', '.xlsx')):
         raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xls, .xlsx)")
         
+    contenido = await archivo.read()
+    if not contenido:
+        raise HTTPException(status_code=400, detail="El archivo enviado está vacío.")
+    
+    # Validar tamaño máximo permitido (5 MB)
+    validar_tamano_archivo(contenido, archivo.filename)
+    await archivo.seek(0)
+
     return cargar_capacidades_excel_service(archivo, anio_escolar)
 
 @router.get("/capacidad-sala")

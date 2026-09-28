@@ -1,11 +1,23 @@
-import os
-import io
 import logging
 from typing import Tuple, Optional
 from pathlib import Path
+from fastapi import HTTPException
 import config
 
 logger = logging.getLogger("storage_service")
+
+def validar_tamano_archivo(contenido: bytes, nombre_archivo: str = "archivo", max_bytes: int = config.MAX_FILE_SIZE_BYTES):
+    """
+    Valida que el archivo binario no sobrepase el tamaño máximo permitido (5 MB).
+    Lanza HTTPException 413 (Payload Too Large) si lo excede.
+    """
+    if len(contenido) > max_bytes:
+        peso_mb = round(len(contenido) / (1024 * 1024), 2)
+        limite_mb = int(max_bytes / (1024 * 1024))
+        raise HTTPException(
+            status_code=413,
+            detail=f"El archivo '{nombre_archivo}' pesa {peso_mb} MB y supera el tamaño máximo permitido de {limite_mb} MB."
+        )
 
 # Cliente S3 en caché (singleton lazy)
 _s3_client = None
@@ -47,6 +59,9 @@ def guardar_archivo(contenido: bytes, clave_objeto: str, content_type: str = "ap
     Guarda un archivo binario en el almacenamiento de objetos S3 o en disco local.
     Retorna la clave única del objeto (ej: 'resoluciones/res_15_2026_ab12.pdf').
     """
+    # Validar tamaño máximo permitido (5 MB)
+    validar_tamano_archivo(contenido, clave_objeto)
+
     # Normalizar separadores a formato web/s3
     clave_objeto = clave_objeto.replace("\\", "/").lstrip("/")
 

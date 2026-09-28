@@ -6,6 +6,20 @@ from database import get_db_connection
 import json
 from services import storage_service
 
+def componer_domicilio(calle, numero, sector, comuna):
+    """Compone una dirección en un solo texto a partir de sus componentes."""
+    partes = []
+    if calle:
+        via = str(calle).strip()
+        if numero and str(numero).strip():
+            via = f"{via} {str(numero).strip()}"
+        partes.append(via)
+    if sector and str(sector).strip():
+        partes.append(str(sector).strip())
+    if comuna and str(comuna).strip():
+        partes.append(str(comuna).strip())
+    return ", ".join(partes) if partes else None
+
 def obtener_estudiantes_db(establecimiento_id: int = None, rol: str = None):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -184,7 +198,8 @@ def obtener_ficha_estudiante_db(rut: str):
                     fs.alergias, fs.diagnostico_medico, fs.medico_tratante, fs.medicamento, fs.nee, fs.nee_tipo,
                     e.fecha_actualizacion,
                     e.pais_origen, e.documento_extranjero,
-                    a.pais_origen, a.documento_extranjero
+                    a.pais_origen, a.documento_extranjero,
+                    e.calle, e.numero, e.sector, e.comuna
             FROM estudiante e
             LEFT JOIN apoderado a ON e.id_apoderado_principal = a.id_apoderado
             LEFT JOIN apoderado asup ON e.id_apoderado_suplente = asup.id_apoderado
@@ -219,6 +234,11 @@ def obtener_ficha_estudiante_db(rut: str):
                 "apellidos": f"{estudiante_db[3]} {estudiante_db[4] or ''}".strip(),
                 "fecha_nacimiento": str(estudiante_db[5]) if estudiante_db[5] else "No registrada",
                 "domicilio": estudiante_db[6] if estudiante_db[6] else "Sin registrar",
+                # Dirección estructurada
+                "calle": estudiante_db[40] or "",
+                "numero": estudiante_db[41] or "",
+                "sector": estudiante_db[42] or "",
+                "comuna": estudiante_db[43] or "",
                 "rbd_actual": ultimo_rbd,
                 "colegio_actual": ultimo_colegio,
                 "fecha_actualizacion": str(estudiante_db[35]) if len(estudiante_db) > 35 and estudiante_db[35] else None,
@@ -227,9 +247,12 @@ def obtener_ficha_estudiante_db(rut: str):
             },
             "apoderado": {
                 "rut": estudiante_db[7] if estudiante_db[7] else "Sin registrar",
+                "rut_raw": estudiante_db[7] or "",
                 "nombres": estudiante_db[8] or "",
                 "apellido_paterno": estudiante_db[9] or "",
                 "apellido_materno": estudiante_db[10] or "",
+                "telefono_raw": estudiante_db[11] or "",
+                "correo_raw": estudiante_db[12] or "",
                 "nombre": f"{estudiante_db[8] or ''} {estudiante_db[9] or ''} {estudiante_db[10] or ''}".strip() if estudiante_db[8] else "Pendiente",
                 "telefono": estudiante_db[11] if estudiante_db[11] else "-",
                 "correo": estudiante_db[12] if estudiante_db[12] else "-",
@@ -469,50 +492,138 @@ def crear_estudiante_db(payload: dict):
         cur.close()
         conn.close()
 
+def buscar_apoderado_por_rut_db(rut_apoderado: str):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT a.id_apoderado, a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno,
+                   a.domicilio, a.telefono, a.correo_electronico,
+                   COUNT(e.id_estudiante) AS n_estudiantes
+            FROM apoderado a
+            LEFT JOIN estudiante e ON e.id_apoderado_principal = a.id_apoderado
+            WHERE a.rut_pasaporte = %s
+            GROUP BY a.id_apoderado, a.rut_pasaporte, a.nombres, a.apellido_paterno, a.apellido_materno,
+                     a.domicilio, a.telefono, a.correo_electronico
+            """,
+            (rut_apoderado.strip(),),
+        )
+        fila = cur.fetchone()
+        if not fila:
+            return {"existe": False}
+        return {
+            "existe": True,
+            "id_apoderado": fila[0],
+            "rut_apoderado": fila[1],
+            "nombres_apoderado": fila[2] or "",
+            "apellido_paterno_apoderado": fila[3] or "",
+            "apellido_materno_apoderado": fila[4] or "",
+            "domicilio_apoderado": fila[5] or "",
+            "telefono_apoderado": fila[6] or "",
+            "correo_apoderado": fila[7] or "",
+            "n_estudiantes": fila[8],
+        }
+    finally:
+        cur.close()
+        conn.close()
+
+
+def _registrar_auditoria_estudiante(cur, rut, id_usuario, dir_anterior, dir_nueva):
+    """Registra en auditoria_matricula el cambio de datos de la ficha del estudiante."""
+    cur.execute(
+        """
+        SELECT id_matricula FROM matricula
+        WHERE id_estudiante = (SELECT id_estudiante FROM estudiante WHERE run_ipe = %s)
+        ORDER BY id_matricula DESC LIMIT 1
+        """,
+        (rut,),
+    )
+    mat_result = cur.fetchone()
+    if not mat_result:
+        return
+
+    id_matricula = mat_result[0]
+    datos_ant = json.dumps({"direccion": dir_anterior}, ensure_ascii=False, default=str)
+    datos_nuev = json.dumps({"direccion": dir_nueva}, ensure_ascii=False, default=str)
+    cur.execute(
+        """
+        INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
+        VALUES (%s, 'UPDATE', %s, %s, %s)
+        """,
+        (id_matricula, id_usuario, datos_ant, datos_nuev),
+    )
+
+
 def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int): 
     conn = get_db_connection()
     cur = conn.cursor()
     try:
-        # 1. Obtener estudiante existente
+        # 1. Obtener estudiante existente y valores anteriores para auditoría
         cur.execute("""
-            SELECT id_estudiante, id_apoderado_principal, id_apoderado_suplente 
+            SELECT id_estudiante, id_apoderado_principal, id_apoderado_suplente,
+                   calle, numero, sector, comuna, domicilio 
             FROM estudiante WHERE run_ipe = %s
         """, (rut,))
         est_db = cur.fetchone()
         if not est_db:
             raise HTTPException(status_code=404, detail="Estudiante no encontrado")
             
-        id_estudiante, id_apod_princ, id_apod_supl = est_db
+        id_estudiante, id_apod_princ, id_apod_supl, prev_calle, prev_num, prev_sec, prev_com, prev_dom = est_db
+        dir_anterior = {
+            "calle": prev_calle, "numero": prev_num, "sector": prev_sec,
+            "comuna": prev_com, "domicilio": prev_dom
+        }
 
-        # 2. Actualizar Domicilio y Fecha de Actualización de Estudiante
-        if req.domicilio_estudiante is not None:
-            cur.execute("""
-                UPDATE estudiante 
-                SET domicilio = %s
-                WHERE id_estudiante = %s
-            """, (req.domicilio_estudiante, id_estudiante))
-            
+        # 2. Dirección del estudiante: estructurada o campo único
+        usa_estructurado = any(
+            getattr(req, campo, None) is not None
+            for campo in ("calle", "numero", "sector", "comuna")
+        )
+
+        if usa_estructurado:
+            calle = (req.calle or "").strip() or None
+            numero = (req.numero or "").strip() or None
+            sector = (req.sector or "").strip() or None
+            comuna = (req.comuna or "").strip() or None
+            domicilio_final = componer_domicilio(calle, numero, sector, comuna)
+            cur.execute(
+                "UPDATE estudiante SET calle = %s, numero = %s, sector = %s, comuna = %s, "
+                "domicilio = %s WHERE id_estudiante = %s",
+                (calle, numero, sector, comuna, domicilio_final, id_estudiante),
+            )
+        elif req.domicilio_estudiante is not None:
+            domicilio_final = req.domicilio_estudiante
+            cur.execute(
+                "UPDATE estudiante SET domicilio = %s WHERE id_estudiante = %s",
+                (domicilio_final, id_estudiante),
+            )
+        else:
+            domicilio_final = prev_dom
+
+        dir_nueva = {
+            "calle": req.calle if usa_estructurado else dir_anterior["calle"],
+            "numero": req.numero if usa_estructurado else dir_anterior["numero"],
+            "sector": req.sector if usa_estructurado else dir_anterior["sector"],
+            "comuna": req.comuna if usa_estructurado else dir_anterior["comuna"],
+            "domicilio": domicilio_final,
+        }
+
         try:
-            cur.execute("""
-                UPDATE estudiante 
-                SET fecha_actualizacion = CURRENT_TIMESTAMP 
-                WHERE id_estudiante = %s
-            """, (id_estudiante,))
+            cur.execute("UPDATE estudiante SET fecha_actualizacion = CURRENT_TIMESTAMP WHERE id_estudiante = %s", (id_estudiante,))
         except Exception:
-            conn.rollback()
-            if req.domicilio_estudiante is not None:
-                cur.execute("UPDATE estudiante SET domicilio = %s WHERE id_estudiante = %s", (req.domicilio_estudiante, id_estudiante))
+            pass
 
         # 3. Procesar Apoderado Principal
         if req.rut_apoderado:
+            rut_nuevo = (req.rut_apoderado or "").strip()
             nom_a = req.nombres_apoderado or "Apoderado"
             pat_a = req.apellido_paterno_apoderado or "Titular"
             mat_a = req.apellido_materno_apoderado or ""
-            dom_a = req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
+            dom_a = req.domicilio_apoderado or domicilio_final or "Sin registrar"
             tel_a = req.telefono_apoderado or ""
             cor_a = req.correo_apoderado or ""
 
-            # Preservar relacion existente si no se especifico en el request
             rel_a = getattr(req, "relacion_apoderado", None)
             if not rel_a and id_apod_princ:
                 cur.execute("SELECT relacion_estudiante FROM apoderado WHERE id_apoderado = %s", (id_apod_princ,))
@@ -522,20 +633,13 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
             if not rel_a:
                 rel_a = "Madre"
 
-            if id_apod_princ:
-                cur.execute("""
-                    UPDATE apoderado 
-                    SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
-                        domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
-                    WHERE id_apoderado = %s
-                """, (req.rut_apoderado, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
-            else:
-                cur.execute("SELECT id_apoderado, relacion_estudiante FROM apoderado WHERE rut_pasaporte = %s", (req.rut_apoderado,))
-                apod_exist = cur.fetchone()
-                if apod_exist:
-                    id_apod_princ = apod_exist[0]
-                    if not getattr(req, "relacion_apoderado", None) and apod_exist[1]:
-                        rel_a = apod_exist[1]
+            cur.execute("SELECT id_apoderado FROM apoderado WHERE rut_pasaporte = %s", (rut_nuevo,))
+            apod_exist = cur.fetchone()
+
+            if apod_exist:
+                id_apod_existente = apod_exist[0]
+                if id_apod_princ == id_apod_existente:
+                    # Mismo apoderado ya vinculado -> edición normal
                     cur.execute("""
                         UPDATE apoderado 
                         SET nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
@@ -543,13 +647,23 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                         WHERE id_apoderado = %s
                     """, (nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
                 else:
+                    # Opción 1: el RUT pertenece a otro apoderado -> solo vinculamos sin pisar datos
+                    cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE id_estudiante = %s", (id_apod_existente, id_estudiante))
+            else:
+                if id_apod_princ:
+                    cur.execute("""
+                        UPDATE apoderado 
+                        SET rut_pasaporte = %s, nombres = %s, apellido_paterno = %s, apellido_materno = %s, 
+                            domicilio = %s, telefono = %s, correo_electronico = %s, relacion_estudiante = %s
+                        WHERE id_apoderado = %s
+                    """, (rut_nuevo, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a, id_apod_princ))
+                else:
                     cur.execute("""
                         INSERT INTO apoderado (rut_pasaporte, nombres, apellido_paterno, apellido_materno, domicilio, telefono, correo_electronico, relacion_estudiante)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id_apoderado
-                    """, (req.rut_apoderado, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a))
-                    id_apod_princ = cur.fetchone()[0]
-                
-                cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE id_estudiante = %s", (id_apod_princ, id_estudiante))
+                    """, (rut_nuevo, nom_a, pat_a, mat_a, dom_a, tel_a, cor_a, rel_a))
+                    nuevo_id = cur.fetchone()[0]
+                    cur.execute("UPDATE estudiante SET id_apoderado_principal = %s WHERE id_estudiante = %s", (nuevo_id, id_estudiante))
 
         # 4. Procesar Apoderado Suplente
         modificar_supl = getattr(req, "modificar_suplente", False)
@@ -557,7 +671,7 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
             nom_s = req.nombres_suplente or "Apoderado"
             pat_s = req.apellido_paterno_suplente or "Suplente"
             mat_s = req.apellido_materno_suplente or ""
-            dom_s = req.domicilio_suplente or req.domicilio_apoderado or req.domicilio_estudiante or "Sin registrar"
+            dom_s = req.domicilio_suplente or req.domicilio_apoderado or domicilio_final or "Sin registrar"
             tel_s = req.telefono_suplente or ""
             cor_s = req.correo_suplente or ""
 
@@ -602,7 +716,7 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
             cur.execute("UPDATE estudiante SET id_apoderado_suplente = NULL WHERE id_estudiante = %s", (id_estudiante,))
 
         # 5. Procesar Ficha Médica / Salud
-        if getattr(req, "actualizar_salud", False) or req.sistema_salud:
+        if getattr(req, "actualizar_salud", False) or getattr(req, "sistema_salud", None):
             sis_salud = req.sistema_salud or "No informado"
             let_fon = req.letra_fonasa or "-"
             cesfam = req.cesfam or "No informado"
@@ -634,33 +748,18 @@ def actualizar_datos_estudiante_db(rut: str, req, id_usuario: int):
                     fecha_actualizacion = CURRENT_TIMESTAMP;
             """, (id_estudiante, sis_salud, let_fon, cesfam, emergencia, alergias, diag_med, med_trat, meds, nee, nee_tipo))
 
-        # 6. Auditoría
-        cur.execute("""
-            SELECT id_matricula FROM matricula 
-            WHERE id_estudiante = %s
-            ORDER BY id_matricula DESC LIMIT 1
-        """, (id_estudiante,))
-        mat_result = cur.fetchone()
-
-        if mat_result:
-            id_matricula = mat_result[0]
-            detalle_cambio = json.dumps({
-                "evento": "Actualización de ficha personal y salud del estudiante",
-                "run": rut,
-                "domicilio": req.domicilio_estudiante,
-                "apoderado": req.rut_apoderado
-            })
-            cur.execute("""
-                INSERT INTO auditoria_matricula (id_matricula, accion, id_usuario, datos_anteriores, datos_nuevos)
-                VALUES (%s, 'UPDATE', %s, NULL, %s)
-            """, (id_matricula, id_usuario, detalle_cambio))
+        # 6. Trazabilidad: registrar en auditoría real
+        _registrar_auditoria_estudiante(cur, rut, id_usuario, dir_anterior, dir_nueva)
 
         conn.commit()
         return {"mensaje": "Datos y ficha médica actualizados exitosamente"}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         print(f"Error BD: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
-        conn.close()
+        conn.close()

@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { API_BASE_URL } from '../../../config/api';
-import { coincideBusqueda } from '../../../utils/search';
+import { validarListaArchivos } from '../../../utils/fileValidation';
 
 export interface Matricula {
   id_matricula: number;
@@ -25,6 +25,14 @@ export interface Matricula {
   motivo_cambio_curso?: string | null;
 }
 
+export interface PaginatedResponse {
+  items: Matricula[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export const useMatriculas = () => {
   const { colegioSeleccionado } = useOutletContext<{ colegioSeleccionado: string }>();
 
@@ -36,24 +44,264 @@ export const useMatriculas = () => {
   const puedeCargarSIGE = esAdminOSlep && puedeEditar;
 
   const [motivoCambio, setMotivoCambio] = useState('');
+
+  // --- ESTADO DE PAGINACIÓN Y DATOS ---
   const [matriculas, setMatriculas] = useState<Matricula[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const PAGE_SIZE = 50;
+
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
-  
+
+  // --- FILTROS (se envían al servidor) ---
   const [busqueda, setBusqueda] = useState('');
-  const [filtroAnio, setFiltroAnio] = useState(''); 
+  const anioActual = new Date().getFullYear();
+  const [filtroAnio, setFiltroAnio] = useState(String(anioActual));
+  const anioInicializadoRef = useRef(false);
+  const colegioPrevioRef = useRef<string | null>(null);
+
+  // Reiniciar indicador cuando cambia el establecimiento seleccionado
+  useEffect(() => {
+    if (colegioSeleccionado !== colegioPrevioRef.current) {
+      colegioPrevioRef.current = colegioSeleccionado;
+      anioInicializadoRef.current = false;
+    }
+  }, [colegioSeleccionado]);
+
   const [filtroCodigo, setFiltroCodigo] = useState('');
   const [filtroCurso, setFiltroCurso] = useState('');
-  const [ordenFolio, setOrdenFolio] = useState<'asc' | 'desc' | null>('asc'); 
+  const [ordenFolio, setOrdenFolio] = useState<'asc' | 'desc' | null>('asc');
   const [ordenEstado, setOrdenEstado] = useState<'asc' | 'desc' | null>(null);
 
+  // Debounce ref para búsqueda
+  const busquedaDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [busquedaDebounced, setBusquedaDebounced] = useState('');
+
+  useEffect(() => {
+    if (busquedaDebounceRef.current) clearTimeout(busquedaDebounceRef.current);
+    busquedaDebounceRef.current = setTimeout(() => {
+      setBusquedaDebounced(busqueda);
+      setPage(1); // Reset a página 1 al buscar
+    }, 400);
+    return () => {
+      if (busquedaDebounceRef.current) clearTimeout(busquedaDebounceRef.current);
+    };
+  }, [busqueda]);
+
+  // Reset página cuando cambian filtros
+  useEffect(() => { setPage(1); }, [filtroAnio, filtroCodigo, filtroCurso, colegioSeleccionado]);
+  useEffect(() => { setFiltroCurso(''); }, [filtroCodigo]);
+
+  // --- CARGA PRINCIPAL CON PAGINACIÓN ---
+  const cargarMatriculas = useCallback(() => {
+    if (!colegioSeleccionado) {
+      setMatriculas([]);
+      setTotal(0);
+      setTotalPages(1);
+      setCargando(false);
+      return;
+    }
+
+    setCargando(true);
+    const token = localStorage.getItem('token');
+
+    const params = new URLSearchParams();
+    params.set('establecimiento_id', colegioSeleccionado);
+    params.set('page', String(page));
+    params.set('page_size', String(PAGE_SIZE));
+    if (filtroAnio) params.set('anio', filtroAnio);
+    if (filtroCodigo) params.set('codigo', filtroCodigo);
+    if (filtroCurso) params.set('curso', filtroCurso);
+    if (busquedaDebounced) params.set('busqueda', busquedaDebounced);
+
+    const url = `${API_BASE_URL}/matriculas?${params.toString()}`;
+
+    fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      }
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Error al conectar con la API');
+        return res.json();
+      })
+      .then((datos: PaginatedResponse) => {
+        setMatriculas(datos.items);
+        setTotal(datos.total);
+        setTotalPages(datos.total_pages);
+        setCargando(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setCargando(false);
+      });
+  }, [colegioSeleccionado, page, filtroAnio, filtroCodigo, filtroCurso, busquedaDebounced]);
+
+  useEffect(() => {
+    cargarMatriculas();
+  }, [cargarMatriculas]);
+
+  // --- DATOS DEL AÑO ACTUAL (para cupos/estructura colegio) ---
+  // Carga separada: solo matrículas activas del año actual para calcular cupos
+  const [matriculasAnioActual, setMatriculasAnioActual] = useState<Matricula[]>([]);
+
+  const cargarMatriculasAnioActual = useCallback(() => {
+    if (!colegioSeleccionado) {
+      setMatriculasAnioActual([]);
+      return;
+    }
+    const token = localStorage.getItem('token');
+    const params = new URLSearchParams();
+    params.set('establecimiento_id', colegioSeleccionado);
+    params.set('anio', String(anioActual));
+    params.set('page', '1');
+    params.set('page_size', '2000');
+
+    fetch(`${API_BASE_URL}/matriculas?${params.toString()}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then((datos: PaginatedResponse) => setMatriculasAnioActual(datos.items))
+      .catch(() => setMatriculasAnioActual([]));
+  }, [colegioSeleccionado, anioActual]);
+
+  useEffect(() => {
+    cargarMatriculasAnioActual();
+  }, [cargarMatriculasAnioActual]);
+
+  // --- OPCIONES DE FILTRO DESDE EL SERVIDOR (Años, Planes de Estudio, Cursos) ---
+  const [opcionesFiltro, setOpcionesFiltro] = useState<{
+    anios: number[];
+    cursos: string[];
+    planes: { codigo: number; descripcion: string }[];
+    cursos_por_plan: Record<string, string[]>;
+  }>({
+    anios: [],
+    cursos: [],
+    planes: [],
+    cursos_por_plan: {},
+  });
+
+  const cargarOpcionesFiltro = useCallback(() => {
+    if (!colegioSeleccionado) {
+      setOpcionesFiltro({ anios: [], cursos: [], planes: [], cursos_por_plan: {} });
+      return;
+    }
+    const token = localStorage.getItem('token');
+    const url = `${API_BASE_URL}/matriculas/opciones-filtro?establecimiento_id=${colegioSeleccionado}`;
+
+    fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.ok ? res.json() : Promise.reject())
+      .then((data) => {
+        setOpcionesFiltro(data);
+        if (data.anios && data.anios.length > 0) {
+          const ultimoAnioRegistrado = String(data.anios[0]);
+          if (!anioInicializadoRef.current) {
+            setFiltroAnio(ultimoAnioRegistrado);
+            anioInicializadoRef.current = true;
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Error al cargar opciones de filtro:", err);
+      });
+  }, [colegioSeleccionado]);
+
+  useEffect(() => {
+    cargarOpcionesFiltro();
+  }, [cargarOpcionesFiltro]);
+
+  // Lista completa de todos los años disponibles para el colegio seleccionado
+  const aniosUnicos = useMemo(() => {
+    if (opcionesFiltro.anios && opcionesFiltro.anios.length > 0) {
+      return opcionesFiltro.anios;
+    }
+    const anios = matriculas.map(m => m.anio_escolar).filter(Boolean);
+    return Array.from(new Set(anios)).sort((a, b) => b - a);
+  }, [opcionesFiltro.anios, matriculas]);
+
+  // Códigos de planes de estudio disponibles para el colegio
+  const codigosUnicos = useMemo(() => {
+    if (opcionesFiltro.planes && opcionesFiltro.planes.length > 0) {
+      return opcionesFiltro.planes.map(p => p.codigo);
+    }
+    const codigos = matriculas.map(m => m.cod_tipo_ensenanza).filter(cod => cod !== null);
+    return Array.from(new Set(codigos)).sort();
+  }, [opcionesFiltro.planes, matriculas]);
+
+  // Cursos disponibles (filtrados por plan si se seleccionó uno)
+  const cursosUnicos = useMemo(() => {
+    if (filtroCodigo && opcionesFiltro.cursos_por_plan?.[filtroCodigo]) {
+      return opcionesFiltro.cursos_por_plan[filtroCodigo];
+    }
+    if (opcionesFiltro.cursos && opcionesFiltro.cursos.length > 0) {
+      return opcionesFiltro.cursos;
+    }
+    const cursos = matriculas.map(m => m.curso).filter(Boolean);
+    return Array.from(new Set(cursos)).sort();
+  }, [opcionesFiltro, filtroCodigo, matriculas]);
+
+  // --- ESTRUCTURA COLEGIO (para modal cambio de curso) ---
+  const estructuraColegio = useMemo(() => {
+    const estructura: Record<string, { nombrePlan: string, cursos: Set<string> }> = {};
+    if (opcionesFiltro.planes && opcionesFiltro.planes.length > 0) {
+      opcionesFiltro.planes.forEach(p => {
+        const codStr = String(p.codigo);
+        const cursosList = opcionesFiltro.cursos_por_plan?.[codStr] || [];
+        estructura[codStr] = {
+          nombrePlan: p.descripcion,
+          cursos: new Set(cursosList)
+        };
+      });
+      return estructura;
+    }
+    matriculasAnioActual.forEach(mat => {
+      if (mat.estado === 'Activa' && mat.cod_tipo_ensenanza) {
+        const codStr = mat.cod_tipo_ensenanza.toString();
+        if (!estructura[codStr]) {
+          estructura[codStr] = { nombrePlan: mat.tipo_ensenanza, cursos: new Set() };
+        }
+        if (mat.curso) {
+          estructura[codStr].cursos.add(mat.curso);
+        }
+      }
+    });
+    return estructura;
+  }, [opcionesFiltro, matriculasAnioActual]);
+
+  // --- CUPOS POR CURSO (del año actual) ---
+  const cuposPorCurso = useMemo(() => {
+    const conteo: Record<string, number> = {};
+    matriculasAnioActual.forEach(m => {
+      if (m.estado === 'Activa' && m.curso) {
+        conteo[m.curso] = (conteo[m.curso] || 0) + 1;
+      }
+    });
+    return conteo;
+  }, [matriculasAnioActual]);
+
+  // --- MATRICULADOS EN CURSO DESTINO ---
   const [modalCursoAbierto, setModalCursoAbierto] = useState(false);
   const [procesandoCurso, setProcesandoCurso] = useState(false);
   const [planDestino, setPlanDestino] = useState<string>('');
   const [cursoDestino, setCursoDestino] = useState<string>('');
   const [capacidadCursoDestino, setCapacidadCursoDestino] = useState<number>(45);
   const [cargandoCapacidadDestino, setCargandoCapacidadDestino] = useState<boolean>(false);
-  
+
+  const matriculadosCursoDestino = useMemo(() => {
+    if (!cursoDestino) return 0;
+    return matriculasAnioActual.filter(m =>
+      m.curso === cursoDestino && m.estado === 'Activa'
+    ).length;
+  }, [matriculasAnioActual, cursoDestino]);
+
+  // --- ESTADO DE MODALES Y ACCIONES ---
   const [modalAbierto, setModalAbierto] = useState(false);
   const [idSeleccionado, setIdSeleccionado] = useState<number | null>(null);
   const [fechaRetiro, setFechaRetiro] = useState('');
@@ -84,164 +332,11 @@ export const useMatriculas = () => {
     tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO';
   } | null>(null);
 
-  const anioActual = new Date().getFullYear();
-
-  const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivos = e.target.files;
-    if (!archivos || archivos.length === 0) return;
-
-    setSubiendoArchivo(true);
-    const formData = new FormData();
-    
-    Array.from(archivos).forEach((archivo) => {
-      formData.append("archivos", archivo);
-    });
-
-    const token = localStorage.getItem('token'); 
-
-    try {
-      const respuesta = await fetch(`${API_BASE_URL}/matriculas/carga-masiva`, {
-        method: "POST",
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-
-      const datos = await respuesta.json();
-      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir los archivos");
-      
-      alert(datos.mensaje); 
-      cargarMatriculas();
-    } catch (error: any) {
-      alert("Error: " + error.message);
-    } finally {
-      setSubiendoArchivo(false);
-      e.target.value = ''; 
-    }
-  };
-
-  const cargarMatriculas = () => {
-    if (!colegioSeleccionado) {
-      setMatriculas([]);
-      setCargando(false);
-      return; 
-    }
-
-    setCargando(true);
-    const token = localStorage.getItem('token');
-    const url = `${API_BASE_URL}/matriculas?establecimiento_id=${colegioSeleccionado}`;
-
-    fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      }
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error('Error al conectar con la API');
-        return res.json();
-      })
-      .then((datos) => {
-        setMatriculas(datos);
-        setCargando(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setCargando(false);
-      });
-  };
-
-  useEffect(() => {
-    cargarMatriculas();
-  }, [colegioSeleccionado]); 
-
-  useEffect(() => {
-    setFiltroCurso('');
-  }, [filtroCodigo]);
-
-  const aniosUnicos = useMemo(() => {
-    const anios = matriculas.map(m => m.anio_escolar).filter(Boolean);
-    return Array.from(new Set(anios)).sort((a, b) => b - a);
-  }, [matriculas]);
-
-  const codigosUnicos = useMemo(() => {
-    const codigos = matriculas.map(m => m.cod_tipo_ensenanza).filter(cod => cod !== null);
-    return Array.from(new Set(codigos)).sort();
-  }, [matriculas]);
-
-  const cursosUnicos = useMemo(() => {
-    const matriculasFiltradas = filtroCodigo 
-      ? matriculas.filter(m => m.cod_tipo_ensenanza?.toString() === filtroCodigo)
-      : matriculas;
-    const cursos = matriculasFiltradas.map(m => m.curso).filter(Boolean);
-    return Array.from(new Set(cursos)).sort();
-  }, [matriculas, filtroCodigo]);
-
-  const estructuraColegio = useMemo(() => {
-    const estructura: Record<string, { nombrePlan: string, cursos: Set<string> }> = {};
-    
-    matriculas.forEach(mat => {
-      if (mat.anio_escolar === anioActual && mat.estado === 'Activa' && mat.cod_tipo_ensenanza) {
-        const codStr = mat.cod_tipo_ensenanza.toString();
-        
-        if (!estructura[codStr]) {
-          estructura[codStr] = { nombrePlan: mat.tipo_ensenanza, cursos: new Set() };
-        }
-        if (mat.curso) {
-          estructura[codStr].cursos.add(mat.curso);
-        }
-      }
-    });
-    return estructura;
-  }, [matriculas, anioActual]);
-
-  const matriculasProcesadas = useMemo(() => {
-    let resultado = matriculas.filter(mat => {
-      const matchBusqueda = coincideBusqueda(
-        busqueda,
-        [mat.estudiante_nombre, mat.numero_correlativo, mat.apoderado_nombre],
-        [mat.estudiante_rut, mat.apoderado_rut]
-      );
-      
-      const coincideAnio = filtroAnio === '' || mat.anio_escolar?.toString() === filtroAnio;
-      const coincideCodigo = filtroCodigo === '' || mat.cod_tipo_ensenanza?.toString() === filtroCodigo;
-      const coincideCurso = filtroCurso === '' || mat.curso === filtroCurso;
-
-      return matchBusqueda && coincideAnio && coincideCodigo && coincideCurso;
-    });
-
-
-    resultado.sort((a, b) => {
-      if (ordenFolio) {
-        if (a.curso !== b.curso) {
-          return (a.curso || '').localeCompare(b.curso || '');
-        }
-        return ordenFolio === 'asc' 
-          ? a.numero_correlativo - b.numero_correlativo 
-          : b.numero_correlativo - a.numero_correlativo;
-      }
-      
-      if (ordenEstado) {
-        return ordenEstado === 'asc' 
-          ? a.estado.localeCompare(b.estado) 
-          : b.estado.localeCompare(a.estado);
-      }
-      return 0;
-    });
-
-    return resultado;
-  }, [matriculas, busqueda, filtroAnio, filtroCodigo, filtroCurso, ordenFolio, ordenEstado]);
-
-  // ============================================================================
-  // 🌟 NUEVO: LÓGICA DINÁMICA DE CAPACIDAD DE SALA (Conectada a la BD)
-  // ============================================================================
-  const [capacidadSala, setCapacidadSala] = useState<number>(45);
-
+  // --- HELPERS ---
   const formatearNivelExcel = (cursoStr: string) => {
     if (!cursoStr) return "";
     const texto = cursoStr.toUpperCase();
     const numero = texto.match(/\d+/)?.[0] || "";
-    
     if (texto.includes('MEDIO') || texto.includes('MEDIA')) return `${numero}MEDIO`;
     if (texto.includes('BÁSICO') || texto.includes('BASICO')) return `${numero}BASICO`;
     if (texto.includes('KINDER') || texto.includes('KÍNDER')) {
@@ -250,90 +345,48 @@ export const useMatriculas = () => {
     return texto.replace(/[^A-Z0-9]/g, '');
   };
 
-useEffect(() => {
+  // --- CAPACIDAD DE SALA ---
+  const [capacidadSala, setCapacidadSala] = useState<number>(45);
+
+  useEffect(() => {
     const obtenerCapacidad = async () => {
-      // 1. Validar que tengamos los filtros y que hayan matrículas para poder extraer el RBD
       if (!colegioSeleccionado || !filtroAnio || !filtroCurso || matriculas.length === 0) {
         setCapacidadSala(45);
         return;
       }
-
-      // 2. Extraer el RBD real. 
-      // Como todas las matrículas cargadas son de este colegio, tomamos el RBD de la primera.
-      const rbdReal = matriculas[0].rbd; 
-
+      const rbdReal = matriculas[0].rbd;
       const nivelExcel = formatearNivelExcel(filtroCurso);
       const token = localStorage.getItem('token');
-
       try {
-        // IMPORTANTE: Revisa si tu ruta en el backend es /establecimientos/capacidad-sala o solo /capacidad-sala
         const url = `${API_BASE_URL}/establecimientos/capacidad-sala?rbd=${rbdReal}&anio_escolar=${filtroAnio}&nivel=${nivelExcel}`;
-        
-        const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
         if (res.ok) {
           const data = await res.json();
-          // Actualizamos el estado con el valor real de la base de datos
           setCapacidadSala(data.capacidad_maxima);
         } else {
           setCapacidadSala(45);
         }
       } catch (e) {
-        console.error("Error obteniendo capacidad:", e);
         setCapacidadSala(45);
       }
     };
-
     obtenerCapacidad();
   }, [colegioSeleccionado, filtroAnio, filtroCurso, matriculas]);
 
-  const mostrarCupos = filtroAnio !== '' && filtroCodigo !== '' && filtroCurso !== '';
-
-  const cuposOcupados = useMemo(() => {
-    if (!mostrarCupos) return 0;
-    return matriculasProcesadas.filter(m => m.estado === 'Activa').length;
-  }, [matriculasProcesadas, mostrarCupos]);
-
-  // 🌟 CAPACIDAD DE SALA Y CONTROL DE CUPO PARA CAMBIO DE CURSO
-  const matriculadosCursoDestino = useMemo(() => {
-    if (!cursoDestino) return 0;
-    return matriculas.filter(m =>
-      m.anio_escolar === anioActual &&
-      m.curso === cursoDestino &&
-      m.estado === 'Activa'
-    ).length;
-  }, [matriculas, cursoDestino, anioActual]);
-
-  const cuposPorCurso = useMemo(() => {
-    const conteo: Record<string, number> = {};
-    matriculas.forEach(m => {
-      if (m.anio_escolar === anioActual && m.estado === 'Activa' && m.curso) {
-        conteo[m.curso] = (conteo[m.curso] || 0) + 1;
-      }
-    });
-    return conteo;
-  }, [matriculas, anioActual]);
-
   useEffect(() => {
     const obtenerCapacidadDestino = async () => {
-      if (!modalCursoAbierto || !cursoDestino || matriculas.length === 0) {
+      if (!modalCursoAbierto || !cursoDestino || matriculasAnioActual.length === 0) {
         setCapacidadCursoDestino(45);
         return;
       }
-      const rbdReal = matriculas[0]?.rbd;
+      const rbdReal = matriculasAnioActual[0]?.rbd;
       if (!rbdReal) return;
-
       const nivelExcel = formatearNivelExcel(cursoDestino);
       const token = localStorage.getItem('token');
       setCargandoCapacidadDestino(true);
-
       try {
         const url = `${API_BASE_URL}/establecimientos/capacidad-sala?rbd=${rbdReal}&anio_escolar=${anioActual}&nivel=${nivelExcel}`;
-        const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
         if (res.ok) {
           const data = await res.json();
           setCapacidadCursoDestino(data.capacidad_maxima || 45);
@@ -346,12 +399,82 @@ useEffect(() => {
         setCargandoCapacidadDestino(false);
       }
     };
-
     obtenerCapacidadDestino();
-  }, [modalCursoAbierto, cursoDestino, matriculas, anioActual]);
+  }, [modalCursoAbierto, cursoDestino, matriculasAnioActual, anioActual]);
 
   const cursoDestinoLleno = Boolean(cursoDestino && matriculadosCursoDestino >= capacidadCursoDestino);
 
+  // --- CUPOS VISIBLES (página actual filtrada por curso) ---
+  const mostrarCupos = filtroAnio !== '' && filtroCodigo !== '' && filtroCurso !== '';
+  const cuposOcupados = useMemo(() => {
+    if (!mostrarCupos) return 0;
+    return matriculas.filter(m => m.estado === 'Activa').length;
+  }, [matriculas, mostrarCupos]);
+
+  // --- matriculasProcesadas: ordenar los resultados de la página actual ---
+  const matriculasProcesadas = useMemo(() => {
+    const resultado = [...matriculas];
+    resultado.sort((a, b) => {
+      if (ordenFolio) {
+        if (a.curso !== b.curso) {
+          return (a.curso || '').localeCompare(b.curso || '');
+        }
+        return ordenFolio === 'asc'
+          ? a.numero_correlativo - b.numero_correlativo
+          : b.numero_correlativo - a.numero_correlativo;
+      }
+      if (ordenEstado) {
+        return ordenEstado === 'asc'
+          ? a.estado.localeCompare(b.estado)
+          : b.estado.localeCompare(a.estado);
+      }
+      return 0;
+    });
+    return resultado;
+  }, [matriculas, ordenFolio, ordenEstado]);
+
+  // --- CARGA MASIVA SIGE ---
+  const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const archivos = e.target.files;
+    if (!archivos || archivos.length === 0) return;
+
+    // Validar límite máximo de 5 MB por archivo
+    const validacion = validarListaArchivos(archivos);
+    if (!validacion.valido) {
+      alert(validacion.mensaje);
+      e.target.value = '';
+      return;
+    }
+
+    setSubiendoArchivo(true);
+    const formData = new FormData();
+    Array.from(archivos).forEach((archivo) => {
+      formData.append("archivos", archivo);
+    });
+
+    const token = localStorage.getItem('token');
+
+    try {
+      const respuesta = await fetch(`${API_BASE_URL}/matriculas/carga-masiva`, {
+        method: "POST",
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+      const datos = await respuesta.json();
+      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir los archivos");
+      alert(datos.mensaje);
+      cargarMatriculas();
+      cargarMatriculasAnioActual();
+      cargarOpcionesFiltro();
+    } catch (error: any) {
+      alert("Error: " + error.message);
+    } finally {
+      setSubiendoArchivo(false);
+      e.target.value = '';
+    }
+  };
+
+  // --- MODAL EMISIÓN ---
   const abrirModalEmision = (idMatricula: number, tipo: 'MATRICULA' | 'RETIRO' | 'CAMBIO_CURSO') => {
     const matricula = matriculas.find(m => m.id_matricula === idMatricula);
     if (matricula) {
@@ -364,6 +487,7 @@ useEffect(() => {
     }
   };
 
+  // --- RETIRO ---
   const iniciarRetiro = (id: number) => {
     setIdSeleccionado(id);
     setFechaRetiro('');
@@ -384,7 +508,7 @@ useEffect(() => {
     }
 
     setProcesandoRetiro(true);
-    const token = localStorage.getItem('token'); 
+    const token = localStorage.getItem('token');
 
     try {
       const respuesta = await fetch(`${API_BASE_URL}/matriculas/${idSeleccionado}`, {
@@ -393,9 +517,9 @@ useEffect(() => {
         body: JSON.stringify({
           estado: 'Retirado',
           fecha_retiro: fechaRetiro,
-          motivo_retiro: '', 
-          observaciones: '', 
-          id_usuario_ejecutor: 1 ,
+          motivo_retiro: '',
+          observaciones: '',
+          id_usuario_ejecutor: 1,
           correo_destino: enviarApoderadoRetiro ? correoApoderadoRetiro.trim() : null
         }),
       });
@@ -407,7 +531,8 @@ useEffect(() => {
       }
 
       setModalAbierto(false);
-      cargarMatriculas(); 
+      cargarMatriculas();
+      cargarMatriculasAnioActual();
       alert('Retiro procesado y comprobante enviado con éxito.');
 
     } catch (err: any) {
@@ -417,7 +542,8 @@ useEffect(() => {
     }
   };
 
-  const iniciarCambioCurso = (id: number,  curso_actual: string, codigo_actual: number |null) => {
+  // --- CAMBIO DE CURSO ---
+  const iniciarCambioCurso = (id: number, curso_actual: string, codigo_actual: number | null) => {
     setIdSeleccionado(id);
     setCursoActual(curso_actual);
     setCodigoActual(codigo_actual);
@@ -425,7 +551,7 @@ useEffect(() => {
     setCursoDestino('');
     setCapacidadCursoDestino(45);
     setMotivoCambio('');
-    setAdvertenciaNivel(null); 
+    setAdvertenciaNivel(null);
     setModalCursoAbierto(true);
   };
 
@@ -440,9 +566,9 @@ useEffect(() => {
 
     if (advertenciaNivel) {
       const seguro = window.confirm(`⚠️ ADVERTENCIA DE SEGURIDAD:\n\n${advertenciaNivel}\n\n¿Está completamente seguro de que desea confirmar este cambio de nivel?`);
-      if (!seguro) return; 
+      if (!seguro) return;
     }
-    
+
     const destinatarios: string[] = [];
     if (enviarDirectorCurso && correoDirectorCurso.trim()) destinatarios.push(correoDirectorCurso.trim());
     if (enviarApoderadoCurso && correoApoderadoCurso.trim()) destinatarios.push(correoApoderadoCurso.trim());
@@ -453,14 +579,14 @@ useEffect(() => {
     }
 
     setProcesandoCurso(true);
-    const token = localStorage.getItem('token'); 
+    const token = localStorage.getItem('token');
 
     try {
       const respuesta = await fetch(`${API_BASE_URL}/matriculas/${idSeleccionado}/curso`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ 
-          cod_tipo_ensenanza: parseInt(planDestino), 
+        body: JSON.stringify({
+          cod_tipo_ensenanza: parseInt(planDestino),
           nuevo_curso: cursoDestino,
           motivo_cambio_curso: motivoCambio,
           correo_destino: enviarApoderadoCurso ? correoApoderadoCurso.trim() : null
@@ -476,6 +602,7 @@ useEffect(() => {
 
       setModalCursoAbierto(false);
       cargarMatriculas();
+      cargarMatriculasAnioActual();
       alert('Traslado registrado y certificado enviado con éxito.');
 
     } catch (err: any) {
@@ -485,50 +612,7 @@ useEffect(() => {
     }
   };
 
-  const exportarAExcel = async () => {
-    if (!colegioSeleccionado) return;
-    setDescargandoExcel(true);
-
-    try {
-      const token = localStorage.getItem('token');
-      
-      // Armar la URL con los parámetros de filtro actuales
-      let url = `${API_BASE_URL}/matriculas/exportar-excel?establecimiento_id=${colegioSeleccionado}`;
-      if (filtroAnio) url += `&anio=${filtroAnio}`;
-      if (filtroCodigo) url += `&codigo_plan=${filtroCodigo}`;
-      if (filtroCurso) url += `&curso=${encodeURIComponent(filtroCurso)}`;
-
-      const respuesta = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (!respuesta.ok) throw new Error('Error al generar el archivo Excel.');
-
-      // Convertir la respuesta a un Blob (archivo binario)
-      const blob = await respuesta.blob();
-      const urlBlob = window.URL.createObjectURL(blob);
-      
-      // Forzar la descarga en el navegador
-      const linkDescarga = document.createElement('a');
-      linkDescarga.href = urlBlob;
-      linkDescarga.download = `Registro_Matriculas_${colegioSeleccionado}.xlsx`;
-      document.body.appendChild(linkDescarga);
-      linkDescarga.click();
-      
-      // Limpieza
-      linkDescarga.remove();
-      window.URL.revokeObjectURL(urlBlob);
-
-    } catch (err: any) {
-      alert("Hubo un error al descargar el Excel: " + err.message);
-    } finally {
-      setDescargandoExcel(false);
-    }
-  };
-
+  // --- ADVERTENCIA DE NIVEL ---
   useEffect(() => {
     const advertencias: string[] = [];
 
@@ -554,12 +638,10 @@ useEffect(() => {
       } else {
         const baseActual = cursoActual.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
         const baseDestino = cursoDestino.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
-        
         if (baseActual !== baseDestino) {
           advertencias.push(`• Está cambiando el nivel del curso de '${cursoActual}' a '${cursoDestino}'.`);
         }
       }
-      
     }
 
     if (advertencias.length > 0) {
@@ -569,6 +651,41 @@ useEffect(() => {
     }
   }, [cursoDestino, cursoActual, planDestino, codigoActual]);
 
+  // --- EXPORTAR EXCEL ---
+  const exportarAExcel = async () => {
+    if (!colegioSeleccionado) return;
+    setDescargandoExcel(true);
+
+    try {
+      const token = localStorage.getItem('token');
+      let url = `${API_BASE_URL}/matriculas/exportar-excel?establecimiento_id=${colegioSeleccionado}`;
+      if (filtroAnio) url += `&anio=${filtroAnio}`;
+      if (filtroCodigo) url += `&codigo_plan=${filtroCodigo}`;
+      if (filtroCurso) url += `&curso=${encodeURIComponent(filtroCurso)}`;
+
+      const respuesta = await fetch(url, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!respuesta.ok) throw new Error('Error al generar el archivo Excel.');
+
+      const blob = await respuesta.blob();
+      const urlBlob = window.URL.createObjectURL(blob);
+      const linkDescarga = document.createElement('a');
+      linkDescarga.href = urlBlob;
+      linkDescarga.download = `Registro_Matriculas_${colegioSeleccionado}.xlsx`;
+      document.body.appendChild(linkDescarga);
+      linkDescarga.click();
+      linkDescarga.remove();
+      window.URL.revokeObjectURL(urlBlob);
+
+    } catch (err: any) {
+      alert("Hubo un error al descargar el Excel: " + err.message);
+    } finally {
+      setDescargandoExcel(false);
+    }
+  };
 
   const [modalExcelAbierto, setModalExcelAbierto] = useState(false);
 
@@ -601,5 +718,7 @@ useEffect(() => {
     mostrarCupos, cuposOcupados, descargandoExcel, exportarAExcel, capacidadSala,
     capacidadCursoDestino, cargandoCapacidadDestino, matriculadosCursoDestino, cursoDestinoLleno, cuposPorCurso,
     modalExcelAbierto, setModalExcelAbierto,
+    // Paginación
+    page, setPage, totalPages, total,
   };
 };
