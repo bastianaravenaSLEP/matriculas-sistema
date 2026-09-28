@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
-import { API_URL } from '../../../config/api';
+import { API_BASE_URL } from '../../../config/api';
+import { coincideBusqueda } from '../../../utils/search';
 
-// ðŸŒŸ INTERFAZ: Le decimos a TypeScript exactamente quÃ© campos tiene nuestro formulario
 export interface NuevoEstudianteForm {
   run: string;
   nombres: string;
@@ -13,6 +13,9 @@ export interface NuevoEstudianteForm {
   domicilio: string;
   latitud: string;
   longitud: string;
+  pais_origen_estudiante?: string;
+  doc_extranjero_estudiante?: string;
+
   run_apoderado: string;
   nombres_apoderado: string;
   apellido_paterno_apoderado: string;
@@ -21,11 +24,29 @@ export interface NuevoEstudianteForm {
   telefono_apoderado: string;
   correo_apoderado: string;
   relacion_estudiante: string;
-  // Campos Migrantes Opcionales
-  pais_origen_estudiante?: string;
-  doc_extranjero_estudiante?: string;
   pais_origen_apoderado?: string;
   doc_extranjero_apoderado?: string;
+
+  tiene_suplente: boolean;
+  run_suplente: string;
+  nombres_suplente: string;
+  apellido_paterno_suplente: string;
+  apellido_materno_suplente: string;
+  domicilio_suplente: string;
+  telefono_suplente: string;
+  correo_suplente: string;
+  relacion_suplente: string;
+
+  sistema_salud: string;
+  letra_fonasa: string;
+  cesfam: string;
+  centro_emergencia: string;
+  diagnostico_medico: string;
+  medico_tratante: string;
+  medicamento: string;
+  alergias: string;
+  nee: string;
+  nee_tipo: string;
 }
 
 export const formatearRUT = (rut: string) => {
@@ -37,8 +58,7 @@ export const formatearRUT = (rut: string) => {
 };
 
 export const validarRUT = (rutCompleto: string) => {
-  if (!/^[0-9]+[-|â€]{1}[0-9kK]{1}$/.test(rutCompleto)) return false;
-  
+  if (!/^[0-9]+[-|‐]{1}[0-9kK]{1}$/.test(rutCompleto)) return false;
   const tmp = rutCompleto.split('-');
   const rut = tmp[0];
   let digv = tmp[1]; 
@@ -50,8 +70,24 @@ export const validarRUT = (rutCompleto: string) => {
     S = (S + rutNum % 10 * (9 - M++ % 6)) % 11;
   }
   const dvEsperado = S ? (S - 1).toString() : 'k';
-  
   return digv === dvEsperado;
+};
+
+const ESTUDIANTE_INICIAL: NuevoEstudianteForm = {
+  run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino',
+  domicilio: '', latitud: '', longitud: '',
+  pais_origen_estudiante: '', doc_extranjero_estudiante: '',
+  
+  run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '',
+  domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '', relacion_estudiante: 'Madre',
+  pais_origen_apoderado: '', doc_extranjero_apoderado: '',
+
+  tiene_suplente: false,
+  run_suplente: '', nombres_suplente: '', apellido_paterno_suplente: '', apellido_materno_suplente: '',
+  domicilio_suplente: '', telefono_suplente: '', correo_suplente: '', relacion_suplente: 'Familiar',
+
+  sistema_salud: 'FONASA', letra_fonasa: 'A', cesfam: '', centro_emergencia: '',
+  diagnostico_medico: 'No', medico_tratante: '', medicamento: '', alergias: '', nee: 'No', nee_tipo: 'No aplica'
 };
 
 export const useEstudiantes = () => {
@@ -63,34 +99,47 @@ export const useEstudiantes = () => {
   const puedeEditar = !['Visualizador_SLEP', 'Visualizador_Colegio'].includes(usuario?.rol);
 
   const [listaEstudiantes, setListaEstudiantes] = useState<any[]>([]);
-  const [textoBusqueda, setTextoBusqueda] = useState('');
   const [cargandoLista, setCargandoLista] = useState(true);
+
+  // Filtros Directorio
+  const [textoBusqueda, setTextoBusqueda] = useState('');
+  const [filtroAnio, setFiltroAnio] = useState<string>('');
+  const anioInicializadoRef = useRef(false);
+  const colegioPrevioRef = useRef<string | null>(null);
+
+  // Reiniciar indicador cuando cambia el establecimiento seleccionado
+  useEffect(() => {
+    if (colegioSeleccionado !== colegioPrevioRef.current) {
+      colegioPrevioRef.current = colegioSeleccionado;
+      anioInicializadoRef.current = false;
+      setFiltroAnio('');
+    }
+  }, [colegioSeleccionado]);
+
+  const [filtroCodigo, setFiltroCodigo] = useState<string>('');
+  const [filtroCurso, setFiltroCurso] = useState<string>('');
+  const [filtroEstado, setFiltroEstado] = useState<string>('');
 
   const [datosEstudiante, setDatosEstudiante] = useState<any>(null);
   const [cargandoFicha, setCargandoFicha] = useState(false);
   const [error, setError] = useState('');
 
-  const [modalNuevoAbierto, setModalNuevoAbierto] = useState(false);
+  // Asistente Crear Estudiante
+  const [vistaCrearEstudiante, setVistaCrearEstudiante] = useState(false);
+  const [pasoCrear, setPasoCrear] = useState(1);
   const [creando, setCreando] = useState(false);
-  
   const [estudianteCreadoExito, setEstudianteCreadoExito] = useState(false);
   const [rutRecienCreado, setRutRecienCreado] = useState('');
   const [archivoTutor, setArchivoTutor] = useState<File | null>(null);
 
-  // ðŸŒŸ ESTADO INICIAL: Agregamos los campos de extranjerÃ­a
-  const [nuevoEstudiante, setNuevoEstudiante] = useState<NuevoEstudianteForm>({
-    run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', domicilio: '', latitud:'', longitud:'',
-    run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '',
-    pais_origen_estudiante: '', doc_extranjero_estudiante: '',
-    pais_origen_apoderado: '', doc_extranjero_apoderado: '',relacion_estudiante:''
-  });
+  const [nuevoEstudiante, setNuevoEstudiante] = useState<NuevoEstudianteForm>(ESTUDIANTE_INICIAL);
 
+  // Edición Completa
   const [modoEdicion, setModoEdicion] = useState(false);
   const [datosEdicion, setDatosEdicion] = useState<any>({});
-  const [avisoApoderado, setAvisoApoderado] = useState<string>('');
-  const [buscandoApoderado, setBuscandoApoderado] = useState(false);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
-  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const [buscandoApoderado, setBuscandoApoderado] = useState(false);
+  const [avisoApoderado, setAvisoApoderado] = useState('');
   
   const [buscandoMapa, setBuscandoMapa] = useState(false);
   const [sugerenciasMapa, setSugerenciasMapa] = useState<any[]>([]);
@@ -100,8 +149,8 @@ export const useEstudiantes = () => {
     const token = localStorage.getItem('token'); 
 
     const url = colegioSeleccionado 
-      ? `${API_URL}/estudiante?establecimiento_id=${colegioSeleccionado}`
-      : `${API_URL}/estudiante`;
+      ? `${API_BASE_URL}/estudiante?establecimiento_id=${colegioSeleccionado}`
+      : `${API_BASE_URL}/estudiante`;
 
     fetch(url, {
       method: 'GET',
@@ -112,7 +161,7 @@ export const useEstudiantes = () => {
     })
       .then(res => res.json())
       .then(datos => {
-        setListaEstudiantes(datos);
+        setListaEstudiantes(Array.isArray(datos) ? datos : []);
         setCargandoLista(false);
       })
       .catch(err => {
@@ -125,85 +174,176 @@ export const useEstudiantes = () => {
     cargarDirectorio();
   }, [colegioSeleccionado]); 
 
-  const manejarSubidaCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const archivo = e.target.files?.[0];
-    if (!archivo) return;
-
-    if (!archivo.name.endsWith('.csv') && !archivo.name.endsWith('.xls') && !archivo.name.endsWith('.xlsx')) {
-      alert("Por favor, selecciona un archivo en formato .csv, .xls o .xlsx");
-      return;
+  const { estudiantesFiltrados, aniosUnicos, codigosUnicos, cursosUnicos, estadosUnicos } = useMemo(() => {
+    if (!listaEstudiantes || listaEstudiantes.length === 0) {
+      return { estudiantesFiltrados: [], aniosUnicos: [], codigosUnicos: [], cursosUnicos: [], estadosUnicos: [] };
     }
 
-    setSubiendoArchivo(true);
-    const formData = new FormData();
-    formData.append("archivo", archivo);
-    const token = localStorage.getItem('token');
+    const mapaEstudiantes = new Map();
 
-    try {
-      const respuesta = await fetch(`${API_URL}/estudiante/carga-masiva`, {
-        method: "POST",
-        headers: {
-          'Authorization': `Bearer ${token}` 
-        },
-        body: formData,
-      });
+    listaEstudiantes.forEach(est => {
+      const rut = est.run || est.estudiante_rut;
+      if (!rut) return;
 
-      const datos = await respuesta.json();
-      if (!respuesta.ok) throw new Error(datos.detail || "Error al subir el archivo");
-      
-      alert(datos.mensaje); 
-      cargarDirectorio();
-    } catch (error: any) {
-      alert("Error: " + error.message);
-    } finally {
-      setSubiendoArchivo(false);
-      e.target.value = ''; 
+      if (!mapaEstudiantes.has(rut)) {
+        mapaEstudiantes.set(rut, est);
+      } else {
+        const existente = mapaEstudiantes.get(rut);
+        const anioNuevo = parseInt(est.anio_escolar || est.anio || 0);
+        const anioViejo = parseInt(existente.anio_escolar || existente.anio || 0);
+
+        if (anioNuevo > anioViejo) {
+          mapaEstudiantes.set(rut, est);
+        } else if (anioNuevo === anioViejo) {
+          const idNuevo = est.id_matricula || est.id || 0;
+          const idViejo = existente.id_matricula || existente.id || 0;
+          if (idNuevo > idViejo) {
+            mapaEstudiantes.set(rut, est);
+          }
+        }
+      }
+    });
+
+    const estudiantesUnicos = Array.from(mapaEstudiantes.values());
+
+    const anios = [...new Set(estudiantesUnicos.map(e => String(e.anio_escolar || e.anio)).filter(a => a && a !== 'undefined'))].sort().reverse();
+    const codigos = [...new Set(estudiantesUnicos.map(e => String(e.cod_tipo_ensenanza)).filter(c => c && c !== 'undefined' && c !== 'null'))].sort();
+    const estados = [...new Set(estudiantesUnicos.map(e => String(e.estado)).filter(e => e && e !== 'undefined'))].sort();
+
+    let cursosParaSelect = estudiantesUnicos;
+    if (filtroCodigo) {
+      cursosParaSelect = estudiantesUnicos.filter(e => String(e.cod_tipo_ensenanza) === filtroCodigo);
     }
-  };
+    const cursos = [...new Set(cursosParaSelect.map(e => e.curso).filter(c => c && c !== 'undefined'))].sort();
 
-  const estudiantesFiltrados = listaEstudiantes.filter(est => 
-    est.nombre_completo.toLowerCase().includes(textoBusqueda.toLowerCase()) ||
-    est.run.includes(textoBusqueda)
-  );
+    const filtrados = estudiantesUnicos.filter(est => {
+      const matchTexto = coincideBusqueda(
+        textoBusqueda,
+        [est.nombre_completo, est.nombres, est.apellido_paterno, est.apellido_materno],
+        [est.run, est.estudiante_rut]
+      );
+      const matchAnio = filtroAnio === '' || String(est.anio_escolar || est.anio) === filtroAnio;
+      const matchCodigo = filtroCodigo === '' || String(est.cod_tipo_ensenanza) === filtroCodigo;
+      const matchCurso = filtroCurso === '' || est.curso === filtroCurso;
+      const matchEstado = filtroEstado === '' || est.estado === filtroEstado;
+
+      return matchTexto && matchAnio && matchCodigo && matchCurso && matchEstado;
+    });
+
+
+    return { estudiantesFiltrados: filtrados, aniosUnicos: anios, codigosUnicos: codigos, cursosUnicos: cursos, estadosUnicos: estados };
+  }, [listaEstudiantes, textoBusqueda, filtroAnio, filtroCodigo, filtroCurso, filtroEstado]);
+
+  // Cuando se computan los años únicos, seleccionar automáticamente el último año de matrículas registradas
+  useEffect(() => {
+    if (!anioInicializadoRef.current && aniosUnicos && aniosUnicos.length > 0) {
+      setFiltroAnio(String(aniosUnicos[0]));
+      anioInicializadoRef.current = true;
+    }
+  }, [aniosUnicos]);
 
   const verFichaEstudiante = async (rut: string) => {
     setCargandoFicha(true);
     setError('');
-    setModoEdicion(false);
-    setAvisoApoderado(''); 
+    setModoEdicion(false); 
     const token = localStorage.getItem('token');
     
     try {
-      const respuesta = await fetch(`${API_URL}/estudiante/${rut}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${rut}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!respuesta.ok) throw new Error('Error al cargar la ficha');
       const datos = await respuesta.json();
-      setDatosEstudiante(datos);
       
-      setDatosEdicion({
-        // Nombres de campos alineados con el backend (ActualizarEstudianteRequest)
-        // Dirección estructurada (fuente de verdad). domicilio_estudiante queda como
-        // compatibilidad; el backend recompone el domicilio desde estos campos.
-        // Fallback: si el alumno no tiene la dirección separada en campos (solo el
-        // domicilio antiguo en un cuadro), precargamos ese texto en "calle" para que
-        // el usuario vea la dirección anterior y la pueda reorganizar, en vez de campos vacíos.
-        calle: datos.personal.calle
-          || (!datos.personal.numero && !datos.personal.sector && !datos.personal.comuna
-              && datos.personal.domicilio && datos.personal.domicilio !== 'Sin registrar'
-              ? datos.personal.domicilio : ''),
-        numero: datos.personal.numero || '',
-        sector: datos.personal.sector || '',
-        comuna: datos.personal.comuna || '',
-        domicilio_estudiante: datos.personal.domicilio && datos.personal.domicilio !== 'Sin registrar' ? datos.personal.domicilio : '',
-        rut_apoderado: datos.apoderado.rut_raw || '',
-        nombres_apoderado: datos.apoderado.nombres || '',
-        apellido_paterno_apoderado: datos.apoderado.apellido_paterno || '',
-        apellido_materno_apoderado: datos.apoderado.apellido_materno || '',
-        domicilio_apoderado: '',
-        telefono_apoderado: datos.apoderado.telefono_raw || '',
-        correo_apoderado: datos.apoderado.correo_raw || ''
+      setDatosEstudiante({
+        personal: datos.personal || {},
+        apoderado: datos.apoderado || {},
+        apoderado_suplente: datos.apoderado_suplente || null, 
+        salud: datos.salud || null, 
+        historial: datos.historial || []
       });
+
+      // Desglosar nombres de titular si venían concatenados
+      let nomAp = datos.apoderado?.nombres || '';
+      let patAp = datos.apoderado?.apellido_paterno || '';
+      let matAp = datos.apoderado?.apellido_materno || '';
+      if (!nomAp && datos.apoderado?.nombre && datos.apoderado.nombre !== 'Pendiente') {
+        const parts = datos.apoderado.nombre.trim().split(' ');
+        if (parts.length >= 3) {
+          nomAp = parts.slice(0, -2).join(' ');
+          patAp = parts[parts.length - 2];
+          matAp = parts[parts.length - 1];
+        } else if (parts.length === 2) {
+          nomAp = parts[0];
+          patAp = parts[1];
+        } else {
+          nomAp = parts[0];
+        }
+      }
+
+      // Desglosar nombres de suplente si venían concatenados
+      let nomSup = datos.apoderado_suplente?.nombres || '';
+      let patSup = datos.apoderado_suplente?.apellido_paterno || '';
+      let matSup = datos.apoderado_suplente?.apellido_materno || '';
+      if (!nomSup && datos.apoderado_suplente?.nombre) {
+        const parts = datos.apoderado_suplente.nombre.trim().split(' ');
+        if (parts.length >= 3) {
+          nomSup = parts.slice(0, -2).join(' ');
+          patSup = parts[parts.length - 2];
+          matSup = parts[parts.length - 1];
+        } else if (parts.length === 2) {
+          nomSup = parts[0];
+          patSup = parts[1];
+        } else {
+          nomSup = parts[0];
+        }
+      }
+
+      // Precargar TODO el formulario de edición con los datos existentes
+      setDatosEdicion({
+        calle: datos.personal?.calle
+          || (!datos.personal?.numero && !datos.personal?.sector && !datos.personal?.comuna
+              && datos.personal?.domicilio && datos.personal?.domicilio !== 'Sin registrar'
+              ? datos.personal.domicilio : ''),
+        numero: datos.personal?.numero || '',
+        sector: datos.personal?.sector || '',
+        comuna: datos.personal?.comuna || '',
+        domicilio: datos.personal?.domicilio && datos.personal.domicilio !== 'Sin registrar' ? datos.personal.domicilio : '',
+        
+        // Titular
+        rut_apoderado: datos.apoderado?.rut && datos.apoderado.rut !== 'Sin registrar' ? datos.apoderado.rut : '',
+        nombres_apoderado: nomAp,
+        apellido_paterno_apoderado: patAp,
+        apellido_materno_apoderado: matAp,
+        domicilio_apoderado: datos.apoderado?.domicilio || datos.personal?.domicilio || '',
+        telefono_apoderado: datos.apoderado?.telefono && datos.apoderado.telefono !== '-' ? datos.apoderado.telefono : '',
+        correo_apoderado: datos.apoderado?.correo && datos.apoderado.correo !== '-' ? datos.apoderado.correo : '',
+        relacion_apoderado: datos.apoderado?.relacion || 'Madre',
+
+        // Suplente
+        tiene_suplente: Boolean(datos.apoderado_suplente?.rut),
+        rut_suplente: datos.apoderado_suplente?.rut || '',
+        nombres_suplente: nomSup,
+        apellido_paterno_suplente: patSup,
+        apellido_materno_suplente: matSup,
+        domicilio_suplente: datos.apoderado_suplente?.domicilio || '',
+        telefono_suplente: datos.apoderado_suplente?.telefono && datos.apoderado_suplente.telefono !== '-' ? datos.apoderado_suplente.telefono : '',
+        correo_suplente: datos.apoderado_suplente?.correo && datos.apoderado_suplente.correo !== '-' ? datos.apoderado_suplente.correo : '',
+        relacion_suplente: datos.apoderado_suplente?.relacion || 'Familiar',
+
+        // Salud
+        sistema_salud: datos.salud?.sistema_salud || 'FONASA',
+        letra_fonasa: datos.salud?.letra_fonasa || 'A',
+        cesfam: datos.salud?.cesfam && datos.salud.cesfam !== 'No informado' ? datos.salud.cesfam : '',
+        centro_emergencia: datos.salud?.centro_emergencia && datos.salud.centro_emergencia !== 'No informado' ? datos.salud.centro_emergencia : '',
+        diagnostico_medico: datos.salud?.diagnostico_medico || 'No',
+        medico_tratante: datos.salud?.medico_tratante && datos.salud.medico_tratante !== 'No informado' ? datos.salud.medico_tratante : '',
+        medicamento: datos.salud?.medicamento || '',
+        alergias: datos.salud?.alergias || '',
+        nee: datos.salud?.nee || 'No',
+        nee_tipo: datos.salud?.nee_tipo && datos.salud.nee_tipo !== 'No aplica' ? datos.salud.nee_tipo : ''
+      });
+
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -221,16 +361,15 @@ export const useEstudiantes = () => {
     setBuscandoApoderado(true);
     const token = localStorage.getItem('token');
     try {
-      const respuesta = await fetch(`${API_URL}/estudiante/apoderado/buscar/${encodeURIComponent(rutApod)}`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/apoderado/buscar/${encodeURIComponent(rutApod)}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!respuesta.ok) throw new Error('Error al buscar el apoderado');
       const data = await respuesta.json();
 
       if (data.existe) {
-        // Autocompletar datos del apoderado existente
-        setDatosEdicion({
-          ...datosEdicion,
+        setDatosEdicion((prev: any) => ({
+          ...prev,
           rut_apoderado: data.rut_apoderado,
           nombres_apoderado: data.nombres_apoderado,
           apellido_paterno_apoderado: data.apellido_paterno_apoderado,
@@ -238,7 +377,7 @@ export const useEstudiantes = () => {
           domicilio_apoderado: data.domicilio_apoderado,
           telefono_apoderado: data.telefono_apoderado,
           correo_apoderado: data.correo_apoderado,
-        });
+        }));
         setAvisoApoderado(
           `✅ Apoderado encontrado: ${data.nombres_apoderado} ${data.apellido_paterno_apoderado}. ` +
           `Asociado a ${data.n_estudiantes} estudiante(s). Al guardar, este alumno quedará vinculado a él ` +
@@ -255,46 +394,68 @@ export const useEstudiantes = () => {
   };
 
   const handleGuardarEdicion = async () => {
-    // Validación del RUT del apoderado (si se ingresó). Aceptamos IPA/pasaporte
-    // extranjero (>=10 caracteres alfanuméricos) igual que en la creación.
-    const rutApod = (datosEdicion.rut_apoderado || '').trim();
-    if (rutApod) {
-      const esIpaApoderado = rutApod.replace(/[^0-9kK]/g, '').length >= 10;
-      if (!esIpaApoderado && !validarRUT(rutApod)) {
-        alert('⚠️ El RUT del Apoderado no es válido. Revisa el dígito verificador (formato 12345678-9).');
-        return;
-      }
-      // Si hay RUT, exigimos al menos el nombre para no crear apoderados vacíos.
-      if (!(datosEdicion.nombres_apoderado || '').trim()) {
-        alert('⚠️ Ingresa al menos el nombre del apoderado.');
-        return;
-      }
-    }
-
     setGuardandoEdicion(true);
     const token = localStorage.getItem('token');
-
     try {
-      const respuesta = await fetch(`${API_URL}/estudiante/${datosEstudiante.personal.run}`, {
+      const payloadEnvio = {
+        calle: datosEdicion.calle || null,
+        numero: datosEdicion.numero || null,
+        sector: datosEdicion.sector || null,
+        comuna: datosEdicion.comuna || null,
+        domicilio_estudiante: datosEdicion.domicilio || "Sin registrar",
+        
+        // Titular
+        rut_apoderado: datosEdicion.rut_apoderado,
+        nombres_apoderado: datosEdicion.nombres_apoderado,
+        apellido_paterno_apoderado: datosEdicion.apellido_paterno_apoderado,
+        apellido_materno_apoderado: datosEdicion.apellido_materno_apoderado,
+        domicilio_apoderado: datosEdicion.domicilio_apoderado || datosEdicion.domicilio || "Sin registrar",
+        telefono_apoderado: datosEdicion.telefono_apoderado,
+        correo_apoderado: datosEdicion.correo_apoderado,
+        relacion_apoderado: datosEdicion.relacion_apoderado,
+
+        // Suplente
+        modificar_suplente: true,
+        tiene_suplente: datosEdicion.tiene_suplente,
+        rut_suplente: datosEdicion.rut_suplente,
+        nombres_suplente: datosEdicion.nombres_suplente,
+        apellido_paterno_suplente: datosEdicion.apellido_paterno_suplente,
+        apellido_materno_suplente: datosEdicion.apellido_materno_suplente,
+        domicilio_suplente: datosEdicion.domicilio_suplente || datosEdicion.domicilio_apoderado || datosEdicion.domicilio,
+        telefono_suplente: datosEdicion.telefono_suplente,
+        correo_suplente: datosEdicion.correo_suplente,
+        relacion_suplente: datosEdicion.relacion_suplente,
+
+        // Salud
+        actualizar_salud: true,
+        sistema_salud: datosEdicion.sistema_salud,
+        letra_fonasa: datosEdicion.letra_fonasa,
+        cesfam: datosEdicion.cesfam || "No informado",
+        centro_emergencia: datosEdicion.centro_emergencia || "No informado",
+        diagnostico_medico: datosEdicion.diagnostico_medico,
+        medico_tratante: datosEdicion.medico_tratante || "No informado",
+        medicamento: datosEdicion.medicamento,
+        alergias: datosEdicion.alergias,
+        nee: datosEdicion.nee,
+        nee_tipo: datosEdicion.nee_tipo || "No aplica"
+      };
+
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante/${datosEstudiante.personal.run}`, {
         method: 'PUT',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(datosEdicion),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payloadEnvio),
       });
 
       if (!respuesta.ok) {
         const errorData = await respuesta.json();
-        throw new Error(`Error de validación: ${JSON.stringify(errorData.detail || errorData)}`);
+        throw new Error(errorData.detail || "Error al actualizar la ficha");
       }
 
       await verFichaEstudiante(datosEstudiante.personal.run);
       setModoEdicion(false);
-      alert("Estudiante actualizado correctamente.");
-      
+      alert("✅ Todos los antecedentes y la ficha médica han sido actualizados exitosamente.");
     } catch (err: any) {
-      alert(err.message);
+      alert("Error: " + err.message);
     } finally {
       setGuardandoEdicion(false);
     }
@@ -307,19 +468,16 @@ export const useEstudiantes = () => {
     }
     setBuscandoMapa(true);
     setSugerenciasMapa([]); 
-    
     try {
       const query = encodeURIComponent(nuevoEstudiante.domicilio);
       const respuesta = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=cl&limit=5`);
       const datos = await respuesta.json();
-
       if (datos && datos.length > 0) {
         setSugerenciasMapa(datos);
       } else {
-        alert("No se encontraron resultados en Chile. Intenta agregar la comuna, ej: 'Avenida Brasil, ValparaÃ­so'.");
+        alert("No se encontraron resultados en Chile. Intenta agregar la comuna, ej: 'Avenida Brasil, Valparaíso'.");
       }
     } catch (error) {
-      console.error("Error al buscar coordenadas:", error);
       alert("Hubo un error al conectar con el mapa.");
     } finally {
       setBuscandoMapa(false);
@@ -336,41 +494,61 @@ export const useEstudiantes = () => {
     setSugerenciasMapa([]);
   };
 
-  // ðŸŒŸ VALIDACIÃ“N INTELIGENTE: Detecta el IPE e ignora la validaciÃ³n RUT tradicional
+  const irSiguientePasoCrear = () => {
+    if (pasoCrear === 1) {
+      const esIpe = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
+      if (!nuevoEstudiante.run.trim()) { alert("Debe ingresar el RUN o IPE del estudiante."); return; }
+      if (!esIpe && !validarRUT(nuevoEstudiante.run)) { alert("El RUT del estudiante no es válido."); return; }
+      if (esIpe && (!nuevoEstudiante.pais_origen_estudiante || !nuevoEstudiante.doc_extranjero_estudiante)) {
+        alert("Para estudiantes con IPE es obligatorio ingresar País de Origen y Documento Extranjero.");
+        return;
+      }
+      if (!nuevoEstudiante.nombres.trim() || !nuevoEstudiante.apellido_paterno.trim() || !nuevoEstudiante.fecha_nacimiento) {
+        alert("Por favor complete los nombres, apellidos y fecha de nacimiento del estudiante.");
+        return;
+      }
+      if (!nuevoEstudiante.domicilio.trim()) {
+        alert("Debe ingresar el domicilio del estudiante.");
+        return;
+      }
+      setPasoCrear(2);
+    } else if (pasoCrear === 2) {
+      const esIpa = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
+      if (!nuevoEstudiante.relacion_estudiante) { alert("Seleccione el parentesco del Apoderado Titular."); return; }
+      if (nuevoEstudiante.relacion_estudiante === 'Tutor Legal Designado' && !archivoTutor) {
+        alert("Debe adjuntar el documento que acredite la tutoría legal.");
+        return;
+      }
+      if (!nuevoEstudiante.run_apoderado.trim()) { alert("Debe ingresar el RUT del Apoderado Titular."); return; }
+      if (!esIpa && !validarRUT(nuevoEstudiante.run_apoderado)) { alert("El RUT del Apoderado Titular no es válido."); return; }
+      if (!nuevoEstudiante.nombres_apoderado.trim() || !nuevoEstudiante.apellido_paterno_apoderado.trim()) {
+        alert("Complete el nombre y apellido del apoderado titular.");
+        return;
+      }
+      if (!nuevoEstudiante.telefono_apoderado.trim() || !nuevoEstudiante.correo_apoderado.trim()) {
+        alert("El teléfono y correo del apoderado titular son obligatorios.");
+        return;
+      }
+      if (nuevoEstudiante.tiene_suplente) {
+        if (!nuevoEstudiante.run_suplente.trim()) { alert("Debe ingresar el RUT del Apoderado Suplente."); return; }
+        if (!validarRUT(nuevoEstudiante.run_suplente)) { alert("El RUT del Apoderado Suplente no es válido."); return; }
+        if (!nuevoEstudiante.nombres_suplente.trim() || !nuevoEstudiante.apellido_paterno_suplente.trim()) {
+          alert("Complete el nombre y apellido del apoderado suplente.");
+          return;
+        }
+      }
+      setPasoCrear(3);
+    }
+  };
+
+  const irPasoAnteriorCrear = () => {
+    setPasoCrear(prev => Math.max(1, prev - 1));
+  };
+
   const handleCrearEstudiante = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // 🌟 VALIDACIÓN DEL TUTOR LEGAL
-    if (nuevoEstudiante.relacion_estudiante === 'Tutor Legal Designado' && !archivoTutor) {
-      alert("⚠️ Debe adjuntar el documento legal que acredite la tutoría del estudiante.");
-      return;
-    }
-
-    const esIpeEstudiante = nuevoEstudiante.run.replace(/[^0-9kK]/g, '').length >= 10;
-    const esIpaApoderado = nuevoEstudiante.run_apoderado.replace(/[^0-9kK]/g, '').length >= 10;
-
-    // Validaciones Estudiante
-    if (!esIpeEstudiante && !validarRUT(nuevoEstudiante.run)) {
-      alert("âš ï¸ El RUT del Estudiante no es vÃ¡lido. Revisa que el dÃ­gito verificador sea correcto.");
-      return;
-    }
-    if (esIpeEstudiante && (!nuevoEstudiante.pais_origen_estudiante || !nuevoEstudiante.doc_extranjero_estudiante)) {
-      alert("âš ï¸ El estudiante tiene un IPE. Debes ingresar obligatoriamente su PaÃ­s de Origen y Documento Nacional.");
-      return;
-    }
-
-    // Validaciones Apoderado
-    if (!esIpaApoderado && !validarRUT(nuevoEstudiante.run_apoderado)) {
-      alert("âš ï¸ El RUT del Apoderado no es vÃ¡lido. Revisa que el dÃ­gito verificador sea correcto.");
-      return;
-    }
-    if (esIpaApoderado && (!nuevoEstudiante.pais_origen_apoderado || !nuevoEstudiante.doc_extranjero_apoderado)) {
-      alert("âš ï¸ El apoderado tiene un IPA. Debes ingresar obligatoriamente su PaÃ­s de Origen y Documento Nacional.");
-      return;
-    }
-
-    if (!nuevoEstudiante.latitud || !nuevoEstudiante.longitud) {
-      alert("âš ï¸ AcciÃ³n requerida: Debes validar el Domicilio Actual usando el botÃ³n 'Buscar' antes de crear al estudiante.");
+    if (!nuevoEstudiante.cesfam.trim() || !nuevoEstudiante.centro_emergencia.trim()) {
+      alert("Por favor complete el CESFAM y Centro de Emergencias en la Ficha Médica.");
       return;
     }
 
@@ -378,7 +556,7 @@ export const useEstudiantes = () => {
     const token = localStorage.getItem('token');
 
     try {
-      const respuesta = await fetch(`${API_URL}/estudiante`, {
+      const respuesta = await fetch(`${API_BASE_URL}/estudiante`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -386,21 +564,30 @@ export const useEstudiantes = () => {
         },
         body: JSON.stringify(nuevoEstudiante),
       });
-      if (!respuesta.ok) throw new Error('Error al guardar. Verifica que el RUT/IPE no estÃ© duplicado en la base de datos.');
+
+      if (!respuesta.ok) {
+        const errorData = await respuesta.json();
+        throw new Error(errorData.detail || 'Error al guardar el estudiante.');
+      }
+
+      // Si el apoderado es tutor legal designado y se adjuntó archivo, subirlo
+      if (nuevoEstudiante.relacion_estudiante === 'Tutor Legal Designado' && archivoTutor) {
+        try {
+          const formArchivo = new FormData();
+          formArchivo.append('archivo', archivoTutor);
+          await fetch(`${API_BASE_URL}/estudiante/${nuevoEstudiante.run}/documento-tutor`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formArchivo
+          });
+        } catch (uploadErr) {
+          console.warn("Advertencia al subir archivo de tutoría:", uploadErr);
+        }
+      }
       
       setRutRecienCreado(nuevoEstudiante.run);
       setEstudianteCreadoExito(true);
       cargarDirectorio();
-
-      // Resetear estado completo
-      setNuevoEstudiante({ 
-        run: '', nombres: '', apellido_paterno: '', apellido_materno: '', fecha_nacimiento: '', sexo: 'Masculino', 
-        domicilio: '', latitud:'', longitud:'', 
-        run_apoderado: '', nombres_apoderado: '', apellido_paterno_apoderado: '', apellido_materno_apoderado: '', 
-        domicilio_apoderado: '', telefono_apoderado: '', correo_apoderado: '',
-        pais_origen_estudiante: '', doc_extranjero_estudiante: '',
-        pais_origen_apoderado: '', doc_extranjero_apoderado: '',relacion_estudiante:''
-      });
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -408,31 +595,57 @@ export const useEstudiantes = () => {
     }
   };
 
+  const [navegandoAMatricular, setNavegandoAMatricular] = useState(false);
+
   const irAMatricular = () => {
-    setModalNuevoAbierto(false);
-    setEstudianteCreadoExito(false);
-    navigate('/matriculas/nueva', { state: { rutPreseleccionado: rutRecienCreado } });
+    setNavegandoAMatricular(true);
+    // Pequeño delay para que el spinner sea visible antes de que React desmonte el componente
+    setTimeout(() => {
+      setVistaCrearEstudiante(false);
+      setEstudianteCreadoExito(false);
+      setPasoCrear(1);
+      navigate('/matriculas/nueva', { state: { rutPreseleccionado: rutRecienCreado } });
+    }, 300);
   };
 
   const cerrarModalExito = () => {
-    setModalNuevoAbierto(false);
+    setVistaCrearEstudiante(false);
     setEstudianteCreadoExito(false);
+    setPasoCrear(1);
+    setNuevoEstudiante(ESTUDIANTE_INICIAL);
+  };
+
+  const iniciarCrearEstudiante = () => {
+    setDatosEstudiante(null);
+    setModoEdicion(false);
+    setEstudianteCreadoExito(false);
+    setPasoCrear(1);
+    setNuevoEstudiante(ESTUDIANTE_INICIAL);
+    setVistaCrearEstudiante(true);
   };
 
   return {
     puedeEditar,
     datosEstudiante, setDatosEstudiante,
     modoEdicion, setModoEdicion,
-    manejarSubidaCSV, subiendoArchivo,
-    modalNuevoAbierto, setModalNuevoAbierto,
     guardandoEdicion, handleGuardarEdicion,
     textoBusqueda, setTextoBusqueda,
+    filtroAnio, setFiltroAnio,
+    filtroEstado, setFiltroEstado,
+    filtroCodigo, setFiltroCodigo,
+    filtroCurso, setFiltroCurso,
+    aniosUnicos, estadosUnicos, codigosUnicos, cursosUnicos,
     cargandoLista, estudiantesFiltrados,
     verFichaEstudiante,
     datosEdicion, setDatosEdicion,
     buscarApoderadoPorRut, buscandoApoderado, avisoApoderado, setAvisoApoderado,
-    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular,
+    // Asistente Nuevo Estudiante
+    vistaCrearEstudiante, setVistaCrearEstudiante,
+    pasoCrear, setPasoCrear,
+    irSiguientePasoCrear, irPasoAnteriorCrear,
+    iniciarCrearEstudiante,
+    estudianteCreadoExito, rutRecienCreado, cerrarModalExito, irAMatricular, navegandoAMatricular,
     nuevoEstudiante, setNuevoEstudiante, formatearRUT, handleCrearEstudiante,
-    creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion,archivoTutor, setArchivoTutor
+    creando, buscarSugerencias, buscandoMapa, sugerenciasMapa, seleccionarDireccion, archivoTutor, setArchivoTutor
   };
 };

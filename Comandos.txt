@@ -9,9 +9,8 @@ npm run dev
 push git slep
 git push servicio main
 
-Contraseña Backend RGM slep
-kaea ccqf qyjd nedu
-
+Credenciales y variables sensibles:
+Consultar / configurar en archivo backend/.env
 
 usuario base de datos de prueba
 Email: director@colegioprueba.cl

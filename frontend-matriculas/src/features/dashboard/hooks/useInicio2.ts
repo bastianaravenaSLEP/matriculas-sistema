@@ -1,6 +1,6 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { API_URL } from '../../../config/api';
+import { API_BASE_URL } from '../../../config/api';
 
 export const useInicio2 = () => {
   const [estadisticas, setEstadisticas] = useState({
@@ -22,7 +22,7 @@ export const useInicio2 = () => {
     const token = localStorage.getItem('token');
     setCargando(true); 
 
-    let url = `${API_URL}/dashboard/estadisticas?`;
+    let url = `${API_BASE_URL}/dashboard/estadisticas?`;
     const params = new URLSearchParams();
     if (colegioSeleccionado) params.append('establecimiento_id', colegioSeleccionado);
     if (anioSeleccionado) params.append('anio', anioSeleccionado);
@@ -37,8 +37,8 @@ export const useInicio2 = () => {
       }
     })
       .then(res => {
-        if (res.status === 401) throw new Error('SesiÃ³n expirada. Por favor, inicia sesiÃ³n nuevamente.');
-        if (!res.ok) throw new Error('Error al cargar mÃ©tricas');
+        if (res.status === 401) throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+        if (!res.ok) throw new Error('Error al cargar métricas');
         return res.json();
       })
       .then(data => {

@@ -30,12 +30,13 @@ export default function CuestionarioRetiro() {
   } = useCuestionarioRetiro();
 
   const [menuAbierto, setMenuAbierto] = useState(false);
-  const incluyeOtro = motivosSeleccionados.includes("Otro");
+
+  const puedeEnviar = estado !== 'cargando' && rutEstudiante.trim().length >= 8 && motivosSeleccionados.length > 0 && motivoDetalle.trim().length >= 5;
 
   return (
     <div className="min-h-screen bg-slate-200 flex items-center justify-center p-4 sm:p-8">
-      <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative overflow-hidden border border-gray-200">
-        <div className="absolute top-0 left-0 w-full h-2 flex">
+      <div className="bg-white p-8 sm:p-10 rounded-2xl shadow-2xl max-w-lg w-full relative border border-gray-200">
+        <div className="absolute top-0 left-0 right-0 h-2 flex rounded-t-2xl overflow-hidden">
           <div className="w-1/2 bg-blue-700"></div>
           <div className="w-1/2 bg-red-600"></div>
         </div>
@@ -43,20 +44,20 @@ export default function CuestionarioRetiro() {
         <div className="text-center mb-8 mt-2">
           <img src="/images/logo-slep.negro.png" alt="Logo SLEP" className="h-24 mx-auto mb-5 object-contain" />
           <h2 className="text-2xl sm:text-3xl font-extrabold text-blue-950 tracking-tight">Cuestionario de Retiro</h2>
-          <p className="text-sm text-gray-500 mt-3 font-medium">Por normativa del SLEP, solicitamos nos indique los motivos del retiro. Esta información es confidencial.</p>
+          <p className="text-sm text-gray-500 mt-3 font-medium">Por normativa del SLEP, es requisito obligatorio completar este cuestionario confidencial para que el retiro del estudiante sea formalizado en el sistema.</p>
         </div>
 
         {estado === 'exito' ? (
           <div className="bg-emerald-50 text-emerald-800 p-6 rounded-xl text-center border border-emerald-200 shadow-inner">
             <div className="text-5xl mb-3">✅</div>
-            <p className="font-bold text-lg mb-2">Formulario Recibido</p>
-            <p className="text-sm font-medium">Sus respuestas han sido registradas de forma segura. Ya puede cerrar esta pestaña.</p>
+            <p className="font-bold text-lg mb-2">Retiro Formalizado Exitosamente</p>
+            <p className="text-sm font-medium">Sus respuestas han sido registradas y el retiro del estudiante quedó oficialmente formalizado en el sistema RGM. Se ha enviado el Certificado Oficial de Retiro a su correo.</p>
           </div>
         ) : (
           <form onSubmit={enviarCuestionario} className="space-y-6">
             <div>
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
-                RUT del Estudiante <span className="text-xs text-gray-400 normal-case font-medium">(Medida de Seguridad)</span>
+                RUT del Estudiante <span className="text-red-500">*</span> <span className="text-xs text-gray-400 normal-case font-medium">(Sin puntos, con guion)</span>
               </label>
               <input 
                 required 
@@ -72,14 +73,14 @@ export default function CuestionarioRetiro() {
             {/* Dropdown Multiselección */}
             <div className="relative">
               <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
-                Motivos del retiro <span className="text-xs text-blue-700 normal-case font-medium">(Puede seleccionar más de uno)</span>
+                Motivos del retiro <span className="text-red-500">*</span> <span className="text-xs text-blue-700 normal-case font-medium">(Seleccione al menos uno)</span>
               </label>
               
               <button
                 type="button"
                 onClick={() => setMenuAbierto(!menuAbierto)}
                 disabled={estado === 'cargando'}
-                className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium bg-gray-50 hover:bg-white flex justify-between items-center text-left focus:ring-2 focus:ring-blue-900 transition-all"
+                className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium bg-gray-50 hover:bg-white flex justify-between items-center text-left focus:ring-2 focus:ring-blue-900 transition-all cursor-pointer"
               >
                 <span className={motivosSeleccionados.length === 0 ? "text-gray-400" : "text-gray-800 font-bold"}>
                   {motivosSeleccionados.length === 0 ? "Haga clic para seleccionar motivos..." : `${motivosSeleccionados.length} motivo(s) seleccionado(s)`}
@@ -88,27 +89,39 @@ export default function CuestionarioRetiro() {
               </button>
 
               {menuAbierto && (
-                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto p-2 space-y-1">
-                  {OPCIONES_RETIRO.map((opcion) => {
-                    const marcada = motivosSeleccionados.includes(opcion);
-                    return (
-                      <div
-                        key={opcion}
-                        onClick={() => alternarMotivo(opcion)}
-                        className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer text-xs sm:text-sm transition-colors ${
-                          marcada ? 'bg-blue-50 text-blue-900 font-bold' : 'hover:bg-gray-50 text-gray-700'
-                        }`}
-                      >
-                        <div className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center shrink-0 ${
-                          marcada ? 'bg-blue-900 border-blue-900 text-white' : 'border-gray-300 bg-white'
-                        }`}>
-                          {marcada && <Check size={12} strokeWidth={3} />}
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuAbierto(false)} />
+                  <div className="absolute z-50 w-full mt-2 bg-white border border-gray-300 rounded-xl shadow-2xl max-h-64 overflow-y-auto p-2 space-y-1">
+                    {OPCIONES_RETIRO.map((opcion) => {
+                      const marcada = motivosSeleccionados.includes(opcion);
+                      return (
+                        <div
+                          key={opcion}
+                          onClick={() => alternarMotivo(opcion)}
+                          className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer text-xs sm:text-sm transition-colors ${
+                            marcada ? 'bg-blue-50 text-blue-900 font-bold' : 'hover:bg-gray-50 text-gray-700'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 mt-0.5 rounded border flex items-center justify-center shrink-0 ${
+                            marcada ? 'bg-blue-900 border-blue-900 text-white' : 'border-gray-300 bg-white'
+                          }`}>
+                            {marcada && <Check size={12} strokeWidth={3} />}
+                          </div>
+                          <span>{opcion}</span>
                         </div>
-                        <span>{opcion}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                    <div className="pt-2 border-t border-gray-100 flex justify-end">
+                      <button 
+                        type="button" 
+                        onClick={() => setMenuAbierto(false)} 
+                        className="text-xs font-bold text-blue-900 hover:text-blue-950 px-3 py-1 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                      >
+                        Listo / Cerrar
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Chips de opciones seleccionadas */}
@@ -126,23 +139,22 @@ export default function CuestionarioRetiro() {
               )}
             </div>
 
-            {/* Recuadro de comentarios / detalles */}
-            {motivosSeleccionados.length > 0 && (
-              <div className="animate-in fade-in slide-in-from-top-2">
-                <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
-                  {incluyeOtro ? 'Especifique el motivo adicional (Obligatorio)' : 'Detalles o comentarios adicionales (Opcional)'}
-                </label>
-                <textarea 
-                  required={incluyeOtro} 
-                  rows={3} 
-                  placeholder="Detalle brevemente las razones o circunstancias..." 
-                  value={motivoDetalle} 
-                  onChange={(e) => setMotivoDetalle(e.target.value)} 
-                  disabled={estado === 'cargando'} 
-                  className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none resize-none transition-all bg-gray-50 focus:bg-white"
-                />
-              </div>
-            )}
+            {/* Recuadro de comentarios / detalles SIEMPRE VISIBLE Y OBLIGATORIO */}
+            <div>
+              <label className="block text-sm font-extrabold text-gray-700 mb-2 uppercase tracking-wide">
+                Explicación o comentarios detallados <span className="text-red-500">*</span>
+              </label>
+              <textarea 
+                required 
+                rows={4} 
+                placeholder="Detalle los motivos y circunstancias que fundamentan el retiro del estudiante..." 
+                value={motivoDetalle} 
+                onChange={(e) => setMotivoDetalle(e.target.value)} 
+                disabled={estado === 'cargando'} 
+                className="w-full border border-gray-300 rounded-lg p-3.5 text-sm font-medium focus:ring-2 focus:ring-blue-900 focus:border-blue-900 outline-none resize-none transition-all bg-gray-50 focus:bg-white"
+              />
+              <p className="text-xs text-gray-400 mt-1 font-medium">Este campo es obligatorio para oficializar la baja del alumno.</p>
+            </div>
 
             {estado === 'error' && (
               <div className="bg-red-50 text-red-700 p-4 rounded-lg text-sm font-bold border border-red-200 text-center flex items-center justify-center gap-2">
@@ -152,11 +164,17 @@ export default function CuestionarioRetiro() {
             
             <button 
               type="submit" 
-              disabled={estado === 'cargando' || !rutEstudiante || motivosSeleccionados.length === 0 || (incluyeOtro && !motivoDetalle.trim())} 
+              disabled={!puedeEnviar} 
               className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3.5 px-4 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
-              {estado === 'cargando' ? 'Enviando información segura...' : 'Enviar Respuestas'}
+              {estado === 'cargando' ? 'Procesando retiro oficial...' : 'Confirmar y Formalizar Retiro'}
             </button>
+
+            {!puedeEnviar && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-center font-medium">
+                ⚠️ Para enviar, debe ingresar el RUT, seleccionar al menos un motivo y redactar la explicación detallada.
+              </p>
+            )}
           </form>
         )}
       </div>

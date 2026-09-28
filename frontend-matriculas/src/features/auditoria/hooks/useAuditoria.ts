@@ -1,6 +1,6 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { API_URL } from '../../../config/api';
+import { API_BASE_URL } from '../../../config/api';
 
 export interface RegistroAuditoria {
   id_auditoria: number;
@@ -40,7 +40,7 @@ export const useAuditoria = () => {
     if (fechaInicio) params.append('fecha_inicio', fechaInicio);
     if (fechaFin) params.append('fecha_fin', fechaFin);
 
-    const url = `${API_URL}/reporte/auditoria-matriculas?${params.toString()}`;
+    const url = `${API_BASE_URL}/reporte/auditoria-matriculas?${params.toString()}`;
 
     fetch(url, {
       method: 'GET',
@@ -50,7 +50,7 @@ export const useAuditoria = () => {
       }
     })
       .then(res => {
-        if (!res.ok) throw new Error('Error al conectar con la bitÃ¡cora de auditorÃ­a.');
+        if (!res.ok) throw new Error('Error al conectar con la bitácora de auditoría.');
         return res.json();
       })
       .then(data => {

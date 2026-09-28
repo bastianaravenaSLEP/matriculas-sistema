@@ -94,6 +94,22 @@ def obtener_auditoria_matriculas_db(establecimiento_id: int, tipo_movimiento: st
             query += " AND a.fecha_accion::date <= %s::date"
             parametros.append(fecha_fin.strip())
 
+        if tipo_movimiento and tipo_movimiento.strip():
+            tipo = tipo_movimiento.strip()
+            if tipo == 'ALTA':
+                query += " AND a.accion = 'INSERT'"
+            elif tipo == 'RETIRO':
+                query += " AND a.accion = 'UPDATE' AND (a.datos_nuevos->>'estado' = 'Retirado') AND (a.datos_anteriores->>'estado' IS NULL OR a.datos_anteriores->>'estado' != 'Retirado')"
+            elif tipo == 'CUESTIONARIO':
+                query += " AND (a.datos_nuevos->>'motivo_retiro' = 'Respuesta Apoderado (Confidencial)') AND (a.datos_anteriores->>'motivo_retiro' IS NULL OR a.datos_anteriores->>'motivo_retiro' != 'Respuesta Apoderado (Confidencial)')"
+            elif tipo == 'CAMBIO_CURSO':
+                query += " AND a.accion = 'UPDATE' AND (a.datos_nuevos->>'id_curso' IS NOT NULL) AND (a.datos_anteriores->>'id_curso' IS NOT NULL) AND (a.datos_nuevos->>'id_curso' != a.datos_anteriores->>'id_curso')"
+            elif tipo == 'ACTUALIZACION':
+                query += """ AND a.accion = 'UPDATE' 
+                    AND NOT (a.datos_nuevos->>'estado' = 'Retirado' AND (a.datos_anteriores->>'estado' IS NULL OR a.datos_anteriores->>'estado' != 'Retirado'))
+                    AND NOT (a.datos_nuevos->>'motivo_retiro' = 'Respuesta Apoderado (Confidencial)' AND (a.datos_anteriores->>'motivo_retiro' IS NULL OR a.datos_anteriores->>'motivo_retiro' != 'Respuesta Apoderado (Confidencial)'))
+                    AND NOT ((a.datos_nuevos->>'id_curso' IS NOT NULL) AND (a.datos_anteriores->>'id_curso' IS NOT NULL) AND (a.datos_nuevos->>'id_curso' != a.datos_anteriores->>'id_curso'))"""
+
         query += " ORDER BY a.fecha_accion DESC LIMIT 300"
 
         cur.execute(query, tuple(parametros))

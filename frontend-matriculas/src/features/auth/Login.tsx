@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Mail, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, Clock } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 import { useLogin } from './hooks/useLogin';
 
@@ -8,6 +8,7 @@ export default function Login() {
     email, setEmail,
     password, setPassword,
     error, setError,
+    mensajeExpiracion,
     rol, setRol,
     cargando,
     handleLogin,
@@ -39,6 +40,16 @@ export default function Login() {
         </div>
 
         <div className="p-8">
+          {mensajeExpiracion && (
+            <div className="bg-amber-50 text-amber-900 p-3.5 rounded-lg text-sm mb-6 font-medium border border-amber-300 flex items-start gap-2.5 shadow-sm">
+              <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-amber-950">Sesión Finalizada</p>
+                <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">{mensajeExpiracion}</p>
+              </div>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 text-red-700 p-3 rounded-md text-sm mb-6 text-center font-bold border border-red-200 flex items-center justify-center gap-2">
               <ShieldCheck size={18} /> {error}

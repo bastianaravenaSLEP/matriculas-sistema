@@ -1,10 +1,10 @@
-# services/pdf_service.py
 import io
 import os
 import textwrap
 from datetime import datetime
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+from config import FRONTEND_URL
 
 # --- FUNCIÓN MEJORADA: SOPORTA TEXTOS LARGOS (MULTILÍNEA) ---
 def dibujar_seccion_tabla(c, x, y_inicial, width, filas):
@@ -173,7 +173,7 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
         # Disclaimer Apoderado
         c.setFont("Helvetica-Oblique", 8.5)  # Letra más legible
         c.setFillColorRGB(0.4, 0.4, 0.4)
-        texto_apoderado = "El apoderado(a) ha declarado recibir, conocer y aceptar el proyecto educativo, reglamentos, protocolos y otros documentos oficiales del establecimiento[cite: 21]."
+        texto_apoderado = "El apoderado(a) ha declarado recibir, conocer y aceptar el proyecto educativo, reglamentos, protocolos y otros documentos oficiales del establecimiento."
         for linea in textwrap.wrap(texto_apoderado, width=110):
             c.drawString(margen_izq, y_pos, linea)
             y_pos -= 11
@@ -198,7 +198,7 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
         # Disclaimer Legal Final
         c.setFont("Helvetica", 8.5)
         c.setFillColorRGB(0.3, 0.3, 0.3)
-        texto_legal = "Este comprobante es de uso interno y se entrega en conformidad de lo establecido en el artículo 53 inciso 1 del Decreto Exento N° 152 año 2016, del Ministerio de Educación y acredita la matrícula del estudiante individualizado[cite: 21]."
+        texto_legal = "Este comprobante es de uso interno y se entrega en conformidad de lo establecido en el artículo 53 inciso 1 del Decreto Exento N° 152 año 2016, del Ministerio de Educación y acredita la matrícula del estudiante individualizado."
         for linea in textwrap.wrap(texto_legal, width=110):
             c.drawString(margen_izq, y_pos, linea)
             y_pos -= 12
@@ -269,7 +269,7 @@ def generar_certificado_pdf(datos: dict, tipo_documento: str, codigo_verificacio
         
         c.setFont("Helvetica", 8)
         c.drawString(320, 82, f"Código de Verificación Único: {codigo_verificacion}")
-        c.drawString(320, 72, "Verifique la validez de este certificado ingresando a: http://localhost:5173/verificar")
+        c.drawString(320, 72, f"Verifique la validez de este certificado ingresando a: {FRONTEND_URL}/verificar")
         c.drawString(320, 62, "e ingresando el código proporcionado junto al RUT del estudiante.")
 
     c.save()

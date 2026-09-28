@@ -1,7 +1,7 @@
-﻿import React from 'react';
+import React from 'react';
 import { FileText, Mail, X, CheckCircle, Send, Download, Eye } from 'lucide-react';
 import { useModalEmisionDocumento } from './hooks/useModalEmisionDocumento';
-import { API_URL } from '../config/api';
+import { API_BASE_URL } from '../config/api';
 
 interface ModalEmisionProps {
   isOpen: boolean;
@@ -17,7 +17,7 @@ export default function ModalEmisionDocumento({
 }: ModalEmisionProps) {
   
   const {
-    enviarDirector, // Extraemos pero no se usa en la vista actual segÃºn tu cÃ³digo, lo dejamos por si a futuro lo usas
+    enviarDirector, // Extraemos pero no se usa en la vista actual según tu código, lo dejamos por si a futuro lo usas
     enviarApoderado, setEnviarApoderado,
     correoApoderado, setCorreoApoderado,
     cargando,
@@ -119,7 +119,7 @@ export default function ModalEmisionDocumento({
               </button>
             </div>
             <div className="flex-1 bg-gray-200 p-2">
-              <iframe src={`${API_URL}/matriculas/${idMatricula}/certificado?tipo=${tipoDocumento}`} 
+              <iframe src={`${API_BASE_URL}/matriculas/${idMatricula}/certificado?tipo=${tipoDocumento}&token=${localStorage.getItem('token') || ''}`} 
                 className="w-full h-full rounded shadow-sm bg-white" 
                 title="Visor PDF Oficial"/>
             </div>

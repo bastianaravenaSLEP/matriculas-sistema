@@ -63,7 +63,7 @@ def obtener_datos_bd(id_matricula: int):
         cur.close()
         conn.close()
 
-def emitir_documento_service(id_matricula: int, tipo_documento: str, destinatarios: list):
+def emitir_documento_service(id_matricula: int, tipo_documento: str, destinatarios: list, background_tasks = None):
     if not destinatarios:
         raise HTTPException(status_code=400, detail="No se proporcionaron correos de destino.")
 
@@ -72,19 +72,31 @@ def emitir_documento_service(id_matricula: int, tipo_documento: str, destinatari
         raise HTTPException(status_code=404, detail="Matrícula no encontrada")
 
     pdf_buffer, titulo_pdf = generar_certificado_pdf(datos_alumno, tipo_documento)
+    pdf_bytes = pdf_buffer.getvalue() if hasattr(pdf_buffer, 'getvalue') else pdf_buffer.read()
     
-    try:
-        enviar_certificado_por_correo(
+    if background_tasks:
+        background_tasks.add_task(
+            enviar_certificado_por_correo,
             destinatarios=destinatarios,
-            pdf_buffer=pdf_buffer,
+            pdf_buffer=pdf_bytes,
             titulo_pdf=titulo_pdf,
             nombre_completo=datos_alumno['nombre_completo'],
             rut_estudiante=datos_alumno['rut']
         )
-        return {"status": "success", "message": f"Documento enviado a {len(destinatarios)} destinatario(s)."}
-    except Exception as e:
-        print(f"Error emitiendo documento: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"status": "success", "message": f"Documento encolado para envío a {len(destinatarios)} destinatario(s)."}
+    else:
+        try:
+            enviar_certificado_por_correo(
+                destinatarios=destinatarios,
+                pdf_buffer=pdf_bytes,
+                titulo_pdf=titulo_pdf,
+                nombre_completo=datos_alumno['nombre_completo'],
+                rut_estudiante=datos_alumno['rut']
+            )
+            return {"status": "success", "message": f"Documento enviado a {len(destinatarios)} destinatario(s)."}
+        except Exception as e:
+            print(f"Error emitiendo documento: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 def verificar_certificado_service(rut: str, codigo: str):
     partes = codigo.strip().upper().split('-')
