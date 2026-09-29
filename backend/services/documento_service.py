@@ -111,13 +111,13 @@ def verificar_certificado_service(rut: str, codigo: str):
         raise HTTPException(status_code=404, detail="El documento no existe en los registros.")
 
     if datos_alumno['rut'].lower() != rut.strip().lower():
-        raise HTTPException(status_code=401, detail="El RUT ingresado no corresponde a este certificado.")
+        raise HTTPException(status_code=400, detail="El RUT ingresado no corresponde a este certificado.")
 
     hash_base = f"{datos_alumno['rut']}-{id_matricula}-SLEP{datos_alumno['anio']}"
     hash_real = hashlib.sha256(hash_base.encode('utf-8')).hexdigest()[:6].upper()
     
     if hash_real != hash_ingresado:
-        raise HTTPException(status_code=401, detail="El código de verificación ha sido alterado.")
+        raise HTTPException(status_code=400, detail="El código de verificación ha sido alterado o no es válido.")
 
     pdf_buffer, _ = generar_certificado_pdf(
         datos=datos_alumno, 

@@ -2,6 +2,7 @@
 import json
 from fastapi import HTTPException
 from database import get_db_connection
+from security import es_usuario_slep
 
 def clasificar_evento(accion: str, datos_ant: any, datos_nuev: any) -> tuple[str, str]:
     """
@@ -41,11 +42,8 @@ def clasificar_evento(accion: str, datos_ant: any, datos_nuev: any) -> tuple[str
 
 
 def obtener_auditoria_matriculas_db(establecimiento_id: int, tipo_movimiento: str, fecha_inicio: str, fecha_fin: str, usuario_actual: dict):
-    rol = usuario_actual.get('rol')
-    id_est_usuario = usuario_actual.get('id_establecimiento')
-
     # --- BLOQUEO DE SEGURIDAD ESTRICTO PARA COLEGIOS ---
-    if rol in ['Colegio', 'Visualizador_Colegio']:
+    if not usuario_actual or not es_usuario_slep(usuario_actual):
         raise HTTPException(
             status_code=403, 
             detail="Acceso Denegado: Su perfil no tiene privilegios para visualizar la auditoría del sistema."
@@ -74,17 +72,9 @@ def obtener_auditoria_matriculas_db(establecimiento_id: int, tipo_movimiento: st
         """
         parametros = []
 
-        # Seguridad de acceso por establecimiento
-        if rol != 'admin_slep' and rol != 'SLEP':
-            if id_est_usuario is not None:
-                query += " AND m.id_establecimiento = %s"
-                parametros.append(id_est_usuario)
-            else:
-                return []
-        else:
-            if establecimiento_id is not None:
-                query += " AND m.id_establecimiento = %s"
-                parametros.append(establecimiento_id)
+        if establecimiento_id is not None:
+            query += " AND m.id_establecimiento = %s"
+            parametros.append(establecimiento_id)
 
         if fecha_inicio and fecha_inicio.strip():
             query += " AND a.fecha_accion::date >= %s::date"

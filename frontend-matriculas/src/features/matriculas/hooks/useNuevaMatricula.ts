@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation, useOutletContext } from 'react-router-dom';
 import { API_BASE_URL } from '../../../config/api';
 import { coincideBusqueda } from '../../../utils/search';
+import { useToast } from '../../../components/Toast';
 
 export interface MatriculaBase {
   id_establecimiento: number;
@@ -16,6 +17,7 @@ export interface MatriculaBase {
 }
 
 export const useNuevaMatricula = () => {
+  const { toast } = useToast();
   const navigate = useNavigate();
   const location = useLocation(); 
   
@@ -32,7 +34,7 @@ export const useNuevaMatricula = () => {
   const [pasoActual, setPasoActual] = useState(1);
   const irSiguientePaso = () => {
     if (pasoActual === 1 && (!estudiante || !fichaConfirmada)) {
-      alert("Es obligatorio actualizar y confirmar los antecedentes del estudiante y su apoderado antes de continuar.");
+      toast.warning("Es obligatorio actualizar y confirmar los antecedentes del estudiante y su apoderado antes de continuar.");
       return;
     }
     setPasoActual(prev => prev + 1);
@@ -844,8 +846,9 @@ export const useNuevaMatricula = () => {
       setMensajeAntiguedad("Información recién actualizada y confirmada con éxito.");
       setModalFaltantes(false);
       
+      toast.success("Ficha del estudiante actualizada y confirmada exitosamente.");
     } catch (err: any) {
-      alert("Error al actualizar la ficha: " + err.message);
+      toast.error("Error al actualizar la ficha: " + err.message);
     } finally {
       setGuardandoFaltantes(false);
     }
@@ -890,9 +893,10 @@ export const useNuevaMatricula = () => {
       
       linkDescarga.remove();
       window.URL.revokeObjectURL(url);
+      toast.success("Documentos descargados exitosamente.");
       
     } catch (err: any) {
-      alert("Hubo un error al descargar los documentos: " + err.message);
+      toast.error("Hubo un error al descargar los documentos: " + err.message);
       console.error(err);
     }
   };

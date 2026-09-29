@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 from typing import Optional, List
 from pydantic import BaseModel
 from schemas import MatriculaCreate, MatriculaUpdate, CuestionarioRetiro
-from security import obtener_usuario_actual, verificar_escritura
+from security import obtener_usuario_actual, verificar_escritura, validar_acceso_colegio, es_usuario_slep
 from services import matricula_service
 from services.matricula_service import exportar_matriculas_excel_service
 from services.storage_service import validar_tamano_archivo
@@ -21,16 +21,15 @@ class CambioCursoRequest(BaseModel):
 def obtener_matriculas(
     establecimiento_id: Optional[int] = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(50, ge=1, le=5000),
     anio: Optional[int] = Query(None),
     busqueda: Optional[str] = Query(None),
     curso: Optional[str] = Query(None),
     codigo: Optional[int] = Query(None),
+    estado: Optional[str] = Query(None),
     usuario_actual: dict = Depends(obtener_usuario_actual)
 ):
-    rol = usuario_actual.get("rol")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
-        establecimiento_id = usuario_actual.get("id_establecimiento")
+    establecimiento_id = validar_acceso_colegio(establecimiento_id, usuario_actual)
         
     return matricula_service.obtener_todas_matriculas_db(
         establecimiento_id=establecimiento_id,
@@ -40,20 +39,13 @@ def obtener_matriculas(
         busqueda=busqueda,
         curso=curso,
         codigo=codigo,
+        estado=estado,
     )
-
-@router.get("/anios-disponibles")
-def anios_disponibles(establecimiento_id: Optional[int] = None, usuario_actual: dict = Depends(obtener_usuario_actual)):
-    rol = usuario_actual.get("rol")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
-        establecimiento_id = usuario_actual.get("id_establecimiento")
-    return matricula_service.obtener_anios_disponibles_db(establecimiento_id)
 
 @router.post("")
 def crear_matricula(matricula: MatriculaCreate, usuario_actual: dict = Depends(verificar_escritura)):
-    rol = usuario_actual.get("rol")
-    id_est_usuario = usuario_actual.get("id_establecimiento")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
+    if not es_usuario_slep(usuario_actual):
+        id_est_usuario = usuario_actual.get("id_establecimiento")
         if id_est_usuario and matricula.id_establecimiento != id_est_usuario:
             raise HTTPException(
                 status_code=403, 
@@ -135,13 +127,37 @@ def obtener_opciones_filtro(
     Devuelve los años, cursos y planes de estudio disponibles en la BD
     para poblar los selects del modal de descarga Excel.
     """
-    rol = usuario_actual.get("rol")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
-        establecimiento_id = usuario_actual.get("id_establecimiento")
+    establecimiento_id = validar_acceso_colegio(establecimiento_id, usuario_actual)
     return matricula_service.obtener_opciones_filtro_excel(establecimiento_id)
 
+@router.get("/conteo-cursos")
+def obtener_conteo_cursos(
+    establecimiento_id: int = Query(...),
+    anio: Optional[int] = Query(None),
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
+    """
+    Devuelve la cantidad de estudiantes activos por curso en un establecimiento y año escolar,
+    junto con el RBD institucional.
+    """
+    establecimiento_id = validar_acceso_colegio(establecimiento_id, usuario_actual)
+    return matricula_service.obtener_conteo_alumnos_por_curso_db(establecimiento_id, anio)
+
+@router.get("/estudiantes-curso")
+def obtener_estudiantes_curso(
+    establecimiento_id: int = Query(...),
+    anio: int = Query(...),
+    curso: str = Query(...),
+    usuario_actual: dict = Depends(obtener_usuario_actual)
+):
+    """
+    Devuelve la nómina de estudiantes activos inscritos en un curso específico.
+    """
+    establecimiento_id = validar_acceso_colegio(establecimiento_id, usuario_actual)
+    return matricula_service.obtener_estudiantes_curso_db(establecimiento_id, anio, curso)
+
 @router.get("/exportar-excel")
-async def exportar_matriculas_excel(
+def exportar_matriculas_excel(
     establecimiento_id: Optional[int] = None,
     anio: str = Query(None),
     codigo_plan: str = Query(None),
@@ -152,9 +168,7 @@ async def exportar_matriculas_excel(
     Endpoint para descargar el registro general de matrículas en formato .xlsx.
     Los administradores SLEP pueden descargar sin filtrar por colegio.
     """
-    rol = usuario_actual.get("rol")
-    if rol in ["Colegio", "Visualizador_Colegio"]:
-        establecimiento_id = usuario_actual.get("id_establecimiento")
+    establecimiento_id = validar_acceso_colegio(establecimiento_id, usuario_actual)
 
     # Delegamos toda la lógica al servicio
     buffer = exportar_matriculas_excel_service(

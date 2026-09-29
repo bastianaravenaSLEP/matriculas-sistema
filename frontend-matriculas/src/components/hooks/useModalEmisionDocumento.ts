@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../../config/api';
+import { useToast } from '../Toast';
 
 export const useModalEmisionDocumento = (
   idMatricula: number,
@@ -7,6 +8,7 @@ export const useModalEmisionDocumento = (
   emailApoderado?: string,
   onClose?: () => void
 ) => {
+  const { toast } = useToast();
   const [enviarDirector, setEnviarDirector] = useState(false);
   const [correoDirector, setCorreoDirector] = useState('');
 
@@ -39,7 +41,7 @@ export const useModalEmisionDocumento = (
     if (enviarApoderado && correoApoderado.trim() !== '') destinatarios.push(correoApoderado.trim());
 
     if (destinatarios.length === 0) {
-      alert('Debe ingresar y marcar al menos un correo electrónico para realizar el envío.');
+      toast.warning('Debe ingresar y marcar al menos un correo electrónico para realizar el envío.');
       return;
     }
 
@@ -64,6 +66,7 @@ export const useModalEmisionDocumento = (
       
       const data = await res.json();
       setMensajeExito(data.message);
+      toast.success(data.message || 'Documento enviado con éxito por correo.');
       
       setTimeout(() => {
         setMensajeExito('');
@@ -71,7 +74,7 @@ export const useModalEmisionDocumento = (
       }, 2500);
 
     } catch (error: any) {
-      alert(error.message);
+      toast.error(error.message || 'Error al procesar el envío de documentos.');
     } finally {
       setCargando(false);
     }

@@ -3,7 +3,7 @@ import React from 'react';
 import { 
   Search, User, UserCheck, Clock, ArrowLeft, ChevronRight, ChevronLeft, 
   UserPlus, Edit2, Save, X, CheckCircle, HeartPulse, ShieldAlert, Activity, 
-  Stethoscope, Check, FileText 
+  Stethoscope, Check, FileText, Building2, Globe 
 } from 'lucide-react';
 import { useEstudiantes } from './hooks/useEstudiantes'; 
 import { API_BASE_URL } from '../../config/api';
@@ -18,6 +18,11 @@ export default function Estudiantes() {
     cargandoLista, estudiantesFiltrados,
     verFichaEstudiante,
     datosEdicion, setDatosEdicion,
+    // Contexto Institucional y Búsqueda Global
+    colegioSeleccionado, setColegioSeleccionado, establecimientos, esPerfilGlobal,
+    busquedaGlobal, setBusquedaGlobal,
+    // Paginación
+    page, setPage, totalPages, total,
     // Wizard Nuevo Estudiante
     vistaCrearEstudiante, setVistaCrearEstudiante,
     pasoCrear, irSiguientePasoCrear, irPasoAnteriorCrear, iniciarCrearEstudiante,
@@ -575,65 +580,253 @@ export default function Estudiantes() {
           VISTA 1: DIRECTORIO DE ESTUDIANTES
           ======================================================================= */}
       {!vistaCrearEstudiante && !datosEstudiante && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 bg-gray-50 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🔍 Buscar</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                <input 
-                  type="text" placeholder="RUT o Nombre..."
-                  value={textoBusqueda} onChange={(e) => setTextoBusqueda(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                />
-              </div>
+        esPerfilGlobal && !colegioSeleccionado && !busquedaGlobal ? (
+          /* PANTALLA DE BLOQUEO / SELECCIÓN OBLIGATORIA PARA PERFILES GLOBALES */
+          <div className="bg-white rounded-2xl shadow-sm border border-blue-200 overflow-hidden p-8 sm:p-12 text-center max-w-2xl mx-auto space-y-6 animate-in fade-in duration-200">
+            <div className="w-16 h-16 bg-blue-50 text-blue-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+              <Building2 size={36} />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📅 1. Año</label>
-              <select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
-                <option value="">Todos los años</option>
-                {aniosUnicos.map((anio: any) => <option key={anio} value={anio}>{anio}</option>)}
+              <h2 className="text-xl sm:text-2xl font-black text-gray-900 mb-2">
+                Seleccione un Establecimiento Educacional
+              </h2>
+              <p className="text-sm text-gray-600 max-w-xl mx-auto leading-relaxed">
+                Debe seleccionar primero un establecimiento educacional en específico para hacer uso de las funcionalidades de esta sección.
+              </p>
+            </div>
+
+            {/* Selector directo de establecimiento */}
+            <div className="w-full bg-gray-50 p-4 rounded-xl border border-gray-200 text-left space-y-2">
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                🏫 Establecimiento Educacional:
+              </label>
+              <select
+                value={colegioSeleccionado}
+                onChange={(e) => {
+                  if (setColegioSeleccionado) setColegioSeleccionado(e.target.value);
+                }}
+                className="w-full p-2.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="">-- Seleccione un establecimiento de la lista --</option>
+                {establecimientos.map((col: any) => (
+                  <option key={col.id_establecimiento} value={col.id_establecimiento}>
+                    {col.nombre} {col.rbd ? `(RBD: ${col.rbd})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📚 2. Plan de Estudio</label>
-              <select value={filtroCodigo} onChange={(e) => setFiltroCodigo(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
-                <option value="">Todos los planes</option>
-                {codigosUnicos.map((cod: any) => <option key={cod} value={cod}>Cod. {cod}</option>)}
-              </select>
+
+            <div className="relative flex items-center justify-center w-full">
+              <div className="border-t border-gray-200 w-full"></div>
+              <span className="bg-white px-3 text-xs text-gray-400 font-bold uppercase tracking-wider absolute">O bien</span>
             </div>
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🏫 3. Curso</label>
-              <select value={filtroCurso} onChange={(e) => setFiltroCurso(e.target.value)} disabled={cursosUnicos.length === 0} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white disabled:bg-gray-100 disabled:text-gray-400">
-                <option value="">Todos los cursos</option>
-                {cursosUnicos.map((curso: any) => <option key={curso} value={curso}>{curso}</option>)}
-              </select>
+
+            {/* Opción Búsqueda General */}
+            <div 
+              onClick={() => setBusquedaGlobal(true)}
+              className="w-full p-4 bg-blue-50/70 border border-blue-200 rounded-xl text-left flex items-start gap-3.5 hover:bg-blue-100/60 transition-colors cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                id="check-busqueda-global-vacio"
+                checked={busquedaGlobal}
+                onChange={(e) => setBusquedaGlobal(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <label htmlFor="check-busqueda-global-vacio" className="text-sm cursor-pointer select-none">
+                <span className="font-bold text-blue-950 flex items-center gap-1.5">
+                  <Globe size={16} className="text-blue-600" /> Búsqueda General en todos los Establecimientos (Red SLEP)
+                </span>
+                <span className="block text-xs text-blue-700 mt-1 leading-relaxed">
+                  Permite buscar rápidamente a cualquier estudiante ingresando su RUT o nombre, incluso si no conoce su colegio actual o no se encuentra matriculado en ningún establecimiento.
+                </span>
+              </label>
             </div>
           </div>
+        ) : (
+          /* TABLA / DIRECTORIO DE ESTUDIANTES */
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            
+            {/* Barra informativa de Modo para Perfiles Globales */}
+            {esPerfilGlobal && (
+              <div className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 text-sm ${
+                busquedaGlobal 
+                  ? 'bg-amber-50 border-amber-200 text-amber-900' 
+                  : 'bg-blue-50 border-blue-100 text-blue-900'
+              }`}>
+                <div className="flex items-center gap-2">
+                  {busquedaGlobal ? (
+                    <>
+                      <Globe size={18} className="text-amber-600 shrink-0" />
+                      <span className="font-bold">Modo Búsqueda General Activo:</span>
+                      <span className="text-xs text-amber-800">Buscando en toda la Red SLEP Valparaíso</span>
+                    </>
+                  ) : (
+                    <>
+                      <Building2 size={18} className="text-blue-600 shrink-0" />
+                      <span className="font-bold">Establecimiento seleccionado:</span>
+                      <span className="text-xs text-blue-800 font-medium">
+                        {establecimientos.find((e: any) => String(e.id_establecimiento) === String(colegioSeleccionado))?.nombre || `ID: ${colegioSeleccionado}`}
+                      </span>
+                    </>
+                  )}
+                </div>
 
-          <ul className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
-            {cargandoLista ? (
-              <div className="p-8 text-center text-gray-500">Cargando directorio...</div>
-            ) : estudiantesFiltrados.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">No hay estudiantes que coincidan con los filtros.</div>
-            ) : (
-              estudiantesFiltrados.map((est: any) => (
-                <li key={est.id}>
-                  <button 
-                    onClick={() => verFichaEstudiante(est.run)}
-                    className="w-full flex items-center justify-between p-4 hover:bg-blue-50 transition-colors text-left"
-                  >
-                    <div>
-                      <p className="font-semibold text-gray-800 text-lg">{est.nombre_completo}</p>
-                      <p className="text-sm text-gray-500">RUT: {est.run} {est.curso ? `| Curso: ${est.curso}` : ''}</p>
-                    </div>
-                    <div className="text-blue-500"><ChevronRight size={20} /></div>
-                  </button>
-                </li>
-              ))
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold px-3 py-1.5 rounded-lg bg-white border border-gray-200 shadow-sm hover:bg-gray-50 transition-colors select-none">
+                  <input
+                    type="checkbox"
+                    checked={busquedaGlobal}
+                    onChange={(e) => setBusquedaGlobal(e.target.checked)}
+                    className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <Globe size={14} className={busquedaGlobal ? "text-amber-600" : "text-blue-600"} />
+                  <span>🌐 Búsqueda general en todos los colegios</span>
+                </label>
+              </div>
             )}
-          </ul>
-        </div>
+
+            {/* Fila de Filtros */}
+            <div className={`p-4 border-b border-gray-100 bg-gray-50 grid grid-cols-1 ${busquedaGlobal ? 'md:grid-cols-2' : 'md:grid-cols-4'} gap-4`}>
+              <div className={busquedaGlobal ? 'md:col-span-1' : ''}>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🔍 Buscar</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder={busquedaGlobal ? "Escriba RUT o Nombre (mínimo 2 caracteres)..." : "RUT o Nombre..."}
+                    value={textoBusqueda} 
+                    onChange={(e) => setTextoBusqueda(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  />
+                </div>
+              </div>
+
+              {!busquedaGlobal ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📅 1. Año</label>
+                    <select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
+                      <option value="">Todos los años</option>
+                      {aniosUnicos.map((anio: any) => <option key={anio} value={anio}>{anio}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📚 2. Plan de Estudio</label>
+                    <select value={filtroCodigo} onChange={(e) => setFiltroCodigo(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
+                      <option value="">Todos los planes</option>
+                      {codigosUnicos.map((cod: any) => <option key={cod} value={cod}>Cod. {cod}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">🏫 3. Curso</label>
+                    <select value={filtroCurso} onChange={(e) => setFiltroCurso(e.target.value)} disabled={cursosUnicos.length === 0} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white disabled:bg-gray-100 disabled:text-gray-400">
+                      <option value="">Todos los cursos</option>
+                      {cursosUnicos.map((curso: any) => <option key={curso} value={curso}>{curso}</option>)}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">📅 Filtrar por Año (Opcional)</label>
+                  <select value={filtroAnio} onChange={(e) => setFiltroAnio(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none bg-white cursor-pointer">
+                    <option value="">Histórico (Todos los años)</option>
+                    {aniosUnicos.map((anio: any) => <option key={anio} value={anio}>{anio}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Listado de Resultados */}
+            <ul className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
+              {busquedaGlobal && (!textoBusqueda || textoBusqueda.trim().length < 2) ? (
+                <div className="p-10 text-center text-gray-500 space-y-2">
+                  <div className="text-3xl">🌐</div>
+                  <p className="font-bold text-gray-700">Ingrese al menos 2 caracteres en el buscador</p>
+                  <p className="text-xs text-gray-500 max-w-md mx-auto">
+                    Para consultar en toda la Red SLEP Valparaíso (más de 35.000 registros), escriba el RUT o parte del nombre del estudiante.
+                  </p>
+                </div>
+              ) : cargandoLista ? (
+                <div className="p-8 text-center text-gray-500 flex items-center justify-center gap-3">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Cargando estudiantes...</span>
+                </div>
+              ) : estudiantesFiltrados.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  No se encontraron estudiantes que coincidan con los criterios de búsqueda.
+                </div>
+              ) : (
+                estudiantesFiltrados.map((est: any) => (
+                  <li key={est.id}>
+                    <button 
+                      onClick={() => verFichaEstudiante(est.run)}
+                      className="w-full flex items-center justify-between p-4 hover:bg-blue-50/60 transition-colors text-left"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-800 text-base">{est.nombre_completo}</p>
+                          {est.estado && (
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                              est.estado.toLowerCase() === 'activa' ? 'bg-emerald-100 text-emerald-800' :
+                              est.estado.toLowerCase() === 'retirada' || est.estado.toLowerCase() === 'inactiva' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {est.estado}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-mono font-medium text-gray-700">RUT: {est.run}</span>
+                          {est.curso && <span>• Curso: {est.curso}</span>}
+                          {est.anio && <span>• Año: {est.anio}</span>}
+                          {(busquedaGlobal || esPerfilGlobal) && est.nombre_colegio && (
+                            <span className="inline-flex items-center gap-1 text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs font-semibold">
+                              🏫 {est.nombre_colegio}
+                            </span>
+                          )}
+                          {(busquedaGlobal || esPerfilGlobal) && !est.nombre_colegio && (
+                            <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-xs font-medium">
+                              Sin matrícula activa registrada
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-blue-500 shrink-0 ml-4"><ChevronRight size={20} /></div>
+                    </button>
+                  </li>
+                ))
+              )}
+            </ul>
+
+            {/* Paginación */}
+            {totalPages > 1 && (
+              <div className="p-3.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs sm:text-sm">
+                <span className="text-gray-600 font-medium">
+                  Página <strong className="text-gray-900">{page}</strong> de <strong className="text-gray-900">{totalPages}</strong> ({total} estudiantes)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.max(1, page - 1))}
+                    disabled={page <= 1 || cargandoLista}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors flex items-center gap-1"
+                  >
+                    <ChevronLeft size={16} /> Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(Math.min(totalPages, page + 1))}
+                    disabled={page >= totalPages || cargandoLista}
+                    className="px-3 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-700 font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors flex items-center gap-1"
+                  >
+                    Siguiente <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        )
       )}
 
       {/* =======================================================================

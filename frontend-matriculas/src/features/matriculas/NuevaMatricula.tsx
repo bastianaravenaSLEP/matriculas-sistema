@@ -6,8 +6,10 @@ import { ModalFaltantes } from './components/ModalFaltantes';
 import { ModalExito } from './components/ModalExito';
 import { ModalSalida } from './components/ModalSalida';
 import { validarTamanoArchivo } from '../../utils/fileValidation';
+import { useToast } from '../../components/Toast';
 
 export default function NuevaMatricula() {
+  const { toast } = useToast();
   const {
     navigate, cargando, error, matriculaExitosa,
     rutBusqueda, estudiante, setEstudiante,
@@ -545,7 +547,7 @@ export default function NuevaMatricula() {
                                   if (file) {
                                     const res = validarTamanoArchivo(file);
                                     if (!res.valido) {
-                                      alert(res.mensaje);
+                                      toast.warning(res.mensaje || 'El archivo seleccionado supera el límite máximo de 5 MB.');
                                       e.target.value = '';
                                       setArchivoResolucion(null);
                                       return;

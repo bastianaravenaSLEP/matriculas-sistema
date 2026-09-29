@@ -16,10 +16,15 @@ export function configurarInterceptorFetch() {
       // Obtener la URL de la petición
       const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url || '';
 
-      // Si el 401 provino de un intento de login con credenciales incorrectas, no redirigir
-      const esRutaLogin = url.includes('/login') || url.includes('/login/google');
+      // Si el 401 provino de un intento de login o de rutas públicas (como el verificador o encuestas), no redirigir
+      const esRutaPublica = 
+        url.includes('/login') || 
+        url.includes('/login/google') ||
+        url.includes('/documentos/verificar') ||
+        url.includes('/encuesta') ||
+        window.location.pathname.startsWith('/verificar');
 
-      if (!esRutaLogin) {
+      if (!esRutaPublica) {
         cerrarSesionPorExpiracion();
       }
     }

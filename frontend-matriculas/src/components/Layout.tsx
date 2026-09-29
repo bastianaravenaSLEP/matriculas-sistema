@@ -86,86 +86,88 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* SUB-HEADER (Filtro de Colegio / Contexto) */}
-      <div className="bg-white border-b border-gray-200 h-14 flex items-center px-6 shrink-0 shadow-sm z-10">
-        {esPerfilGlobal ? (
-          <div className="flex items-center gap-3 w-full max-w-3xl relative">
-            <span className="text-xs font-bold text-[#25306B] uppercase font-['gobCL',_sans-serif]">Filtro Institucional:</span>
-            
-            <div className="relative flex-1">
-              <input 
-                type="text"
-                value={busquedaFiltro}
-                onChange={(e) => {
-                  setBusquedaFiltro(e.target.value);
-                  setMostrarDropdownFiltro(true);
-                }}
-                onFocus={() => {
-                  setBusquedaFiltro(''); 
-                  setMostrarDropdownFiltro(true);
-                }}
-                onBlur={() => {
-                  setTimeout(() => {
-                    setMostrarDropdownFiltro(false);
-                    if (colegioSeleccionado === '') {
-                      setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
-                    } else {
-                      const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
-                      if (col) setBusquedaFiltro(`${col.nombre}`);
-                    }
-                  }, 200);
-                }}
-                placeholder="🔍 Buscar por nombre o número de RBD..."
-                // 🌟 RING FOCUS CON COLOR OFICIAL
-                className="w-full border border-gray-300 rounded-md py-1.5 px-3 bg-[#EDF0F5] focus:outline-none focus:ring-2 focus:ring-[#006BB9] text-sm font-bold text-[#25306B] cursor-text"
-              />
+      {/* SUB-HEADER (Filtro de Colegio / Contexto) — Se oculta en el Panel de Control (/inicio) */}
+      {!isActive('/inicio') && (
+        <div className="bg-white border-b border-gray-200 h-14 flex items-center px-6 shrink-0 shadow-sm z-10">
+          {esPerfilGlobal ? (
+            <div className="flex items-center gap-3 w-full max-w-3xl relative">
+              <span className="text-xs font-bold text-[#25306B] uppercase font-['gobCL',_sans-serif]">Filtro Institucional:</span>
               
-              {mostrarDropdownFiltro && (
-                <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-xl max-h-60 overflow-y-auto">
-                  <li 
-                    className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-[#25306B] font-bold border-b border-gray-100"
-                    onClick={() => {
-                      setColegioSeleccionado('');
+              <div className="relative flex-1">
+                <input 
+                  type="text"
+                  value={busquedaFiltro}
+                  onChange={(e) => {
+                    setBusquedaFiltro(e.target.value);
+                    setMostrarDropdownFiltro(true);
+                  }}
+                  onFocus={() => {
+                    setBusquedaFiltro(''); 
+                    setMostrarDropdownFiltro(true);
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
                       setMostrarDropdownFiltro(false);
-                    }}
-                  >
-                    🌍 Ver todos los Establecimientos (Nivel Central)
-                  </li>
-                  {establecimientos
-                    .filter(est => 
-                      est.nombre.toLowerCase().includes(busquedaFiltro.toLowerCase()) || 
-                      String(est.rbd).includes(busquedaFiltro)
-                    )
-                    .map(est => (
-                      <li 
-                        key={est.id_establecimiento}
-                        className="px-3 py-2 text-sm cursor-pointer hover:bg-[#EDF0F5] text-gray-700 border-b border-gray-50"
-                        onMouseDown={() => {
-                          setColegioSeleccionado(String(est.id_establecimiento));
-                          setMostrarDropdownFiltro(false);
-                        }}
-                      >
-                         {est.nombre}
-                      </li>
-                    ))}
-                </ul>
-              )}
+                      if (colegioSeleccionado === '') {
+                        setBusquedaFiltro('🌍 Ver todos los Establecimientos (Nivel Central)');
+                      } else {
+                        const col = establecimientos.find(e => String(e.id_establecimiento) === String(colegioSeleccionado));
+                        if (col) setBusquedaFiltro(`${col.nombre}`);
+                      }
+                    }, 200);
+                  }}
+                  placeholder="🔍 Buscar por nombre o número de RBD..."
+                  // 🌟 RING FOCUS CON COLOR OFICIAL
+                  className="w-full border border-gray-300 rounded-md py-1.5 px-3 bg-[#EDF0F5] focus:outline-none focus:ring-2 focus:ring-[#006BB9] text-sm font-bold text-[#25306B] cursor-text"
+                />
+                
+                {mostrarDropdownFiltro && (
+                  <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-xl max-h-60 overflow-y-auto">
+                    <li 
+                      className="px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-[#25306B] font-bold border-b border-gray-100"
+                      onClick={() => {
+                        setColegioSeleccionado('');
+                        setMostrarDropdownFiltro(false);
+                      }}
+                    >
+                      🌍 Ver todos los Establecimientos (Nivel Central)
+                    </li>
+                    {establecimientos
+                      .filter(est => 
+                        est.nombre.toLowerCase().includes(busquedaFiltro.toLowerCase()) || 
+                        String(est.rbd).includes(busquedaFiltro)
+                      )
+                      .map(est => (
+                        <li 
+                          key={est.id_establecimiento}
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-[#EDF0F5] text-gray-700 border-b border-gray-50"
+                          onMouseDown={() => {
+                            setColegioSeleccionado(String(est.id_establecimiento));
+                            setMostrarDropdownFiltro(false);
+                          }}
+                        >
+                           {est.nombre}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            {/* 🌟 TIPOGRAFÍA PRIMARIA Y COLOR INSTITUCIONAL */}
-            <span className="text-[10px] bg-[#25306B] text-white font-['gobCL',_sans-serif] px-2 py-1 rounded shadow-sm uppercase tracking-wider">Mi Establecimiento</span>
-            <h2 className="text-sm font-bold text-[#25306B] font-['gobCL',_sans-serif]">
-              {colegioActual ? `${colegioActual.nombre} ` : 'Cargando información...'}
-            </h2>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              {/* 🌟 TIPOGRAFÍA PRIMARIA Y COLOR INSTITUCIONAL */}
+              <span className="text-[10px] bg-[#25306B] text-white font-['gobCL',_sans-serif] px-2 py-1 rounded shadow-sm uppercase tracking-wider">Mi Establecimiento</span>
+              <h2 className="text-sm font-bold text-[#25306B] font-['gobCL',_sans-serif]">
+                {colegioActual ? `${colegioActual.nombre} ` : 'Cargando información...'}
+              </h2>
+            </div>
+          )}
+        </div>
+      )}
       
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 overflow-auto p-6 lg:p-8 bg-[#EDF0F5]">
-        <Outlet context={{ colegioSeleccionado }} />
+        <Outlet context={{ colegioSeleccionado, setColegioSeleccionado, establecimientos, esPerfilGlobal }} />
       </main>
     </div>
   );

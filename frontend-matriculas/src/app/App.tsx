@@ -59,6 +59,7 @@ export default function App() {
         
         {/* 1. RUTA PÚBLICA (La única que se puede ver sin iniciar sesión) */}
         <Route path="/login" element={<Login />} />
+        <Route path="/verificar" element={<Verificador />} />
         <Route path="/encuesta-retiro/:id" element={<CuestionarioRetiro />} />
         <Route path="/encuesta-cambio-curso/:id" element={<EncuestaCambioCurso />} />
         <Route path="/firma-prueba" element={<PortalFirmaApoderado />} /> 
@@ -77,7 +78,6 @@ export default function App() {
           
           <Route index element={<HomeMenu />} />
           <Route path="inicio" element={<Estadisticas/>} />
-          <Route path="/verificar" element={<Verificador />} />
           <Route path="matriculas" element={<Matriculas />} />
           <Route path="matriculas/nueva" element={<NuevaMatricula />} />
           <Route path="estudiantes" element={<Estudiantes />} />

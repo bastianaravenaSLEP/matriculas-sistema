@@ -22,9 +22,16 @@ export const useInicio2 = () => {
     const token = localStorage.getItem('token');
     setCargando(true); 
 
+    const usuarioString = localStorage.getItem('usuario');
+    const usuario = usuarioString ? JSON.parse(usuarioString) : null;
+    const rolUsuario = (usuario?.rol || '').toLowerCase();
+    const esPerfilGlobal = ['slep', 'admin_slep', 'admin', 'visualizador_slep'].includes(rolUsuario);
+
     let url = `${API_BASE_URL}/dashboard/estadisticas?`;
     const params = new URLSearchParams();
-    if (colegioSeleccionado) params.append('establecimiento_id', colegioSeleccionado);
+    if (!esPerfilGlobal && usuario?.id_establecimiento) {
+      params.append('establecimiento_id', String(usuario.id_establecimiento));
+    }
     if (anioSeleccionado) params.append('anio', anioSeleccionado);
     
     url += params.toString();

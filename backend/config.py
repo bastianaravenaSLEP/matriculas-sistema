@@ -12,8 +12,11 @@ else:
     load_dotenv()
 
 # ==============================================================================
-# BASE DE DATOS
+# BASE DE DATOS (Soporte local y Supabase)
 # ==============================================================================
+DATABASE_URL = os.getenv("DATABASE_URL", None)
+DB_SCHEMA = os.getenv("DB_SCHEMA", "matriculas")
+
 DB_NAME = os.getenv("DB_NAME", "sistema_matriculas_sleep")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "admin")
@@ -31,13 +34,13 @@ DB_CONFIG = {
 }
 
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "2"))
-DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "20"))
+DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "10"))
 DB_POOL_TIMEOUT = float(os.getenv("DB_POOL_TIMEOUT", "10.0"))
 
 # ==============================================================================
 # SEGURIDAD JWT
 # ==============================================================================
-SECRET_KEY = os.getenv("SECRET_KEY", "slep_valparaiso_clave_secreta_super_segura")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY", "slep_valparaiso_clave_secreta_super_segura")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
 
