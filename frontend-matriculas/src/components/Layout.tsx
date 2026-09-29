@@ -86,9 +86,8 @@ export default function Layout() {
         </div>
       </header>
 
-      {/* SUB-HEADER (Filtro de Colegio / Contexto) — Se oculta en el Panel de Control (/inicio) */}
-      {!isActive('/inicio') && (
-        <div className="bg-white border-b border-gray-200 h-14 flex items-center px-6 shrink-0 shadow-sm z-10">
+      {/* SUB-HEADER (Filtro de Colegio / Contexto) */}
+      <div className="bg-white border-b border-gray-200 h-14 flex items-center px-6 shrink-0 shadow-sm z-10">
           {esPerfilGlobal ? (
             <div className="flex items-center gap-3 w-full max-w-3xl relative">
               <span className="text-xs font-bold text-[#25306B] uppercase font-['gobCL',_sans-serif]">Filtro Institucional:</span>
@@ -163,7 +162,6 @@ export default function Layout() {
             </div>
           )}
         </div>
-      )}
       
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 overflow-auto p-6 lg:p-8 bg-[#EDF0F5]">
