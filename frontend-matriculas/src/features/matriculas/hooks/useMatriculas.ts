@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { API_BASE_URL } from '../../../config/api';
 import { validarListaArchivos } from '../../../utils/fileValidation';
 import { useToast } from '../../../components/Toast';
+import { obtenerRangoCurso } from '../../../utils/gradeHierarchy';
 
 export interface Matricula {
   id_matricula: number;
@@ -600,6 +601,13 @@ export const useMatriculas = () => {
       return;
     }
 
+    const rankActual = obtenerRangoCurso(cursoActual);
+    const rankDest = obtenerRangoCurso(cursoDestino);
+    if (rankActual > 0 && rankDest > 0 && rankDest < rankActual) {
+      toast.error(`NO ESTÁ PERMITIDO: No se puede trasladar al estudiante a un curso inferior (${cursoDestino}) al que ya cursa actualmente (${cursoActual}).`);
+      return;
+    }
+
     if (cursoDestinoLleno) {
       toast.error(`NO ES POSIBLE EL TRASLADO: El curso '${cursoDestino}' ha alcanzado su capacidad máxima permitida (${matriculadosCursoDestino}/${capacidadCursoDestino} cupos ocupados). Seleccione una sala con vacantes disponibles.`);
       return;
@@ -662,25 +670,30 @@ export const useMatriculas = () => {
     }
 
     if (cursoDestino && cursoActual) {
-      const numActualMatch = cursoActual.match(/\d+/);
-      const numDestinoMatch = cursoDestino.match(/\d+/);
+      const rankActual = obtenerRangoCurso(cursoActual);
+      const rankDestino = obtenerRangoCurso(cursoDestino);
 
-      if (numActualMatch && numDestinoMatch) {
-        const numActual = parseInt(numActualMatch[0]);
-        const numDestino = parseInt(numDestinoMatch[0]);
-
-        if (numDestino < numActual) {
-          advertencias.push(`• Está moviendo al alumno a un grado INFERIOR (de ${numActual} a ${numDestino}).`);
-        } else if (numDestino > numActual + 1) {
-          advertencias.push(`• Está saltando múltiples grados hacia ADELANTE (de ${numActual} a ${numDestino}).`);
-        } else if (numDestino === numActual + 1) {
-          advertencias.push(`• Está adelantando al alumno al grado SIGUIENTE (de ${numActual} a ${numDestino}). Normalmente los traslados a mitad de año son en el mismo grado.`);
-        }
+      if (rankActual > 0 && rankDestino > 0 && rankDestino < rankActual) {
+        advertencias.push(`• BLOQUEO NORMATIVO: No está permitido trasladar al estudiante a un curso inferior (de '${cursoActual}' a '${cursoDestino}').`);
       } else {
-        const baseActual = cursoActual.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
-        const baseDestino = cursoDestino.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
-        if (baseActual !== baseDestino) {
-          advertencias.push(`• Está cambiando el nivel del curso de '${cursoActual}' a '${cursoDestino}'.`);
+        const numActualMatch = cursoActual.match(/\d+/);
+        const numDestinoMatch = cursoDestino.match(/\d+/);
+
+        if (numActualMatch && numDestinoMatch) {
+          const numActual = parseInt(numActualMatch[0]);
+          const numDestino = parseInt(numDestinoMatch[0]);
+
+          if (numDestino > numActual + 1) {
+            advertencias.push(`• Está saltando múltiples grados hacia ADELANTE (de ${numActual} a ${numDestino}).`);
+          } else if (numDestino === numActual + 1) {
+            advertencias.push(`• Está adelantando al alumno al grado SIGUIENTE (de ${numActual} a ${numDestino}). Normalmente los traslados a mitad de año son en el mismo grado.`);
+          }
+        } else {
+          const baseActual = cursoActual.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+          const baseDestino = cursoDestino.replace(/\s*[A-Z]\s*$/i, '').trim().toLowerCase();
+          if (baseActual !== baseDestino) {
+            advertencias.push(`• Está cambiando el nivel del curso de '${cursoActual}' a '${cursoDestino}'.`);
+          }
         }
       }
     }

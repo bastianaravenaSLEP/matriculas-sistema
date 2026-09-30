@@ -573,7 +573,7 @@ export default function NuevaMatricula() {
               <button 
                 type="button" 
                 onClick={irSiguientePaso}
-                disabled={!checkCertNotas || (idEstablecimientoPrevio !== String(formulario.id_establecimiento) && !checkCertRetiro) || (formulario.es_excedente && !archivoResolucion)} 
+                disabled={!checkCertNotas || (idEstablecimientoPrevio !== String(formulario.id_establecimiento) && !checkCertRetiro) || (formulario.es_excedente && !archivoResolucion) || alertasTransicion.some(a => a.tipo === 'peligro')} 
                 className="flex items-center gap-2 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold transition-colors disabled:opacity-50"
               >
                 Siguiente Paso <ChevronRight size={18} />

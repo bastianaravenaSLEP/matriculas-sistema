@@ -32,11 +32,11 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
         # --- DATA DEL AÑO SELECCIONADO ---
 
         # ACTIVOS: COUNT(DISTINCT) para blindar ante duplicados históricos
-        cur.execute(f"SELECT COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro') {filtros_sql}", tuple(parametros))
+        cur.execute(f"SELECT COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro', 'Promovido', 'Repitente') {filtros_sql}", tuple(parametros))
         total_activos = cur.fetchone()[0]
 
         # RETIROS NETOS: Alumnos con estado Retirado/Inactiva que NO tienen
-        # ninguna matrícula Activa en el mismo establecimiento y año.
+        # ninguna matrícula Activa/Promovido/Repitente en el mismo establecimiento y año.
         # Se excluye 'Anulada' porque representa errores administrativos, no deserciones reales.
         if establecimiento_id is not None and anio is not None:
             cur.execute("""
@@ -50,7 +50,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
                       FROM matricula m2
                       WHERE m2.id_establecimiento = %s
                         AND m2.anio_escolar = %s
-                        AND m2.estado = 'Activa'
+                        AND m2.estado IN ('Activa', 'Promovido', 'Repitente')
                   )
             """, (establecimiento_id, anio, establecimiento_id, anio))
         elif establecimiento_id is not None:
@@ -65,7 +65,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
                       FROM matricula m2
                       WHERE m2.id_establecimiento = m.id_establecimiento
                         AND m2.anio_escolar = m.anio_escolar
-                        AND m2.estado = 'Activa'
+                        AND m2.estado IN ('Activa', 'Promovido', 'Repitente')
                   )
             """, (establecimiento_id,))
         elif anio is not None:
@@ -79,7 +79,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
                       SELECT m2.id_estudiante
                       FROM matricula m2
                       WHERE m2.anio_escolar = %s
-                        AND m2.estado = 'Activa'
+                        AND m2.estado IN ('Activa', 'Promovido', 'Repitente')
                   )
             """, (anio, anio))
         else:
@@ -93,20 +93,20 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
                       FROM matricula m2
                       WHERE m2.id_establecimiento = m.id_establecimiento
                         AND m2.anio_escolar = m.anio_escolar
-                        AND m2.estado = 'Activa'
+                        AND m2.estado IN ('Activa', 'Promovido', 'Repitente')
                   )
             """)
         total_inactivos = cur.fetchone()[0]
 
-        cur.execute(f"SELECT nivel_ensenanza, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro') {filtros_sql} GROUP BY nivel_ensenanza ORDER BY nivel_ensenanza", tuple(parametros))
+        cur.execute(f"SELECT nivel_ensenanza, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro', 'Promovido', 'Repitente') {filtros_sql} GROUP BY nivel_ensenanza ORDER BY nivel_ensenanza", tuple(parametros))
         por_nivel = [{"nombre": row[0] or "Sin Nivel", "cantidad": row[1]} for row in cur.fetchall()]
 
         # Desglose de cursos para ACTIVOS
-        cur.execute(f"SELECT curso, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro') {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
+        cur.execute(f"SELECT curso, COUNT(DISTINCT id_estudiante) FROM matricula WHERE estado IN ('Activa', 'Pendiente Retiro', 'Promovido', 'Repitente') {filtros_sql} GROUP BY curso ORDER BY curso", tuple(parametros))
         por_curso = [{"nombre": row[0] or "Sin Curso", "cantidad": row[1]} for row in cur.fetchall()]
 
         # Desglose de cursos para RETIROS NETOS
-        # Solo cuenta alumnos Retirado/Inactiva que NO tienen otra matricula Activa en el mismo colegio/año
+        # Solo cuenta alumnos Retirado/Inactiva que NO tienen otra matricula Activa/Promovido/Repitente en el mismo colegio/año
         cur.execute(f"""
             SELECT m.curso, COUNT(DISTINCT m.id_estudiante)
             FROM matricula m
@@ -117,7 +117,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
                   FROM matricula m2
                   WHERE m2.id_establecimiento = m.id_establecimiento
                     AND m2.anio_escolar = m.anio_escolar
-                    AND m2.estado = 'Activa'
+                    AND m2.estado IN ('Activa', 'Promovido', 'Repitente')
               )
             GROUP BY m.curso
             ORDER BY m.curso
@@ -138,7 +138,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
         # para descartar falsos positivos en el loop del historico
         activos_por_colegio_anio: dict = {}
         for anio_h, id_est_h, estado_h, curso_h, id_est_2 in filas_historial:
-            if estado_h == 'Activa':
+            if estado_h in ('Activa', 'Promovido', 'Repitente'):
                 key = (id_est_2, anio_h)
                 activos_por_colegio_anio.setdefault(key, set()).add(id_est_h)
 
@@ -160,7 +160,7 @@ def obtener_estadisticas_dashboard_db(establecimiento_id: int = None, anio: int 
             else:
                 nombre_base = "Sin Curso"
 
-            if estado_h == 'Activa':
+            if estado_h in ('Activa', 'Promovido', 'Repitente'):
                 historico_dict[anio_h]["activos"] += 1
                 if curso_str:
                     historico_dict[anio_h]["cursos"][nombre_base] = historico_dict[anio_h]["cursos"].get(nombre_base, 0) + 1

@@ -5,6 +5,7 @@ import ModalEmisionDocumento from '../../components/ModalEmisionDocumento';
 import ModalDescargaExcel from './components/ModalDescargaExcel';
 import { useMatriculas } from './hooks/useMatriculas'; 
 import { API_BASE_URL } from '../../config/api';
+import { obtenerRangoCurso } from '../../utils/gradeHierarchy';
 
 export default function Matriculas() {
   const {
@@ -37,6 +38,10 @@ export default function Matriculas() {
   } = useMatriculas();
 
   const [mostrarListaDestino, setMostrarListaDestino] = useState(false);
+
+  const rankCursoOrigen = matriculaSeleccionada?.curso ? obtenerRangoCurso(matriculaSeleccionada.curso) : 0;
+  const rankCursoDestino = cursoDestino ? obtenerRangoCurso(cursoDestino) : 0;
+  const esCursoInferior = rankCursoOrigen > 0 && rankCursoDestino > 0 && rankCursoDestino < rankCursoOrigen;
 
   const formatearNombreCorto = (nombre?: string) => {
     if (!nombre || nombre === 'Pendiente' || nombre === 'Sin registro') {
@@ -97,6 +102,22 @@ export default function Matriculas() {
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-700 border border-gray-300" title="Matrícula anulada">
           <span className="w-2 h-2 rounded-full bg-gray-400"></span>
           Anulada
+        </span>
+      );
+    }
+    if (estadoLower === 'promovido' || estadoLower === 'promovida') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-300 shadow-sm" title="Alumno promovido al siguiente curso">
+          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          Promovido
+        </span>
+      );
+    }
+    if (estadoLower === 'repitente') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300 shadow-sm" title="Alumno repitente en este curso">
+          <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+          Repitente
         </span>
       );
     }
@@ -234,6 +255,8 @@ export default function Matriculas() {
             <select value={filtroEstado} onChange={(e) => { setFiltroEstado(e.target.value); setPage(1); }} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none bg-white cursor-pointer">
               <option value="">Todos los estados</option>
               <option value="Activa">Solo Activas</option>
+              <option value="Promovido">Promovidos</option>
+              <option value="Repitente">Repitentes</option>
               <option value="Inactiva">Inactivas / Retirados</option>
               <option value="Pendiente Retiro">Pendientes de Retiro</option>
               <option value="Pendiente_Traslado">Traslados Pendientes</option>
@@ -524,6 +547,21 @@ export default function Matriculas() {
                   </div>
                 )}
 
+                {/* AVISO SI ELIGE UN CURSO INFERIOR */}
+                {esCursoInferior && (
+                  <div className="mt-2.5 p-3.5 bg-red-50 border-2 border-red-300 text-red-900 rounded-xl flex gap-3 items-start animate-in fade-in shadow-sm">
+                    <AlertOctagon className="text-red-600 shrink-0 mt-0.5" size={20} />
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wide text-red-800">
+                        Movimiento No Permitido: Curso Inferior
+                      </p>
+                      <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                        No está permitido trasladar al estudiante hacia un nivel o curso inferior (<strong>{cursoDestino}</strong>) al que actualmente cursa (<strong>{matriculaSeleccionada?.curso}</strong>).
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* AVISO DE CAPACIDAD DE SALA / CURSO LLENO */}
                 {cursoDestino && !esMismoCurso && (
                   <div>
@@ -632,9 +670,9 @@ export default function Matriculas() {
                 <button type="button" onClick={() => setModalCursoAbierto(false)} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">Cancelar</button>
                 <button 
                   type="submit" 
-                  disabled={procesandoCurso || !cursoDestino || cursoDestinoLleno || cargandoCapacidadDestino || esMismoCurso} 
+                  disabled={procesandoCurso || !cursoDestino || cursoDestinoLleno || cargandoCapacidadDestino || esMismoCurso || esCursoInferior} 
                   className={`px-4 py-2 text-white rounded-lg text-sm font-bold transition-all shadow-sm ${
-                    cursoDestinoLleno || esMismoCurso
+                    cursoDestinoLleno || esMismoCurso || esCursoInferior
                       ? 'bg-red-400 cursor-not-allowed opacity-80'
                       : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50'
                   }`}
@@ -643,9 +681,11 @@ export default function Matriculas() {
                     ? 'Procesando...' 
                     : esMismoCurso
                       ? 'Estudiante ya está en este curso'
-                      : cursoDestinoLleno 
-                        ? 'Curso sin cupos disponibles (Lleno)' 
-                        : 'Enviar Solicitud y Encuesta al Apoderado'}
+                      : esCursoInferior
+                        ? 'No permitido: Curso inferior al actual'
+                        : cursoDestinoLleno 
+                          ? 'Curso sin cupos disponibles (Lleno)' 
+                          : 'Enviar Solicitud y Encuesta al Apoderado'}
                 </button>
               </div>
             </form>

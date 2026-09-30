@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useEstudiantes } from './hooks/useEstudiantes'; 
 import { API_BASE_URL } from '../../config/api';
+import { obtenerRangoCurso } from '../../utils/gradeHierarchy';
 
 export default function Estudiantes() {
   const {
@@ -956,10 +957,12 @@ export default function Estudiantes() {
                 const esUltimaActiva = historialOrdenado.length > 0 && historialOrdenado[0].estado === 'Activa';
 
                 const coloresEstado: Record<string, string> = {
-                  Activa:   'bg-green-100 text-green-700 border border-green-200',
-                  Retirado: 'bg-red-50 text-red-600 border border-red-100',
-                  Inactiva: 'bg-orange-50 text-orange-600 border border-orange-100',
-                  Anulada:  'bg-gray-100 text-gray-400 border border-gray-200',
+                  Activa:    'bg-green-100 text-green-700 border border-green-200',
+                  Promovido: 'bg-blue-50 text-blue-700 border border-blue-200',
+                  Repitente: 'bg-amber-50 text-amber-700 border border-amber-200',
+                  Retirado:  'bg-red-50 text-red-600 border border-red-100',
+                  Inactiva:  'bg-orange-50 text-orange-600 border border-orange-100',
+                  Anulada:   'bg-gray-100 text-gray-400 border border-gray-200',
                 };
 
                 return (
@@ -981,17 +984,28 @@ export default function Estudiantes() {
                         <p className="text-sm text-center text-gray-400 py-4">Sin historial de matrículas</p>
                       )}
 
-                      {registrosVisibles.map((reg: any) => {
+                      {registrosVisibles.map((reg: any, index: number) => {
                         // La última matrícula registrada es la activa y vigente si su estado es Activa
                         const esVigente = esUltimaActiva && reg.id === idUltimaMatricula;
-                        // Si tiene estado 'Activa' pero pertenece a un año/registro anterior, representa el año finalizado y promovido
-                        const esActivoAnterior = reg.estado === 'Activa' && !esVigente;
-                        const badgeCls = esVigente
-                          ? 'bg-green-100 text-green-700 border border-green-200'
-                          : esActivoAnterior
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : (coloresEstado[reg.estado] ?? 'bg-gray-100 text-gray-500 border border-gray-200');
-                        const badgeLabel = esVigente ? 'Activa' : esActivoAnterior ? 'Promovido' : reg.estado;
+                        let badgeLabel = reg.estado;
+                        if (esVigente) {
+                          badgeLabel = 'Activa';
+                        } else if (reg.estado === 'Repitente') {
+                          badgeLabel = 'Repitente';
+                        } else if (reg.estado === 'Promovido') {
+                          badgeLabel = 'Promovido';
+                        } else if (reg.estado === 'Activa' && !esVigente) {
+                          // Si es un año previo y en la BD seguía como 'Activa', inferir si fue Promovido o Repitente
+                          const regSiguiente = index > 0 ? registrosVisibles[index - 1] : null;
+                          if (regSiguiente && regSiguiente.curso && reg.curso) {
+                            const rankSig = obtenerRangoCurso(regSiguiente.curso);
+                            const rankAct = obtenerRangoCurso(reg.curso);
+                            badgeLabel = (rankSig > 0 && rankAct > 0 && rankSig === rankAct) ? 'Repitente' : 'Promovido';
+                          } else {
+                            badgeLabel = 'Promovido';
+                          }
+                        }
+                        const badgeCls = coloresEstado[badgeLabel] ?? 'bg-gray-100 text-gray-500 border border-gray-200';
 
                         return (
                           <div

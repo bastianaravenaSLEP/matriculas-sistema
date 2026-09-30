@@ -22,7 +22,58 @@ from services.email_service import (
 from services.utils import determinar_nivel_backend
 from services import storage_service
 from services.establecimientos_service import obtener_capacidad_curso
+import unicodedata
 import re
+
+def normalizar_texto_curso(t: str) -> str:
+    if not t: return ''
+    nfkd = unicodedata.normalize('NFKD', str(t))
+    return ''.join([c for c in nfkd if not unicodedata.combining(c)]).lower().strip()
+
+def obtener_rango_curso(curso_str: str, nivel_str: str = None, cod_grado: int = None, cod_tipo: int = None) -> int:
+    c = normalizar_texto_curso(curso_str)
+    n = normalizar_texto_curso(nivel_str)
+
+    # 1. Parvularia
+    if 'sala cuna' in c: return 10
+    if 'medio menor' in c: return 20
+    if 'medio mayor' in c: return 30
+    if 'pre-kinder' in c or 'prekinder' in c or '1er nivel de transicion' in c or '1er nivel transicion' in c: return 40
+    if 'kinder' in c or '2do nivel de transicion' in c or '2do nivel transicion' in c: return 50
+    if 'parvul' in n or 'transicion' in n: return 40
+
+    # 2. Especial / Laboral
+    if 'laboral' in c or 'taller' in c:
+        m = re.search(r'(\d+)', c)
+        grado = int(m.group(1)) if m else (cod_grado or 1)
+        return 250 + grado
+
+    # 3. Adultos
+    if '1er nivel (1' in c or ('1er nivel' in c and 'medio' in c): return 202
+    if '2do nivel (3' in c or ('2do nivel' in c and 'medio' in c): return 204
+    if '3er nivel (4' in c or ('3er nivel' in c and 'medio' in c): return 204
+    if 'nivel basico 1' in c: return 104
+    if 'nivel basico 2' in c: return 106
+    if 'nivel basico 3' in c: return 108
+
+    # 4. Media regular
+    if 'medio' in c or 'media' in c or 'media' in n:
+        m = re.search(r'(\d+)', c)
+        grado = int(m.group(1)) if m else (cod_grado or 1)
+        return 200 + grado
+
+    # 5. Basica regular
+    if 'basico' in c or 'basica' in c or 'basica' in n or 'basic' in n:
+        m = re.search(r'(\d+)', c)
+        grado = int(m.group(1)) if m else (cod_grado or 1)
+        return 100 + grado
+
+    if cod_grado:
+        if 'med' in n: return 200 + cod_grado
+        if 'bas' in n: return 100 + cod_grado
+        return 100 + cod_grado
+
+    return 0
 
 def formatear_nivel_curso(curso_str: str) -> str:
     texto = (curso_str or "").upper()
@@ -231,6 +282,31 @@ def crear_nueva_matricula_db(matricula):
         clave_bloqueo = f"{matricula.id_establecimiento}-{matricula.anio_escolar}-{matricula.curso}"
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (clave_bloqueo,))
 
+        # 1. Validar antecedentes del estudiante: no permitir matricular en un curso inferior al ya cursado
+        cursor.execute("""
+            SELECT id_matricula, curso, nivel_ensenanza, cod_grado, anio_escolar, estado
+            FROM matricula
+            WHERE id_estudiante = %s AND estado != 'Anulada'
+            ORDER BY anio_escolar DESC, id_matricula DESC
+        """, (matricula.id_estudiante,))
+        matriculas_previas = cursor.fetchall()
+
+        rank_solicitado = obtener_rango_curso(
+            matricula.curso, 
+            getattr(matricula, 'nivel_ensenanza', None), 
+            getattr(matricula, 'cod_grado', None)
+        )
+
+        for mp in matriculas_previas:
+            rank_prev = obtener_rango_curso(mp[1], mp[2], mp[3])
+            # Si el curso solicitado es de un grado/nivel estrictamente inferior al ya cursado
+            if rank_solicitado > 0 and rank_prev > 0 and rank_solicitado < rank_prev:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No está permitido matricular al estudiante en un curso inferior al ya cursado. "
+                           f"El estudiante ya tiene registro en '{mp[1]}' (Año {mp[4]}), por lo que no puede descender a '{matricula.curso}'."
+                )
+
         cursor.execute("""
             SELECT COALESCE(MAX(numero_correlativo), 0) 
             FROM matricula 
@@ -247,8 +323,34 @@ def crear_nueva_matricula_db(matricula):
                     WHEN observaciones IS NULL OR observaciones = '' THEN 'Anulada automáticamente por registro de nueva matrícula.'
                     ELSE CONCAT(observaciones, ' | Anulada automáticamente por registro de nueva matrícula.')
                 END
-            WHERE id_estudiante = %s AND anio_escolar = %s AND estado = 'Activa'
+            WHERE id_estudiante = %s AND anio_escolar = %s AND estado IN ('Activa', 'Pendiente Retiro')
         """, (matricula.id_estudiante, matricula.anio_escolar))
+
+        # 2. Si el estudiante se matricula en un año posterior:
+        #    - Si es en el MISMO nivel/curso, es REPITENTE.
+        #    - Si avanzó a un nivel superior, es PROMOVIDO.
+        for mp in matriculas_previas:
+            if mp[5] in ('Activa', 'Promovido', 'Repitente') and matricula.anio_escolar > mp[4]:
+                rank_prev = obtener_rango_curso(mp[1], mp[2], mp[3])
+                if rank_solicitado == rank_prev:
+                    # El alumno repitió el curso
+                    cursor.execute("""
+                        UPDATE matricula
+                        SET estado = 'Repitente',
+                            observaciones = CASE
+                                WHEN observaciones IS NULL OR observaciones = '' THEN 'Alumno repitente: matriculado en el mismo curso para el año ' || %s
+                                ELSE CONCAT(observaciones, ' | Alumno repitente: matriculado en el mismo curso para el año ' || %s)
+                            END
+                        WHERE id_matricula = %s
+                    """, (str(matricula.anio_escolar), str(matricula.anio_escolar), mp[0]))
+                elif rank_solicitado > rank_prev:
+                    # El alumno fue promovido al nivel superior
+                    cursor.execute("""
+                        UPDATE matricula
+                        SET estado = 'Promovido'
+                        WHERE id_matricula = %s AND estado = 'Activa'
+                    """, (mp[0],))
+                break
 
 
         es_practica = getattr(matricula, 'es_alumno_practica', False)
@@ -284,6 +386,9 @@ def crear_nueva_matricula_db(matricula):
         
         conn.commit()
         return {"mensaje": f"Matrícula creada. Se asignó automáticamente el folio #{nuevo_correlativo}.", "id_matricula": nuevo_id, "correlativo_asignado": nuevo_correlativo}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -592,6 +697,15 @@ def registrar_cambio_curso_db(id_matricula: int, req, usuario_actual: dict = Non
                 detail=f"El estudiante ya se encuentra matriculado en el curso '{curso_actual}'. Seleccione un curso distinto para el traslado."
             )
 
+        rank_actual = obtener_rango_curso(curso_actual, datos[7])
+        rank_nuevo = obtener_rango_curso(req.nuevo_curso)
+        if rank_nuevo > 0 and rank_actual > 0 and rank_nuevo < rank_actual:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No está permitido cambiar al estudiante a un curso inferior al actual. "
+                       f"Curso actual: '{curso_actual}', curso solicitado: '{req.nuevo_curso}'."
+            )
+
         if usuario_actual and usuario_actual.get("rol") in ["Colegio", "Visualizador_Colegio"]:
             id_est_user = usuario_actual.get("id_establecimiento")
             if id_est_user and id_establecimiento != id_est_user:
@@ -646,6 +760,9 @@ def registrar_cambio_curso_db(id_matricula: int, req, usuario_actual: dict = Non
         conn.commit()
         msg_exito = f"Solicitud de traslado hacia '{req.nuevo_curso}' registrada exitosamente. Se envió el formulario de justificación al apoderado. El cambio de curso se aplicará automáticamente en cuanto el apoderado complete la encuesta."
         return {"status": "success", "mensaje": mensaje_alerta if mensaje_alerta else msg_exito}
+    except HTTPException:
+        conn.rollback()
+        raise
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
