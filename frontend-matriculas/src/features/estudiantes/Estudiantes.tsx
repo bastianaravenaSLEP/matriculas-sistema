@@ -882,7 +882,9 @@ export default function Estudiantes() {
                   <div className="pt-2 border-t border-gray-50">
                     <p className="text-xs font-bold text-gray-500 uppercase mb-1">Última Matrícula Registrada</p>
                     <p className="font-bold text-blue-800">{ultimaMatricula ? ultimaMatricula.establecimiento : 'Sin registro'}</p>
-                    <p className="text-xs text-gray-500 font-mono">RBD: {ultimaMatricula ? ultimaMatricula.rbd : 'N/A'}</p>
+                    <p className="text-xs text-gray-500 font-mono">
+                      RBD: {ultimaMatricula ? ultimaMatricula.rbd : 'N/A'}&nbsp;·&nbsp;Año: {ultimaMatricula?.anio || 'N/A'}&nbsp;·&nbsp;{ultimaMatricula?.curso || 'Sin curso'}
+                    </p>
                   </div>
 
                   <div className="pt-2 border-t border-gray-50">
@@ -943,12 +945,15 @@ export default function Estudiantes() {
 
               {/* Historial RGM */}
               {(() => {
-                const anioActual = new Date().getFullYear();
                 const LIMITE_VISIBLE = 4;
                 const registrosVisibles = historialExpandido
                   ? historialOrdenado
                   : historialOrdenado.slice(0, LIMITE_VISIBLE);
                 const hayMas = historialOrdenado.length > LIMITE_VISIBLE;
+
+                // La última matrícula registrada es la primera en historialOrdenado
+                const idUltimaMatricula = historialOrdenado.length > 0 ? historialOrdenado[0].id : null;
+                const esUltimaActiva = historialOrdenado.length > 0 && historialOrdenado[0].estado === 'Activa';
 
                 const coloresEstado: Record<string, string> = {
                   Activa:   'bg-green-100 text-green-700 border border-green-200',
@@ -977,12 +982,16 @@ export default function Estudiantes() {
                       )}
 
                       {registrosVisibles.map((reg: any) => {
-                        const esVigente = reg.estado === 'Activa' && reg.anio === anioActual;
+                        // La última matrícula registrada es la activa y vigente si su estado es Activa
+                        const esVigente = esUltimaActiva && reg.id === idUltimaMatricula;
+                        // Si tiene estado 'Activa' pero pertenece a un año/registro anterior, representa el año finalizado y promovido
                         const esActivoAnterior = reg.estado === 'Activa' && !esVigente;
-                        const badgeCls = esActivoAnterior
-                          ? 'bg-gray-100 text-gray-500 border border-gray-200'
-                          : (coloresEstado[reg.estado] ?? 'bg-gray-100 text-gray-500 border border-gray-200');
-                        const badgeLabel = esActivoAnterior ? 'Promovido' : reg.estado;
+                        const badgeCls = esVigente
+                          ? 'bg-green-100 text-green-700 border border-green-200'
+                          : esActivoAnterior
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : (coloresEstado[reg.estado] ?? 'bg-gray-100 text-gray-500 border border-gray-200');
+                        const badgeLabel = esVigente ? 'Activa' : esActivoAnterior ? 'Promovido' : reg.estado;
 
                         return (
                           <div
